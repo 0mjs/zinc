@@ -64,8 +64,12 @@ func (a *App) Serve(port ...string) error {
 	if len(port) > 0 && port[0] != "" {
 		serverPort = port[0]
 	}
+	addr := serverPort
+	if serverPort[0] != ':' {
+		addr = ":" + serverPort
+	}
 	fmt.Printf("Server starting on port %s...\n", serverPort)
-	return http.ListenAndServe(fmt.Sprintf(":%s", serverPort), a)
+	return http.ListenAndServe(addr, a)
 }
 
 func parseArgs(a *App) string {

@@ -210,7 +210,7 @@ func main() {
 		c.Status(201).JSON(user)
 	})
 
-	app.Serve()
+	app.Serve(":8080")
 }
 
 // Helpers
