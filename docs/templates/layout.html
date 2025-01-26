@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs | Zinc</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/nord.min.css">
+</head>
+
+<body>
+  <div class="container">
+    <aside class="sidenav">
+      <h1 class="logo">zinc</h1>
+      <nav class="nav-links">
+        <a href="/" class="nav-link nav-intro">Introduction</a>
+        <a href="/getting-started" class="nav-link nav-getting-started">Getting Started</a>
+        <a href="/guide" class="nav-link nav-guide">Guide</a>
+        <a href="/concepts" class="nav-link nav-concepts">Concepts</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      {{.Content}}
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script>
+    hljs.highlightAll();
+
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.nav-link').forEach(link => {
+      if (link.getAttribute('href') === currentPath) {
+        link.classList.add('active');
+      }
+    });
+
+    document.querySelectorAll('pre code').forEach((block) => {
+      const button = document.createElement('button');
+      button.className = 'copy-button';
+      button.style.position = 'absolute';
+      button.style.right = '-0.3rem';
+      // button.style.top = '50%';
+      button.style.transform = 'translateY(-50%)';
+      button.style.display = 'flex';
+      button.style.alignItems = 'center';
+      button.style.justifyContent = 'center';
+      button.innerHTML = `
+          <svg class="copy-icon" viewBox="0 0 24 24" width="18" height="18">
+            <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+          </svg>`;
+
+      const pre = block.parentNode;
+      pre.style.position = 'relative';
+      pre.insertBefore(button, block);
+
+      button.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(block.textContent);
+        button.classList.add('clipboard-copied');
+        setTimeout(() => button.classList.remove('clipboard-copied'), 2000);
+      });
+    });
+  </script>
+</body>
+
+</html>
+
+{{define "content"}}
+{{.Content}}
+{{end}}

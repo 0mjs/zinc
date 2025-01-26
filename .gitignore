@@ -1,0 +1,4 @@
+.air.toml
+tmp/*
+restricted/*
+vendor/*
