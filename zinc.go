@@ -18,12 +18,11 @@ type RouteHandler func(c *Context)
 type Map map[string]interface{}
 
 func New() *App {
-	cfg := DefaultConfig
 	return &App{
 		router:     &Router{},
 		middleware: make([]Middleware, 0),
 		services:   make(map[string]interface{}),
-		config:     &cfg,
+		config:     &DefaultConfig,
 	}
 }
 
@@ -41,9 +40,11 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	handler, params := a.router.Find(r.Method, r.URL.Path)
+	handler, foundCtx := a.router.Find(r.Method, r.URL.Path)
 	if handler != nil {
-		ctx.PathParams = params
+		if foundCtx != nil {
+			ctx.PathParams = foundCtx.PathParams
+		}
 		handler(ctx)
 		return
 	}

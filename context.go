@@ -13,7 +13,7 @@ import (
 type Context struct {
 	Response    http.ResponseWriter
 	Request     *http.Request
-	PathParams  map[string]string
+	PathParams  params
 	QueryParams url.Values
 	Method      string
 	written     bool
@@ -24,12 +24,20 @@ type Context struct {
 	services    map[string]interface{}
 }
 
+type param struct {
+	key   string
+	value string
+}
+
+type params [4]param
+
+var emptyParam param
+
 // Pool of contexts to reduce allocations
 var contextPool = sync.Pool{
 	New: func() interface{} {
 		return &Context{
-			PathParams: make(map[string]string, 4), // Pre-allocate with reasonable size
-			Store:      make(map[string]interface{}, 4),
+			Store: make(map[string]interface{}, 4),
 		}
 	},
 }
@@ -51,10 +59,12 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.index = -1
 	c.status = http.StatusOK
 
-	// Clear maps instead of reallocating
-	for k := range c.PathParams {
-		delete(c.PathParams, k)
+	// Reset params by zeroing
+	for i := range c.PathParams {
+		c.PathParams[i] = emptyParam
 	}
+
+	// Clear store map
 	for k := range c.Store {
 		delete(c.Store, k)
 	}
@@ -109,7 +119,15 @@ func (c *Context) Status(code int) *Context {
 
 // Param retrieves a path parameter by name.
 func (c *Context) Param(name string) string {
-	return c.PathParams[name]
+	for i := range c.PathParams {
+		if c.PathParams[i].key == name {
+			return c.PathParams[i].value
+		}
+		if c.PathParams[i].key == "" {
+			break // End of params
+		}
+	}
+	return ""
 }
 
 // Query retrieves a query parameter by name.
@@ -125,4 +143,16 @@ func (c *Context) Body(v interface{}) error {
 	defer c.Request.Body.Close()
 
 	return json.NewDecoder(c.Request.Body).Decode(v)
+}
+
+// setParam sets a path parameter
+func (c *Context) setParam(key, value string) {
+	for i := range c.PathParams {
+		if c.PathParams[i].key == "" {
+			c.PathParams[i] = param{key: key, value: value}
+			return
+		}
+	}
+	// If we get here, the array is full (rare case)
+	// Could optionally panic or log warning
 }

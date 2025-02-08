@@ -156,23 +156,23 @@ func (r *Router) Add(method, path string, handlers ...interface{}) {
 	pathPartsCache.Put(parts)
 }
 
-func (r *Router) Find(method, path string) (RouteHandler, map[string]string) {
+func (r *Router) Find(method, path string) (RouteHandler, *Context) {
 	// Try direct lookup first
 	if methodRoutes, ok := r.routes[method]; ok {
 		if route, ok := methodRoutes[path]; ok {
-			return route.handler, nil // Don't allocate params map for static routes
+			return route.handler, nil
 		}
 	}
 
 	// Fall back to trie search for parameterized routes
 	parts := getPathParts(path)
-	params := make(map[string]string)
-	node := r.router.find(parts, params)
+	ctx := &Context{}
+	node := r.router.find(parts, ctx)
 
 	if node != nil && node.handler != nil {
 		if matchedRoute := r.routes[method][node.path]; matchedRoute != nil {
 			pathPartsCache.Put(parts)
-			return matchedRoute.handler, params
+			return matchedRoute.handler, ctx
 		}
 	}
 
@@ -195,29 +195,48 @@ func chain(handlers []RouteHandler) RouteHandler {
 	}
 }
 
-func (n *RouteNode) find(parts []string, params map[string]string) *RouteNode {
+func (n *RouteNode) find(parts []string, ctx *Context) *RouteNode {
 	if len(parts) == 0 {
 		return n
 	}
 
 	part := parts[0]
-	parts = parts[1:]
+	remaining := parts[1:]
 
+	// Try exact matches first
+	for _, child := range n.children {
+		if !child.isParam && !child.isWild && child.part == part {
+			if match := child.find(remaining, ctx); match != nil {
+				return match
+			}
+		}
+	}
+
+	// Then try parameter matches
+	for _, child := range n.children {
+		if child.isParam {
+			// Save current param state in case we need to backtrack
+			oldValue := ctx.Param(child.part)
+
+			// Set new param
+			ctx.setParam(child.part, part)
+
+			if match := child.find(remaining, ctx); match != nil {
+				return match
+			}
+
+			// Backtrack: restore old value if this path didn't work
+			if oldValue != "" {
+				ctx.setParam(child.part, oldValue)
+			}
+		}
+	}
+
+	// Finally try wildcards
 	for _, child := range n.children {
 		if child.isWild {
-			params["*"] = strings.Join(append([]string{part}, parts...), "/")
+			ctx.setParam("*", strings.Join(append([]string{part}, remaining...), "/"))
 			return child
-		}
-
-		if child.isParam {
-			params[child.part] = part
-			if matchChild := child.find(parts, params); matchChild != nil {
-				return matchChild
-			}
-		} else if child.part == part {
-			if matchChild := child.find(parts, params); matchChild != nil {
-				return matchChild
-			}
 		}
 	}
 

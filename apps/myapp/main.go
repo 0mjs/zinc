@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"github.com/0mjs/zinc"
-	z "github.com/0mjs/zinc"
 )
 
 // An entire feature overview of everything that `zinc` can do.
 func main() {
-	app := z.New()
+	app := zinc.New()
 
 	// - GET parameters & context examples
 
@@ -25,30 +24,30 @@ func main() {
 
 	// Explicit string
 	// Note: This is the most common way to send a response.
-	app.Get("/alt", func(c *z.Context) {
+	app.Get("/alt", func(c *zinc.Context) {
 		c.Send(helloWorld)
 	})
 
 	// JSON
 	// Note: This is a specific method for sending JSON responses.
-	app.Get("/json", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/json", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"message": helloWorld,
 		})
 	})
 
 	// Path parameters
 	// Note: Path parameters are parsed from the URL path and can be accessed using the Context.Param method.
-	app.Get("/users/:id", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/users/:id", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"message": fmt.Sprintf("the user id is %s", c.Param("id")),
 		})
 	})
 
 	// Nested path parameters
 	// Note: Nested path parameters are parsed from the URL path and can be accessed using the Context.Param method.
-	app.Get("/users/:userID/posts/:postID", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/users/:userID/posts/:postID", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"user": c.Param("userID"),
 			"post": c.Param("postID"),
 		})
@@ -56,8 +55,8 @@ func main() {
 
 	// Query parameters
 	// Note: Query parameters are parsed from the URL query string and can be accessed using the Context.Query method.
-	app.Get("/search", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/search", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"search": c.Query("q"),
 			"limit":  c.Query("limit"),
 		})
@@ -69,8 +68,8 @@ func main() {
 
 	// Route group method calling/context
 	// Note: Instatiated groups can be used to call methods on the context.
-	apiGroup.Get("/usernames", func(c *z.Context) {
-		c.JSON(z.Map{
+	apiGroup.Get("/usernames", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"usernames": []string{"matt", "steven"},
 		})
 	})
@@ -83,8 +82,8 @@ func main() {
 	// - /v1/external-api
 	externalAPI := v1Group.Group("/external-api")
 	// Note: Methods can be called on the group, and the context will be passed to the handler method.
-	externalAPI.Get("/", func(c *z.Context) {
-		c.JSON(z.Map{
+	externalAPI.Get("/", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"version": "v1",
 			"users":   []string{"martin", "stephen"},
 		})
@@ -96,8 +95,8 @@ func main() {
 	// - /v1/your-api/users
 	// Note: Methods can be called at all levels of the group hierarchy.
 	v2UsersGroup := yourApi.Group("/users")
-	v2UsersGroup.Get("/", func(c *z.Context) {
-		c.JSON(z.Map{
+	v2UsersGroup.Get("/", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"version": "v2",
 			"users":   []string{"magnus", "jason", "svend"},
 		})
@@ -106,50 +105,50 @@ func main() {
 	// Standard method routing
 	// Note: Method routing is used to handle different HTTP methods.
 	// - GET
-	app.Get("/get-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/get-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - POST
-	app.Post("/post-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Post("/post-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - PUT
-	app.Put("/put-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Put("/put-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - DELETE
-	app.Delete("/delete-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Delete("/delete-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - PATCH
-	app.Patch("/patch-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Patch("/patch-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - HEAD
-	app.Head("/head-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Head("/head-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
 
 	// - OPTIONS
-	app.Options("/options-method", func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Options("/options-method", func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"method": c.Method,
 		})
 	})
@@ -160,8 +159,8 @@ func main() {
 
 	// Route-level middleware
 	// Note: Route-level middleware is used to apply middleware to a specific route.
-	app.Get("/middleware", MyMiddleware(), func(c *z.Context) {
-		c.JSON(z.Map{
+	app.Get("/middleware", MyMiddleware(), func(c *zinc.Context) {
+		c.JSON(zinc.Map{
 			"message": "Hello, Middleware!",
 		})
 	})
@@ -172,10 +171,10 @@ func main() {
 		"/permissions",
 		Authenticate(),
 		Authorize("some-permission"),
-		func(c *z.Context) {
+		func(c *zinc.Context) {
 			authenticated := c.Get("authenticated")
 			authorized := c.Get("authorized")
-			c.JSON(z.Map{
+			c.JSON(zinc.Map{
 				"message":       "Hello, World!",
 				"authenticated": authenticated,
 				"authorized":    authorized,
@@ -189,7 +188,7 @@ func main() {
 
 	// Static file serving
 	// Note: This is a method for serving static files from disk.
-	app.Get("/static", func(c *z.Context) {
+	app.Get("/static", func(c *zinc.Context) {
 		c.Static("eg/static/index.html")
 	})
 
