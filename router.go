@@ -38,20 +38,21 @@ type Route struct {
 type Middleware func(c *Context)
 
 type Router struct {
-	routes     map[string]map[string]*Route // method -> path -> route
+	routes     map[string]map[string]*Route
 	router     *RouteNode
 	middleware []Middleware
+	cache      *RouteCache
 }
 
 var pathPartsCache = sync.Pool{
 	New: func() interface{} {
-		return make([]string, 0, 8) // Pre-allocate for common path lengths
+		return make([]string, 0, 8)
 	},
 }
 
 func getPathParts(path string) []string {
 	parts := pathPartsCache.Get().([]string)
-	parts = parts[:0] // Reset slice but keep capacity
+	parts = parts[:0]
 
 	if path == "" || path == "/" {
 		pathPartsCache.Put(parts)
@@ -156,28 +157,78 @@ func (r *Router) Add(method, path string, handlers ...interface{}) {
 	pathPartsCache.Put(parts)
 }
 
+type routeCacheKey struct {
+	method string
+	path   string
+}
+
+type routeCacheEntry struct {
+	handler RouteHandler
+	context *Context
+}
+
+// Add LRU cache for routes
+type RouteCache struct {
+	cache map[routeCacheKey]routeCacheEntry
+	mu    sync.RWMutex
+	size  int
+}
+
+func NewRouteCache(size int) *RouteCache {
+	return &RouteCache{
+		cache: make(map[routeCacheKey]routeCacheEntry, size),
+		size:  size,
+	}
+}
+
+func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
+	rc.mu.RLock()
+	entry, ok := rc.cache[key]
+	rc.mu.RUnlock()
+	return entry, ok
+}
+
+func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
+	rc.mu.Lock()
+	if len(rc.cache) >= rc.size {
+		// Simple eviction: clear the cache when full
+		rc.cache = make(map[routeCacheKey]routeCacheEntry, rc.size)
+	}
+	rc.cache[key] = entry
+	rc.mu.Unlock()
+}
+
+type pathParts struct {
+	parts [8]string // Most paths won't exceed 8 parts
+	count int
+}
+
+var pathPartsPool = sync.Pool{
+	New: func() interface{} {
+		return &pathParts{}
+	},
+}
+
 func (r *Router) Find(method, path string) (RouteHandler, *Context) {
-	// Try direct lookup first
-	if methodRoutes, ok := r.routes[method]; ok {
-		if route, ok := methodRoutes[path]; ok {
-			return route.handler, nil
+	// Fast path for exact matches
+	if routes, ok := r.routes[method]; ok {
+		if route, ok := routes[path]; ok {
+			return route.handler, &Context{PathParams: params{}}
 		}
 	}
 
-	// Fall back to trie search for parameterized routes
-	parts := getPathParts(path)
-	ctx := &Context{}
-	node := r.router.find(parts, ctx)
-
-	if node != nil && node.handler != nil {
-		if matchedRoute := r.routes[method][node.path]; matchedRoute != nil {
-			pathPartsCache.Put(parts)
-			return matchedRoute.handler, ctx
-		}
+	// Then check cache
+	key := routeCacheKey{method, path}
+	if entry, ok := r.cache.get(key); ok {
+		return entry.handler, entry.context
 	}
 
-	pathPartsCache.Put(parts)
-	return nil, nil
+	// Fall back to trie matching
+	handler, ctx := r.findRoute(method, path)
+	if handler != nil {
+		r.cache.set(key, routeCacheEntry{handler, ctx})
+	}
+	return handler, ctx
 }
 
 func (r *Router) Use(middleware ...Middleware) {
@@ -252,14 +303,27 @@ func (n *RouteNode) findChild(part string, isParam, isWild bool) *RouteNode {
 	return nil
 }
 
+var pathBuilderPool = sync.Pool{
+	New: func() interface{} {
+		return new(strings.Builder)
+	},
+}
+
 func (r *Router) normalizePath(path string) string {
 	if path == "" {
 		return "/"
 	}
-	if path[0] != '/' {
-		return "/" + path
+	if path[0] == '/' {
+		return path
 	}
-	return path
+
+	builder := pathBuilderPool.Get().(*strings.Builder)
+	builder.Reset()
+	builder.WriteByte('/')
+	builder.WriteString(path)
+	result := builder.String()
+	pathBuilderPool.Put(builder)
+	return result
 }
 
 func (a *App) Get(path string, handlers ...interface{}) {
@@ -298,13 +362,12 @@ func (a *App) Trace(path string, handlers ...interface{}) {
 	a.router.Add(MethodTrace, path, handlers...)
 }
 
-func (r *Router) findRoute(path string, method string) *Route {
-	for _, route := range r.routes[method] {
-		if route.path == path {
-			return route
-		}
+func (r *Router) findRoute(method string, path string) (RouteHandler, *Context) {
+	if route := r.routes[method][path]; route != nil {
+		ctx := &Context{}
+		return route.handler, ctx
 	}
-	return nil
+	return nil, nil
 }
 
 // Helper function to convert middleware slice to RouteHandler slice

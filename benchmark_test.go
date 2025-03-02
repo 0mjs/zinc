@@ -58,7 +58,7 @@ func ginParamHandler(c *gin.Context) {
 // Benchmark Hello World
 func BenchmarkHelloWorld(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/", zincHelloHandler)
 		req := httptest.NewRequest("GET", "/", nil)
@@ -81,6 +81,18 @@ func BenchmarkHelloWorld(b *testing.B) {
 		}
 	})
 
+	// Echo
+	b.Run("Echo", func(b *testing.B) {
+		e := echo.New()
+		e.GET("/", echoHelloHandler)
+		req := httptest.NewRequest("GET", "/", nil)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			w := httptest.NewRecorder()
+			e.ServeHTTP(w, req)
+		}
+	})
+
 	// Gin
 	b.Run("Gin", func(b *testing.B) {
 		gin.SetMode(gin.ReleaseMode)
@@ -91,18 +103,6 @@ func BenchmarkHelloWorld(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
-		}
-	})
-
-	// Echo
-	b.Run("Echo", func(b *testing.B) {
-		e := echo.New()
-		e.GET("/", echoHelloHandler)
-		req := httptest.NewRequest("GET", "/", nil)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			w := httptest.NewRecorder()
-			e.ServeHTTP(w, req)
 		}
 	})
 }

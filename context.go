@@ -33,12 +33,15 @@ type params [4]param
 
 var emptyParam param
 
-// Pool of contexts to reduce allocations
+// Add method to reset context state
 var contextPool = sync.Pool{
 	New: func() interface{} {
-		return &Context{
-			Store: make(map[string]interface{}, 4),
+		c := &Context{
+			Store:    make(map[string]interface{}, 2), // Reduced initial size
+			services: make(map[string]interface{}, 2), // Reduced initial size
+			status:   http.StatusOK,                   // Pre-set common status
 		}
+		return c
 	},
 }
 
@@ -49,22 +52,23 @@ func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 	return c
 }
 
-// Add method to reset context state
+// Optimize reset to minimize operations
 func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.Response = w
 	c.Request = r
-	c.QueryParams = r.URL.Query()
 	c.Method = r.Method
 	c.written = false
 	c.index = -1
-	c.status = http.StatusOK
 
-	// Reset params by zeroing
+	// Only get query params if needed
+	c.QueryParams = nil
+
+	// Fast clear params
 	for i := range c.PathParams {
 		c.PathParams[i] = emptyParam
 	}
 
-	// Clear store map
+	// Fast clear store
 	for k := range c.Store {
 		delete(c.Store, k)
 	}

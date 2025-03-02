@@ -8,6 +8,11 @@ import (
 
 var ErrResponseAlreadySent = errors.New("response already sent")
 
+var (
+	nullBytes = []byte("null")
+	emptyObj  = []byte("{}")
+)
+
 func (c *Context) Send(data interface{}) error {
 	if c.written {
 		return ErrResponseAlreadySent
@@ -30,10 +35,12 @@ func (c *Context) Send(data interface{}) error {
 		_, err := c.Response.Write(v)
 		return err
 	case nil:
+		c.Response.Header().Set("Content-Type", "application/json")
 		c.Response.WriteHeader(c.status)
-		return nil
+		_, err := c.Response.Write(nullBytes)
+		return err
 	default:
-		c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		c.Response.Header().Set("Content-Type", "application/json")
 		c.Response.WriteHeader(c.status)
 		return json.NewEncoder(c.Response).Encode(data)
 	}

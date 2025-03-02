@@ -19,7 +19,9 @@ type Map map[string]interface{}
 
 func New() *App {
 	return &App{
-		router:     &Router{},
+		router: &Router{
+			cache: NewRouteCache(1000), // Cache size of 1000 entries
+		},
 		middleware: make([]Middleware, 0),
 		services:   make(map[string]interface{}),
 		config:     &DefaultConfig,
