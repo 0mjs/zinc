@@ -7,11 +7,15 @@ import (
 )
 
 type App struct {
-	router        *Router
-	middleware    []Middleware
-	services      map[string]interface{}
-	config        *Config
-	cronScheduler *CronScheduler
+	router         *Router
+	middleware     []Middleware
+	services       map[string]interface{}
+	config         *Config
+	cronScheduler  *CronScheduler
+	templateEngine *TemplateEngine
+	wsHandler      *WebSocketHandler
+	fileUpload     *FileUpload
+	validator      *Validator
 }
 
 type RouteHandler func(c *Context)
@@ -27,6 +31,7 @@ func New() *App {
 		services:      make(map[string]interface{}),
 		config:        &DefaultConfig,
 		cronScheduler: newCronScheduler(),
+		validator:     NewValidator(),
 	}
 }
 
@@ -42,6 +47,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if route, ok := routes[path]; ok {
 				ctx := NewContext(w, r)
 				defer ctx.release()
+
+				// Set app instance in context
+				ctx.Set("app", a)
 
 				// Only set services if needed
 				if len(a.services) > 0 {
@@ -60,6 +68,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ctx := NewContext(w, r)
 				defer ctx.release()
 
+				// Set app instance in context
+				ctx.Set("app", a)
+
 				if len(a.services) > 0 {
 					ctx.services = a.services
 				}
@@ -74,6 +85,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Normal path for all other cases
 	ctx := NewContext(w, r)
 	defer ctx.release()
+
+	// Set app instance in context
+	ctx.Set("app", a)
 
 	// Only set services if needed
 	if len(a.services) > 0 {
@@ -174,6 +188,26 @@ func (a *App) StopScheduler() {
 // StartScheduler starts the scheduler
 func (a *App) StartScheduler() {
 	a.cronScheduler.Start()
+}
+
+// SetTemplateEngine sets the template engine
+func (a *App) SetTemplateEngine(engine *TemplateEngine) {
+	a.templateEngine = engine
+}
+
+// SetWebSocketHandler sets the WebSocket handler
+func (a *App) SetWebSocketHandler(handler *WebSocketHandler) {
+	a.wsHandler = handler
+}
+
+// SetFileUpload sets the file upload handler
+func (a *App) SetFileUpload(upload *FileUpload) {
+	a.fileUpload = upload
+}
+
+// Validate validates a struct using the validator
+func (a *App) Validate(s interface{}) ValidationErrors {
+	return a.validator.Validate(s)
 }
 
 func parseArgs(a *App) string {
