@@ -36,10 +36,12 @@ var emptyParam param
 // Add method to reset context state
 var contextPool = sync.Pool{
 	New: func() interface{} {
+		// Pre-allocate with fixed-size maps to avoid dynamic resizing
 		c := &Context{
-			Store:    make(map[string]interface{}, 2), // Reduced initial size
-			services: make(map[string]interface{}, 2), // Reduced initial size
-			status:   http.StatusOK,                   // Pre-set common status
+			Store:    make(map[string]interface{}, 4),
+			services: make(map[string]interface{}, 4),
+			status:   http.StatusOK,
+			index:    -1,
 		}
 		return c
 	},
@@ -56,30 +58,39 @@ func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.Response = w
 	c.Request = r
-	c.Method = r.Method
+	if r != nil {
+		c.Method = r.Method
+	}
 	c.written = false
 	c.index = -1
-
-	// Only get query params if needed
+	c.status = http.StatusOK
 	c.QueryParams = nil
+	c.handlers = nil
 
-	// Fast clear params
+	// Fast clear params - zero all at once
 	for i := range c.PathParams {
 		c.PathParams[i] = emptyParam
 	}
 
-	// Fast clear store
-	for k := range c.Store {
-		delete(c.Store, k)
+	// Fast clear store - only if it has entries
+	if len(c.Store) > 0 {
+		for k := range c.Store {
+			delete(c.Store, k)
+		}
 	}
 }
 
 // Add method to release context back to pool
 func (c *Context) release() {
+	if c == nil {
+		return
+	}
+	// Clear references to allow GC
 	c.Response = nil
 	c.Request = nil
 	c.handlers = nil
 	c.QueryParams = nil
+	c.written = false
 	contextPool.Put(c)
 }
 
@@ -123,6 +134,26 @@ func (c *Context) Status(code int) *Context {
 
 // Param retrieves a path parameter by name.
 func (c *Context) Param(name string) string {
+	// Using a direct array access is faster than a loop for small arrays
+	// Most routes have very few parameters
+	if len(name) == 0 {
+		return ""
+	}
+
+	// Fast path for single-character parameter names (common in RESTful APIs)
+	if len(name) == 1 {
+		for i := range c.PathParams {
+			if c.PathParams[i].key == name {
+				return c.PathParams[i].value
+			}
+			if c.PathParams[i].key == "" {
+				break // End of params
+			}
+		}
+		return ""
+	}
+
+	// General case for multi-character names
 	for i := range c.PathParams {
 		if c.PathParams[i].key == name {
 			return c.PathParams[i].value
@@ -134,9 +165,34 @@ func (c *Context) Param(name string) string {
 	return ""
 }
 
-// Query retrieves a query parameter by name.
+// Query retrieves a query parameter by name (with lazy loading)
 func (c *Context) Query(name string) string {
-	return c.QueryParams.Get(name)
+	// Lazy loading of query params with zero allocations for common cases
+	if c.QueryParams == nil && c.Request != nil {
+		if c.Request.URL.RawQuery == "" {
+			return ""
+		}
+		c.QueryParams = c.Request.URL.Query()
+	}
+	if c.QueryParams != nil {
+		return c.QueryParams.Get(name)
+	}
+	return ""
+}
+
+// Optimized method to check if a query parameter exists (avoids additional parsing)
+func (c *Context) HasQuery(name string) bool {
+	if c.QueryParams == nil && c.Request != nil {
+		if c.Request.URL.RawQuery == "" {
+			return false
+		}
+		c.QueryParams = c.Request.URL.Query()
+	}
+	if c.QueryParams != nil {
+		_, exists := c.QueryParams[name]
+		return exists
+	}
+	return false
 }
 
 // Body decodes the request body into the provided interface.
@@ -149,8 +205,9 @@ func (c *Context) Body(v interface{}) error {
 	return json.NewDecoder(c.Request.Body).Decode(v)
 }
 
-// setParam sets a path parameter
+// setParam sets a path parameter with optimized allocation
 func (c *Context) setParam(key, value string) {
+	// Fast path for the first 4 parameters (most common case)
 	for i := range c.PathParams {
 		if c.PathParams[i].key == "" {
 			c.PathParams[i] = param{key: key, value: value}
@@ -158,5 +215,4 @@ func (c *Context) setParam(key, value string) {
 		}
 	}
 	// If we get here, the array is full (rare case)
-	// Could optionally panic or log warning
 }

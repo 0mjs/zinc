@@ -2,6 +2,10 @@
 test:
 	gotestsum --format testname
 
+.PHONY: dev
+dev:
+	air
+
 .PHONY: benchmark
 benchmark:
 	go test -bench=. -benchmem

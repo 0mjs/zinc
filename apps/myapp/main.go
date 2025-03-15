@@ -8,11 +8,8 @@ import (
 	"github.com/0mjs/zinc"
 )
 
-// An entire feature overview of everything that `zinc` can do.
 func main() {
 	app := zinc.New()
-
-	// - GET parameters & context examples
 
 	// Implicit string
 	// Note: This isn't overly useful, but it's a good example of how to implicitly use context.
@@ -207,6 +204,12 @@ func main() {
 			return
 		}
 		c.Status(201).JSON(user)
+	})
+
+	// Cron jobs
+	// Note: Cron jobs are used to run jobs at specified intervals.
+	app.Cron("job", "@every 3s", func() {
+		fmt.Println("Job executed at", time.Now())
 	})
 
 	app.Serve(":8080")

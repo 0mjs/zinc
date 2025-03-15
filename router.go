@@ -24,8 +24,10 @@ type RouteNode struct {
 	part     string
 	children []*RouteNode
 	handler  RouteHandler
+	handlers map[string]RouteHandler // Map of handlers by method
 	isParam  bool
 	isWild   bool
+	method   string
 }
 
 type Route struct {
@@ -50,30 +52,38 @@ var pathPartsCache = sync.Pool{
 	},
 }
 
+// Use a fixed array to avoid allocations for common path lengths
 func getPathParts(path string) []string {
-	parts := pathPartsCache.Get().([]string)
-	parts = parts[:0]
+	// Use a local fixed-size array for most paths (which are short)
+	var fixedParts [8]string
+	parts := fixedParts[:0]
 
 	if path == "" || path == "/" {
-		pathPartsCache.Put(parts)
 		return parts
 	}
 
-	start := 0
-	if path[0] == '/' {
-		start = 1
+	// Fast path for common URL patterns
+	if path[0] == '/' && len(path) > 1 {
+		// Skip the leading slash
+		path = path[1:]
 	}
 
-	for i := start; i < len(path); i++ {
+	// Fast split without regexp
+	start := 0
+	partCount := 0
+	for i := 0; i < len(path); i++ {
 		if path[i] == '/' {
 			if i > start {
-				parts = append(parts, path[start:i])
+				if partCount < len(fixedParts) {
+					parts = append(parts, path[start:i])
+					partCount++
+				}
 			}
 			start = i + 1
 		}
 	}
 
-	if start < len(path) {
+	if start < len(path) && partCount < len(fixedParts) {
 		parts = append(parts, path[start:])
 	}
 
@@ -117,7 +127,9 @@ func (r *Router) Add(method, path string, handlers ...interface{}) {
 	// Update trie storage
 	current := r.router
 	if current == nil {
-		current = &RouteNode{}
+		current = &RouteNode{
+			method: "", // Root node has no method
+		}
 		r.router = current
 	}
 
@@ -139,16 +151,24 @@ func (r *Router) Add(method, path string, handlers ...interface{}) {
 		child := current.findChild(part, isParam, isWild)
 		if child == nil {
 			child = &RouteNode{
-				part:    part,
-				isParam: isParam,
-				isWild:  isWild,
+				part:     part,
+				isParam:  isParam,
+				isWild:   isWild,
+				method:   "",                            // Intermediate nodes have no method
+				handlers: make(map[string]RouteHandler), // Initialize handlers map
 			}
 			current.children = append(current.children, child)
 		}
 
 		if i == len(parts)-1 {
-			child.handler = mainHandler
+			// This is a leaf node - store the handler for this method
+			if child.handlers == nil {
+				child.handlers = make(map[string]RouteHandler)
+			}
+			child.handlers[method] = mainHandler
 			child.path = path
+			child.method = method       // Keep this for backward compatibility
+			child.handler = mainHandler // Keep this for backward compatibility
 		}
 
 		current = child
@@ -198,37 +218,88 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	rc.mu.Unlock()
 }
 
-type pathParts struct {
-	parts [8]string // Most paths won't exceed 8 parts
-	count int
-}
-
-var pathPartsPool = sync.Pool{
-	New: func() interface{} {
-		return &pathParts{}
-	},
-}
-
 func (r *Router) Find(method, path string) (RouteHandler, *Context) {
-	// Fast path for exact matches
+	// Static route fast path - most common case first
 	if routes, ok := r.routes[method]; ok {
 		if route, ok := routes[path]; ok {
-			return route.handler, &Context{PathParams: params{}}
+			// Create a context with empty params
+			ctx := &Context{PathParams: params{}}
+			return route.handler, ctx
 		}
 	}
 
-	// Then check cache
+	// Cache lookup
 	key := routeCacheKey{method, path}
-	if entry, ok := r.cache.get(key); ok {
-		return entry.handler, entry.context
+	if r.cache != nil {
+		if entry, ok := r.cache.get(key); ok {
+			return entry.handler, entry.context
+		}
 	}
 
-	// Fall back to trie matching
-	handler, ctx := r.findRoute(method, path)
-	if handler != nil {
-		r.cache.set(key, routeCacheEntry{handler, ctx})
+	// Perform dynamic route matching
+	// Create a context only when needed
+	ctx := &Context{PathParams: params{}}
+
+	// Parse path parts only if needed for dynamic matching
+	parts := getPathParts(path)
+	current := r.router
+
+	if current != nil {
+		// Optimize common cases first - check for exact match at root level
+		for _, child := range current.children {
+			if !child.isParam && !child.isWild && len(parts) > 0 && child.part == parts[0] {
+				remaining := parts[1:]
+				if match := child.find(remaining, ctx, method); match != nil {
+					// Get the handler for this method
+					var handler RouteHandler
+					if match.handlers != nil {
+						if h, ok := match.handlers[method]; ok {
+							handler = h
+						}
+					}
+					// Fallback to the old handler field
+					if handler == nil && match.handler != nil && (match.method == method || match.method == "") {
+						handler = match.handler
+					}
+
+					if handler != nil {
+						// Cache the result
+						if r.cache != nil {
+							r.cache.set(key, routeCacheEntry{handler, ctx})
+						}
+						return handler, ctx
+					}
+				}
+			}
+		}
+
+		// Then check for dynamic routes
+		found := current.find(parts, ctx, method)
+		if found != nil {
+			// Get the handler for this method
+			var handler RouteHandler
+			if found.handlers != nil {
+				if h, ok := found.handlers[method]; ok {
+					handler = h
+				}
+			}
+			// Fallback to the old handler field
+			if handler == nil && found.handler != nil && (found.method == method || found.method == "") {
+				handler = found.handler
+			}
+
+			if handler != nil {
+				// Cache the result
+				if r.cache != nil {
+					r.cache.set(key, routeCacheEntry{handler, ctx})
+				}
+				return handler, ctx
+			}
+		}
 	}
-	return handler, ctx
+
+	// Return nil handler for 404
+	return nil, nil
 }
 
 func (r *Router) Use(middleware ...Middleware) {
@@ -246,48 +317,58 @@ func chain(handlers []RouteHandler) RouteHandler {
 	}
 }
 
-func (n *RouteNode) find(parts []string, ctx *Context) *RouteNode {
+func (n *RouteNode) find(parts []string, ctx *Context, method string) *RouteNode {
 	if len(parts) == 0 {
-		return n
+		// Check if this node has a handler for the requested method
+		if n.handlers != nil {
+			if handler, ok := n.handlers[method]; ok && handler != nil {
+				// Found a handler for this method
+				return n
+			}
+		}
+		// Fallback to the old method for backward compatibility
+		if n.handler != nil && (n.method == method || n.method == "") {
+			return n
+		}
+		return nil
 	}
 
 	part := parts[0]
 	remaining := parts[1:]
 
-	// Try exact matches first
+	// 1. Check exact matches first (most common case)
 	for _, child := range n.children {
 		if !child.isParam && !child.isWild && child.part == part {
-			if match := child.find(remaining, ctx); match != nil {
+			if match := child.find(remaining, ctx, method); match != nil {
 				return match
 			}
 		}
 	}
 
-	// Then try parameter matches
+	// 2. Check parameter matches
 	for _, child := range n.children {
 		if child.isParam {
-			// Save current param state in case we need to backtrack
-			oldValue := ctx.Param(child.part)
-
-			// Set new param
 			ctx.setParam(child.part, part)
-
-			if match := child.find(remaining, ctx); match != nil {
+			if match := child.find(remaining, ctx, method); match != nil {
 				return match
-			}
-
-			// Backtrack: restore old value if this path didn't work
-			if oldValue != "" {
-				ctx.setParam(child.part, oldValue)
 			}
 		}
 	}
 
-	// Finally try wildcards
+	// 3. Check wildcard matches last
 	for _, child := range n.children {
 		if child.isWild {
 			ctx.setParam("*", strings.Join(append([]string{part}, remaining...), "/"))
-			return child
+			// Check if this wildcard node has a handler for the requested method
+			if child.handlers != nil {
+				if handler, ok := child.handlers[method]; ok && handler != nil {
+					return child
+				}
+			}
+			// Fallback to the old method for backward compatibility
+			if child.handler != nil && (child.method == method || child.method == "") {
+				return child
+			}
 		}
 	}
 

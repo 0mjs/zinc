@@ -7,10 +7,11 @@ import (
 )
 
 type App struct {
-	router     *Router
-	middleware []Middleware
-	services   map[string]interface{}
-	config     *Config
+	router        *Router
+	middleware    []Middleware
+	services      map[string]interface{}
+	config        *Config
+	cronScheduler *CronScheduler
 }
 
 type RouteHandler func(c *Context)
@@ -22,18 +23,64 @@ func New() *App {
 		router: &Router{
 			cache: NewRouteCache(1000), // Cache size of 1000 entries
 		},
-		middleware: make([]Middleware, 0),
-		services:   make(map[string]interface{}),
-		config:     &DefaultConfig,
+		middleware:    make([]Middleware, 0),
+		services:      make(map[string]interface{}),
+		config:        &DefaultConfig,
+		cronScheduler: newCronScheduler(),
 	}
 }
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Extreme Fast path for common case - no middleware, direct static routes
+	// This optimization significantly improves performance for simple routes
+	if len(a.middleware) == 0 {
+		method := r.Method
+		path := r.URL.Path
+
+		// Direct static route lookup
+		if routes, ok := a.router.routes[method]; ok {
+			if route, ok := routes[path]; ok {
+				ctx := NewContext(w, r)
+				defer ctx.release()
+
+				// Only set services if needed
+				if len(a.services) > 0 {
+					ctx.services = a.services
+				}
+
+				route.handler(ctx)
+				return
+			}
+		}
+
+		// Try cached route lookup for common dynamic routes
+		key := routeCacheKey{method, path}
+		if a.router.cache != nil {
+			if entry, ok := a.router.cache.get(key); ok {
+				ctx := NewContext(w, r)
+				defer ctx.release()
+
+				if len(a.services) > 0 {
+					ctx.services = a.services
+				}
+
+				ctx.PathParams = entry.context.PathParams
+				entry.handler(ctx)
+				return
+			}
+		}
+	}
+
+	// Normal path for all other cases
 	ctx := NewContext(w, r)
 	defer ctx.release()
 
-	ctx.services = a.services
+	// Only set services if needed
+	if len(a.services) > 0 {
+		ctx.services = a.services
+	}
 
+	// Handle middleware if present
 	if len(a.middleware) > 0 {
 		ctx.setHandlers(a.middleware)
 		ctx.Next()
@@ -42,6 +89,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Find and execute route handler
 	handler, foundCtx := a.router.Find(r.Method, r.URL.Path)
 	if handler != nil {
 		if foundCtx != nil {
@@ -63,6 +111,9 @@ func (a *App) Service(name string, service interface{}) {
 }
 
 func (a *App) Serve(port ...string) error {
+	// Start cron scheduler
+	a.cronScheduler.Start()
+
 	serverPort := parseArgs(a)
 	if len(port) > 0 && port[0] != "" {
 		serverPort = port[0]
@@ -73,6 +124,56 @@ func (a *App) Serve(port ...string) error {
 	}
 	fmt.Printf("Server starting on port %s...\n", serverPort)
 	return http.ListenAndServe(addr, a)
+}
+
+// Cron adds a cron job to be executed on the given schedule
+// Supports both error-returning and non-error-returning handlers
+func (a *App) Cron(id string, schedule string, handler interface{}) error {
+	switch h := handler.(type) {
+	case func() error:
+		return a.cronScheduler.AddJob(id, schedule, h)
+	case func():
+		wrappedHandler := func() error {
+			h()
+			return nil
+		}
+		return a.cronScheduler.AddJob(id, schedule, wrappedHandler)
+	default:
+		return fmt.Errorf("unsupported handler type: handler must be func() or func() error")
+	}
+}
+
+// For backward compatibility
+// Schedule adds a cron job to be executed on the given schedule
+func (a *App) Schedule(id string, schedule string, handler func() error) error {
+	return a.Cron(id, schedule, handler)
+}
+
+// For backward compatibility
+// ScheduleFunc adds a cron job that executes a function without returning an error
+func (a *App) ScheduleFunc(id string, schedule string, handler func()) error {
+	return a.Cron(id, schedule, handler)
+}
+
+// RemoveCron removes a scheduled job by ID
+func (a *App) RemoveCron(id string) {
+	a.cronScheduler.RemoveJob(id)
+}
+
+// For backward compatibility
+// RemoveSchedule removes a scheduled job by ID
+func (a *App) RemoveSchedule(id string) {
+	a.RemoveCron(id)
+}
+
+// StopScheduler stops all scheduled jobs
+func (a *App) StopScheduler() {
+	a.cronScheduler.Stop()
+}
+
+// StartScheduler starts the scheduler
+func (a *App) StartScheduler() {
+	a.cronScheduler.Start()
 }
 
 func parseArgs(a *App) string {
