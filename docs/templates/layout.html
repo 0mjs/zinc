@@ -464,10 +464,10 @@
             Getting Started
             <span class="version-badge">v0.0.54</span>
           </a>
-          <a href="/installation" class="sub-nav-link">
+          <a href="/getting-started#installation" class="sub-nav-link">
             Installation
           </a>
-          <a href="/quick-start" class="sub-nav-link">
+          <a href="/getting-started#quick-start" class="sub-nav-link">
             Quick Start
           </a>
         </nav>
@@ -594,7 +594,7 @@
     // Mark active links
     document.querySelectorAll('.nav-link, .sub-nav-link').forEach(link => {
       const href = link.getAttribute('href');
-      if (href === currentPath || (href !== '/' && currentPath.startsWith(href))) {
+      if (href === currentPath || (href !== '/' && currentPath.startsWith(href.split('#')[0]))) {
         link.classList.add('active');
 
         // Expand parent section if it's a sub-link
@@ -605,6 +605,28 @@
           }
         }
       }
+    });
+
+    // Smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="/getting-started#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        // Extract the id from the href
+        const targetId = this.getAttribute('href').split('#')[1];
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          // Check if we're already on the getting-started page
+          if (window.location.pathname === '/getting-started') {
+            // Smooth scroll to the element
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            // Navigate to the getting-started page with the hash
+            window.location.href = this.getAttribute('href');
+          }
+        }
+      });
     });
 
     document.querySelectorAll('pre code').forEach((block) => {
