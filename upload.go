@@ -83,16 +83,16 @@ func (f *FileUpload) SaveFile(file *multipart.FileHeader) (string, error) {
 	return filename, nil
 }
 
-// Add file upload methods to Context
-func (c *Context) SaveFile(file *multipart.FileHeader) (string, error) {
-	if app, ok := c.Get("app").(*App); ok {
-		if app.fileUpload == nil {
-			return "", fmt.Errorf("file upload handler not initialized")
-		}
-		return app.fileUpload.SaveFile(file)
-	}
-	return "", fmt.Errorf("app context not found")
-}
+// // Add file upload methods to Context
+// func (c *Context) SaveFile(file *multipart.FileHeader) (string, error) {
+// 	if app, ok := c.Get("app").(*App); ok {
+// 		if app.fileUpload == nil {
+// 			return "", fmt.Errorf("file upload handler not initialized")
+// 		}
+// 		return app.fileUpload.SaveFile(file)
+// 	}
+// 	return "", fmt.Errorf("app context not found")
+// }
 
 // File gets an uploaded file from the request
 func (c *Context) File(name string) (*multipart.FileHeader, error) {

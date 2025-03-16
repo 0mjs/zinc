@@ -2,9 +2,17 @@ package zinc
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -215,4 +223,291 @@ func (c *Context) setParam(key, value string) {
 		}
 	}
 	// If we get here, the array is full (rare case)
+}
+
+// BindOptions holds options for binding data
+type BindOptions struct {
+	// DisableValidation disables validation after binding
+	DisableValidation bool
+	// DisableUnknownFields disables errors for unknown fields
+	DisableUnknownFields bool
+}
+
+// BindJSON binds the JSON request body to the provided struct and validates it
+func (c *Context) BindJSON(v interface{}, opts ...*BindOptions) error {
+	if c.Request.Body == nil {
+		return errors.New("request body is empty")
+	}
+	defer c.Request.Body.Close()
+
+	options := getBindOptions(opts)
+	decoder := json.NewDecoder(c.Request.Body)
+	if !options.DisableUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
+
+	if err := decoder.Decode(v); err != nil {
+		return fmt.Errorf("failed to bind JSON: %w", err)
+	}
+
+	if !options.DisableValidation {
+		// Get app from context and validate
+		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+			if errors := app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		}
+	}
+
+	return nil
+}
+
+// BindXML binds the XML request body to the provided struct and validates it
+func (c *Context) BindXML(v interface{}, opts ...*BindOptions) error {
+	if c.Request.Body == nil {
+		return errors.New("request body is empty")
+	}
+	defer c.Request.Body.Close()
+
+	options := getBindOptions(opts)
+	if err := xml.NewDecoder(c.Request.Body).Decode(v); err != nil {
+		return fmt.Errorf("failed to bind XML: %w", err)
+	}
+
+	if !options.DisableValidation {
+		// Get app from context and validate
+		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+			if errors := app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		}
+	}
+
+	return nil
+}
+
+// BindForm binds form data to the provided struct and validates it
+func (c *Context) BindForm(v interface{}, opts ...*BindOptions) error {
+	options := getBindOptions(opts)
+
+	// Parse form if not already parsed
+	if c.Request.Form == nil {
+		if err := c.Request.ParseForm(); err != nil {
+			return fmt.Errorf("failed to parse form: %w", err)
+		}
+	}
+
+	if err := bindData(v, c.Request.Form, "form"); err != nil {
+		return err
+	}
+
+	if !options.DisableValidation {
+		// Get app from context and validate
+		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+			if errors := app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		}
+	}
+
+	return nil
+}
+
+// BindQuery binds query parameters to the provided struct and validates it
+func (c *Context) BindQuery(v interface{}, opts ...*BindOptions) error {
+	options := getBindOptions(opts)
+
+	// Ensure query params are parsed
+	if c.QueryParams == nil {
+		c.QueryParams = c.Request.URL.Query()
+	}
+
+	if err := bindData(v, c.QueryParams, "query"); err != nil {
+		return err
+	}
+
+	if !options.DisableValidation {
+		// Get app from context and validate
+		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+			if errors := app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		}
+	}
+
+	return nil
+}
+
+// Bind automatically binds request data based on Content-Type
+func (c *Context) Bind(v interface{}, opts ...*BindOptions) error {
+	contentType := c.Request.Header.Get("Content-Type")
+
+	// Extract the MIME type
+	if idx := strings.IndexByte(contentType, ';'); idx >= 0 {
+		contentType = contentType[0:idx]
+	}
+	contentType = strings.TrimSpace(contentType)
+
+	// Bind based on Content-Type
+	switch contentType {
+	case "application/json":
+		return c.BindJSON(v, opts...)
+	case "application/xml", "text/xml":
+		return c.BindXML(v, opts...)
+	case "application/x-www-form-urlencoded", "multipart/form-data":
+		return c.BindForm(v, opts...)
+	default:
+		// Default to JSON for common API usage
+		return c.BindJSON(v, opts...)
+	}
+}
+
+// FormFile returns the first file from the multipart form
+func (c *Context) FormFile(name string) (*multipart.FileHeader, error) {
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		return nil, err
+	}
+	file, header, err := c.Request.FormFile(name)
+	if err != nil {
+		return nil, err
+	}
+	file.Close()
+	return header, nil
+}
+
+// FormFiles returns all files with the given field name
+func (c *Context) FormFiles(name string) ([]*multipart.FileHeader, error) {
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		return nil, err
+	}
+
+	fhs := c.Request.MultipartForm.File[name]
+	if len(fhs) == 0 {
+		return nil, errors.New("no files with specified name found")
+	}
+
+	return fhs, nil
+}
+
+// SaveFile saves a file from a multipart form to the specified destination
+func (c *Context) SaveFile(fileHeader *multipart.FileHeader, dst string) error {
+	src, err := fileHeader.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, src)
+	return err
+}
+
+// Helper function to get bind options with defaults
+func getBindOptions(opts []*BindOptions) *BindOptions {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return &BindOptions{}
+}
+
+// Helper function to bind data to struct from form or query values
+func bindData(ptr interface{}, data map[string][]string, tag string) error {
+	if ptr == nil {
+		return errors.New("binding element must be a pointer")
+	}
+
+	typ := reflect.TypeOf(ptr).Elem()
+	val := reflect.ValueOf(ptr).Elem()
+
+	if typ.Kind() != reflect.Struct {
+		return errors.New("binding element must be a struct")
+	}
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		fieldValue := val.Field(i)
+
+		// Skip unexported fields
+		if !fieldValue.CanSet() {
+			continue
+		}
+
+		// Get the tag value
+		tagValue := field.Tag.Get(tag)
+		if tagValue == "" {
+			// Use lowercase field name if no tag
+			tagValue = strings.ToLower(field.Name)
+		} else if tagValue == "-" {
+			// Skip this field if tag is "-"
+			continue
+		}
+
+		// Extract the field name (before any comma)
+		if idx := strings.Index(tagValue, ","); idx >= 0 {
+			tagValue = tagValue[:idx]
+		}
+
+		// Check if the field exists in the data
+		inputValue, exists := data[tagValue]
+		if !exists || len(inputValue) == 0 {
+			continue
+		}
+
+		// Set the field value based on its type
+		if err := setFieldValue(fieldValue, inputValue[0]); err != nil {
+			return fmt.Errorf("failed to set field %s: %w", field.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// Helper function to set a field value based on its type
+func setFieldValue(value reflect.Value, input string) error {
+	if !value.CanSet() {
+		return nil
+	}
+
+	switch value.Kind() {
+	case reflect.String:
+		value.SetString(input)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		val, err := strconv.ParseInt(input, 10, 64)
+		if err != nil {
+			return err
+		}
+		value.SetInt(val)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		val, err := strconv.ParseUint(input, 10, 64)
+		if err != nil {
+			return err
+		}
+		value.SetUint(val)
+	case reflect.Float32, reflect.Float64:
+		val, err := strconv.ParseFloat(input, 64)
+		if err != nil {
+			return err
+		}
+		value.SetFloat(val)
+	case reflect.Bool:
+		val, err := strconv.ParseBool(input)
+		if err != nil {
+			return err
+		}
+		value.SetBool(val)
+	case reflect.Slice:
+		// Only support []string for now
+		if value.Type().Elem().Kind() == reflect.String {
+			value.Set(reflect.ValueOf([]string{input}))
+		}
+	default:
+		return fmt.Errorf("unsupported field type: %s", value.Kind())
+	}
+
+	return nil
 }

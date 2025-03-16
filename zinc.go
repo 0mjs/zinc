@@ -1,10 +1,14 @@
 package zinc
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 type App struct {
@@ -137,8 +141,58 @@ func (a *App) Serve(port ...string) error {
 	if !strings.Contains(serverPort, ":") {
 		addr = ":" + serverPort
 	}
+
+	// Create a new server with timeouts
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      a,
+		ReadTimeout:  a.config.ReadTimeout,
+		WriteTimeout: a.config.WriteTimeout,
+		IdleTimeout:  a.config.IdleTimeout,
+	}
+
+	// Server run context
+	serverCtx, serverStopCtx := context.WithCancel(context.Background())
+
+	// Listen for syscall signals for process to interrupt/quit
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		<-sig
+
+		// Shutdown signal received, graceful shutdown
+		shutdownCtx, cancel := context.WithTimeout(serverCtx, a.config.ShutdownTimeout)
+		defer cancel()
+
+		go func() {
+			<-shutdownCtx.Done()
+			if shutdownCtx.Err() == context.DeadlineExceeded {
+				fmt.Println("Graceful shutdown timed out... forcing exit")
+				os.Exit(1)
+			}
+		}()
+
+		// Trigger graceful shutdown
+		fmt.Println("Shutting down server...")
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			fmt.Printf("Error during shutdown: %v\n", err)
+		}
+
+		// Stop cron scheduler
+		a.cronScheduler.Stop()
+
+		serverStopCtx()
+	}()
+
+	// Start server
 	fmt.Printf("Server starting on port %s...\n", serverPort)
-	return http.ListenAndServe(addr, a)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+
+	// Wait for server context to be stopped
+	<-serverCtx.Done()
+	return nil
 }
 
 // Cron adds a cron job to be executed on the given schedule
@@ -209,6 +263,11 @@ func (a *App) SetFileUpload(upload *FileUpload) {
 // Validate validates a struct using the validator
 func (a *App) Validate(s interface{}) ValidationErrors {
 	return a.validator.Validate(s)
+}
+
+// SetConfig sets the application configuration
+func (a *App) SetConfig(config *Config) {
+	a.config = config
 }
 
 func parseArgs(a *App) string {

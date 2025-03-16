@@ -331,15 +331,14 @@ func main() {
 			return
 		}
 
-		filename, err := c.SaveFile(file)
+		err = c.SaveFile(file, "uploads")
 		if err != nil {
 			c.Status(500).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
 		c.JSON(zinc.Map{
-			"message":  "File uploaded successfully",
-			"filename": filename,
+			"message": "File uploaded successfully",
 		})
 	})
 
@@ -353,12 +352,12 @@ func main() {
 
 		var uploaded []string
 		for _, file := range files {
-			filename, err := c.SaveFile(file)
+			err = c.SaveFile(file, "uploads")
 			if err != nil {
 				c.Status(500).JSON(zinc.Map{"error": err.Error()})
 				return
 			}
-			uploaded = append(uploaded, filename)
+			uploaded = append(uploaded, file.Filename)
 		}
 
 		c.JSON(zinc.Map{
@@ -393,7 +392,7 @@ func main() {
 			return
 		}
 
-		filename, err := c.SaveFile(file)
+		err = c.SaveFile(file, "uploads")
 		if err != nil {
 			c.Status(500).JSON(zinc.Map{"error": err.Error()})
 			return
@@ -403,7 +402,7 @@ func main() {
 		data := zinc.Map{
 			"Title":   post.Title,
 			"Content": post.Content,
-			"Image":   filename,
+			"Image":   file.Filename,
 			"Created": time.Now(),
 		}
 
