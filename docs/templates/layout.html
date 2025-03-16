@@ -46,6 +46,17 @@
       --zinc-900: #18181b;
       --zinc-950: #09090b;
 
+      /* Silver accent colors */
+      --silver-100: #f7f9fa;
+      --silver-200: #e6eaed;
+      --silver-300: #d5dade;
+      --silver-400: #c3ccd2;
+      --silver-500: #b0bbc3;
+      --silver-600: #8c9aa5;
+      --silver-700: #6b7a87;
+      --silver-800: #4a5460;
+      --silver-900: #2d3642;
+
       /* Custom colors for code highlighting */
       --code-bg: #f8fafc;
       --code-text: #334155;
@@ -53,6 +64,10 @@
       --code-function: #0284c7;
       --code-string: #0891b2;
       --code-comment: #94a3b8;
+
+      /* Primary color for links and actions */
+      --primary: #646cff;
+      --primary-dark: #5258cc;
     }
 
     * {
@@ -63,7 +78,7 @@
 
     body {
       font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: var(--zinc-200);
+      background-color: var(--zinc-100);
       color: var(--zinc-800);
       line-height: 1.6;
       display: flex;
@@ -76,19 +91,23 @@
       min-height: 100vh;
     }
 
-    /* Sidebar with metallic gradient */
+    /* Enhanced sidebar with silver gradient */
     .sidenav {
-      width: 280px;
-      background: linear-gradient(135deg, var(--zinc-800), var(--zinc-900));
+      width: 300px;
+      background: linear-gradient(145deg,
+          var(--zinc-800),
+          var(--zinc-900) 40%,
+          var(--zinc-950));
       color: white;
       position: fixed;
       height: 100vh;
       overflow-y: auto;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+      border-right: 1px solid rgba(255, 255, 255, 0.07);
+      z-index: 100;
     }
 
-    /* Metallic sheen effect */
+    /* Enhanced metallic sheen effect */
     .sidenav::before {
       content: '';
       position: absolute;
@@ -96,40 +115,90 @@
       left: 0;
       right: 0;
       height: 100%;
-      background: linear-gradient(45deg,
-          rgba(255, 255, 255, 0.03) 0%,
-          rgba(255, 255, 255, 0.08) 25%,
-          rgba(255, 255, 255, 0.03) 50%,
-          rgba(255, 255, 255, 0.01) 100%);
+      background:
+        linear-gradient(120deg,
+          rgba(255, 255, 255, 0.01) 0%,
+          rgba(255, 255, 255, 0.08) 20%,
+          rgba(255, 255, 255, 0.15) 30%,
+          rgba(255, 255, 255, 0.08) 40%,
+          rgba(255, 255, 255, 0.01) 60%);
+      background-size: 200% 100%;
+      animation: sheen 8s ease-in-out infinite alternate;
       pointer-events: none;
     }
 
+    @keyframes sheen {
+      0% {
+        background-position: 0% 50%;
+      }
+
+      100% {
+        background-position: 100% 50%;
+      }
+    }
+
+    .logo-container {
+      padding: 2rem 1.5rem 0.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      margin-bottom: 1rem;
+    }
+
     .logo {
-      font-size: 2.5rem;
+      font-size: 3.5rem;
       font-weight: 700;
       color: white;
-      padding: 2rem 1.5rem 1.5rem;
       text-transform: lowercase;
       letter-spacing: -1px;
-      background: linear-gradient(135deg, #c0c0c0, #e0e0e0);
+      background: linear-gradient(135deg,
+          #e0e0e0,
+          #c0c0c0 40%,
+          #a0a0a0 50%,
+          #c0c0c0 60%,
+          #e0e0e0);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       position: relative;
+      margin-bottom: 0.5rem;
+    }
+
+    .logo-tagline {
+      font-size: 0.85rem;
+      color: var(--silver-400);
+      font-weight: 300;
+      margin-bottom: 1.5rem;
+      letter-spacing: 1px;
+    }
+
+    .sidebar-header {
+      padding: 1rem 1.5rem 0.25rem;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      color: var(--zinc-400);
+      font-weight: 600;
     }
 
     .nav-links {
       display: flex;
       flex-direction: column;
-      padding: 1rem 0;
+      padding: 0;
+    }
+
+    .nav-section {
+      margin-bottom: 1.5rem;
     }
 
     .nav-link {
       color: var(--zinc-300);
       text-decoration: none;
-      padding: 0.8rem 1.5rem;
+      padding: 0.65rem 1.5rem;
       font-weight: 500;
       position: relative;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       border-left: 3px solid transparent;
       display: flex;
       align-items: center;
@@ -138,37 +207,137 @@
 
     .nav-link:hover {
       color: white;
-      background-color: rgba(255, 255, 255, 0.05);
+      background-color: rgba(255, 255, 255, 0.07);
+      transform: translateX(2px);
     }
 
     .nav-link.active {
       color: white;
-      border-left: 3px solid #c0c0c0;
-      background-color: rgba(255, 255, 255, 0.07);
+      border-left: 3px solid var(--silver-400);
+      background: linear-gradient(90deg,
+          rgba(255, 255, 255, 0.12) 0%,
+          rgba(255, 255, 255, 0) 100%);
+    }
+
+    .nav-link svg {
+      margin-right: 10px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-link:hover svg {
+      transform: scale(1.1);
+    }
+
+    .sub-nav-link {
+      color: var(--zinc-400);
+      text-decoration: none;
+      padding: 0.45rem 1.5rem 0.45rem 3rem;
+      font-weight: 400;
+      position: relative;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    .sub-nav-link:hover {
+      color: white;
+    }
+
+    .sub-nav-link.active {
+      color: white;
+      font-weight: 500;
     }
 
     .content {
       flex: 1;
-      padding: 2rem 3rem;
-      margin-left: 280px;
-      width: calc(100% - 280px);
+      padding: 2.5rem 4rem;
+      margin-left: 300px;
+      width: calc(100% - 300px);
       max-width: 1200px;
-      background-color: var(--zinc-200);
-      background-image: linear-gradient(135deg, #e4e4e7 0%, #d4d4d8 100%);
+      background-color: var(--zinc-50);
+      min-height: 100vh;
+      position: relative;
+    }
+
+    .content::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 220px;
+      background: linear-gradient(180deg, var(--zinc-200) 0%, var(--zinc-50) 100%);
+      z-index: -1;
+    }
+
+    /* Version badge */
+    .version-badge {
+      background: linear-gradient(135deg, var(--silver-800), var(--silver-900));
+      color: white;
+      padding: 0.2rem 0.6rem;
+      border-radius: 1rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-left: 0.75rem;
+      letter-spacing: 0.5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Sidebar footer */
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.8rem;
+      color: var(--zinc-400);
+      text-align: center;
+      margin-top: auto;
+    }
+
+    .sidebar-footer a {
+      color: var(--silver-400);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .sidebar-footer a:hover {
+      color: white;
+    }
+
+    /* Social links */
+    .social-links {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+
+    .social-link {
+      color: var(--zinc-400);
+      transition: all 0.2s ease;
+    }
+
+    .social-link:hover {
+      color: white;
+      transform: translateY(-2px);
     }
 
     /* Custom code highlighting styles */
     pre {
       position: relative;
       border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
       background-color: var(--code-bg);
       border: 1px solid var(--zinc-300);
+      margin: 1.5rem 0;
     }
 
     pre code {
       border-radius: 8px;
       color: var(--code-text);
+      padding: 1rem !important;
     }
 
     pre code .hljs-keyword {
@@ -188,7 +357,7 @@
     }
 
     .copy-button {
-      background: #e2e8f0;
+      background: rgba(226, 232, 240, 0.8);
       border: none;
       border-radius: 4px;
       color: #64748b;
@@ -197,15 +366,50 @@
       width: 32px;
       height: 32px;
       opacity: 0.8;
+      backdrop-filter: blur(4px);
     }
 
     .copy-button:hover {
       color: #334155;
       opacity: 1;
+      transform: scale(1.05);
     }
 
     .copy-button.clipboard-copied {
       color: #10b981;
+    }
+
+    /* Performance indicator */
+    .performance-meter {
+      display: flex;
+      align-items: center;
+      margin: 1rem auto;
+      width: 80%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .performance-indicator {
+      height: 100%;
+      width: 70%;
+      background: linear-gradient(90deg, var(--silver-400), var(--silver-600));
+      position: absolute;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.7;
+      }
     }
 
     /* Responsive design */
@@ -232,40 +436,147 @@
 <body>
   <div class="container">
     <aside class="sidenav">
-      <h1 class="logo">zinc</h1>
-      <nav class="nav-links">
-        <a href="/" class="nav-link nav-intro">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
-            <path
-              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          Introduction
-        </a>
-        <a href="/getting-started" class="nav-link nav-getting-started">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
-            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round"></path>
-          </svg>
-          Getting Started
-        </a>
-        <a href="/guide" class="nav-link nav-guide">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
-            <path
-              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          Guide
-        </a>
-        <a href="/concepts" class="nav-link nav-concepts">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
-            <path
-              d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          Concepts
-        </a>
-      </nav>
+      <div class="logo-container">
+        <h1 class="logo">zinc</h1>
+        <p class="logo-tagline">A web framework for <img height="36" width="36" src="../static/go.svg" alt="Go"
+            class="logo-icon" style="vertical-align: middle; margin: 0 2px 3px 2px;"> </p>
+        <div class="performance-meter">
+          <div class="performance-indicator"></div>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="sidebar-header">Getting Started</div>
+        <nav class="nav-links">
+          <a href="/" class="nav-link nav-intro">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Introduction
+          </a>
+          <a href="/getting-started" class="nav-link nav-getting-started">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+            Getting Started
+            <span class="version-badge">v0.0.54</span>
+          </a>
+          <a href="/installation" class="sub-nav-link">
+            Installation
+          </a>
+          <a href="/quick-start" class="sub-nav-link">
+            Quick Start
+          </a>
+        </nav>
+      </div>
+
+      <div class="nav-section">
+        <div class="sidebar-header">Core Concepts</div>
+        <nav class="nav-links">
+          <a href="/guide" class="nav-link nav-guide">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Guide
+          </a>
+          <a href="/concepts" class="nav-link nav-concepts">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Concepts
+          </a>
+        </nav>
+      </div>
+
+      <div class="nav-section">
+        <div class="sidebar-header">Features</div>
+        <nav class="nav-links">
+          <a href="/routing" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Routing
+          </a>
+          <a href="/middleware" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Middleware
+          </a>
+          <a href="/handling-requests" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Handling Requests
+          </a>
+          <a href="/responses" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Responses
+          </a>
+        </nav>
+      </div>
+
+      <div class="nav-section">
+        <div class="sidebar-header">Advanced</div>
+        <nav class="nav-links">
+          <a href="/performance" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+            Performance
+          </a>
+          <a href="/deployment" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Deployment
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <div>Built with ⚡ by Zinc Team</div>
+        <div class="social-links">
+          <a href="https://github.com/0mjs/zinc" class="social-link" target="_blank" rel="noopener noreferrer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
+                fill="currentColor" />
+            </svg>
+          </a>
+          <a href="https://twitter.com/zinc_framework" class="social-link" target="_blank" rel="noopener noreferrer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </a>
+          <a href="https://discord.gg/zinc" class="social-link" target="_blank" rel="noopener noreferrer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M20.317 4.492c-1.53-.69-3.17-1.2-4.885-1.49a.075.075 0 00-.079.036c-.21.39-.444.906-.608 1.31a18.672 18.672 0 00-5.508 0c-.164-.4-.4-.921-.609-1.31a.077.077 0 00-.079-.036c-1.714.29-3.354.8-4.885 1.49a.07.07 0 00-.032.028C.533 9.09-.32 13.555.099 17.96a.08.08 0 00.031.055c1.94 1.42 3.846 2.285 5.735 2.86a.078.078 0 00.084-.027c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.105c-.628-.236-1.226-.517-1.802-.835a.078.078 0 01-.008-.127c.126-.094.252-.192.372-.292a.074.074 0 01.078-.01c3.927 1.793 8.18 1.793 12.061 0a.074.074 0 01.078.01c.12.098.246.198.372.292a.078.078 0 01-.006.127c-.576.318-1.174.599-1.802.835a.077.077 0 00-.041.105c.36.699.772 1.364 1.225 1.994a.076.076 0 00.084.027c1.898-.575 3.804-1.44 5.745-2.86a.077.077 0 00.032-.055c.5-5.177-.838-9.674-3.549-13.44a.061.061 0 00-.031-.028zM8.02 15.278c-1.182 0-2.157-1.069-2.157-2.38 0-1.312.956-2.38 2.157-2.38 1.21 0 2.176 1.077 2.157 2.38 0 1.312-.956 2.38-2.157 2.38zm7.975 0c-1.183 0-2.157-1.069-2.157-2.38 0-1.312.955-2.38 2.157-2.38 1.21 0 2.176 1.077 2.157 2.38 0 1.312-.946 2.38-2.157 2.38z"
+                fill="currentColor" />
+            </svg>
+          </a>
+        </div>
+      </div>
     </aside>
 
     <main class="content">
@@ -279,9 +590,20 @@
     hljs.highlightAll();
 
     const currentPath = window.location.pathname;
-    document.querySelectorAll('.nav-link').forEach(link => {
-      if (link.getAttribute('href') === currentPath) {
+
+    // Mark active links
+    document.querySelectorAll('.nav-link, .sub-nav-link').forEach(link => {
+      const href = link.getAttribute('href');
+      if (href === currentPath || (href !== '/' && currentPath.startsWith(href))) {
         link.classList.add('active');
+
+        // Expand parent section if it's a sub-link
+        if (link.classList.contains('sub-nav-link')) {
+          const parentSection = link.closest('.nav-section');
+          if (parentSection) {
+            parentSection.classList.add('expanded');
+          }
+        }
       }
     });
 

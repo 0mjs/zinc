@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Introduction | Zinc</title>
+  <style>
+    .intro-header {
+      position: relative;
+      margin-bottom: 2rem;
+    }
+
+    .intro-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #52525b, #71717a);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .intro-subtitle {
+      font-size: 1.2rem;
+      color: var(--zinc-600);
+      max-width: 650px;
+      margin-bottom: 2rem;
+    }
+
+    .section {
+      margin-bottom: 2.5rem;
+    }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--zinc-800);
+    }
+
+    .step {
+      margin-bottom: 1.5rem;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--silver-600), var(--silver-800));
+      color: white;
+      border-radius: 50%;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-right: 0.75rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .step-content {
+      margin-top: 0.5rem;
+      margin-left: 2.5rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 2rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      margin-right: 0.5rem;
+    }
+
+    .badge-primary {
+      background: linear-gradient(135deg, #646cff20, #5258cc20);
+      color: var(--primary);
+      border: 1px solid #646cff40;
+    }
+
+    .note {
+      background: #f0f9ff;
+      border-left: 4px solid #0ea5e9;
+      padding: 1rem;
+      border-radius: 0.25rem;
+      margin: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+
+    .note p {
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="intro-header">
+    <h1 class="intro-title">Introduction</h1>
+    <p class="intro-subtitle">Zinc is a lightweight, high-performance web framework for Go focused on simplicity and
+      speed.</p>
+  </div>
+
+  <div class="section">
+    <h2 class="section-title">Installation</h2>
+
+    <div class="step">
+      <span class="step-number">1</span>
+      <span>Install Zinc using Go modules</span>
+      <div class="step-content">
+        <pre><code class="language-bash">go get github.com/0mjs/zinc</code></pre>
+      </div>
+    </div>
+
+    <div class="note">
+      <p>Zinc requires Go 1.22 or later for optimal performance.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="section-title">Hello World Example</h2>
+
+    <div class="step">
+      <span class="step-number">1</span>
+      <span>Create a new file named <code>main.go</code></span>
+      <div class="step-content">
+        <pre><code class="language-go">package main
+
+import (
+	"net/http"
+
+	"github.com/0mjs/zinc"
+)
+
+func main() {
+	app := zinc.New()
+
+	app.Get("/", func(c *zinc.Context) error {
+		return c.String(http.StatusOK, "Hello, Zinc!")
+	})
+
+	app.Start(":8080")
+}</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-number">2</span>
+      <span>Run your application</span>
+      <div class="step-content">
+        <pre><code class="language-bash">go run main.go</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-number">3</span>
+      <span>Visit <code>http://localhost:8080</code> in your browser</span>
+      <div class="step-content">
+        <p>You should see "Hello, Zinc!" displayed in your browser.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <p>That's it! You've successfully created your first Zinc application. For more details, check out the <a
+        href="/guide">Guide</a> or explore <a href="/concepts">Core Concepts</a>.</p>
+  </div>
+</body>
+
+</html>

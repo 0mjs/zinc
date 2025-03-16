@@ -1,186 +1,238 @@
 <article>
-  <h1>Getting Started</h1>
-
-  <div class="github-icon">
-    <a href="https://github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
-      <svg height="24" width="24" viewBox="0 0 16 16" fill="#fff">
-        <path
-          d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
-        </path>
-      </svg>
-    </a>
+  <div class="intro-header">
+    <h1 class="intro-title">Getting Started</h1>
+    <p class="intro-subtitle">Build your first Zinc application with these simple steps.</p>
   </div>
 
-  <div class="github-icon">
-    <a href="https://pkg.go.dev/github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
-      <img src="../static/gopher.png" alt="Go Gopher" width="20" height="24">
-    </a>
-  </div>
+  <div class="section">
+    <h2 class="section-title">Prerequisites</h2>
 
-  <p class="mt-1">Getting started with Zinc is easy, if you're familiar with Go and common API patterns, you'll be
-    right at home.
-  </p>
-
-  <section class="language-shell">
-    <h3>Prerequisites</h3>
-    <ul class="prerequisites">
-      <li><a class="external-link glacier" href="https://tip.golang.org/doc/go1.22">Go 1.22+</a>, due to the latest
-        changes
-        to <code class="inline-code-green">net/http</code></li>
-      <li>
-        You must have Go installed on your machine to use the framework. If you don't have
-        it installed, <a class="external-link glacier" href="https://go.dev/dl/">download it</a>
-        before continuing.
-      </li>
-      <li>A text editor or IDE of your choice</li>
-    </ul>
-  </section>
-
-  <section class="language-shell">
-    <h3>Installation</h3>
-    <p>
-      In a new terminal window - paste the following commands to create a new directory, initialise your Go project
-      (<code class="inline-code-green">new-zinc-app</code>),
-      create a new <code class="inline-code-green">server.go</code> file, and install <code
-        class="inline-code-pink">0mjs/zinc</code> from GitHub as a dependency.
-    </p>
-    <div class="code-block os-code-block">
-      <div class="os-toggle">
-        <button class="os-btn active" data-os="mac">Linux & macOS</button>
-        <button class="os-btn" data-os="windows">Windows</button>
+    <div class="prereq-list">
+      <div class="prereq-item">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+            stroke="var(--silver-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>Go 1.22 or later</span>
       </div>
-      <pre><code class="mac-commands">mkdir new-zinc-app && cd new-zinc-app && \
-go mod init new-zinc-app && \
-touch server.go && \
-go get github.com/0mjs/zinc</code><code class="windows-commands" style="display: none">mkdir new-zinc-app && cd new-zinc-app && ^
-go mod init new-zinc-app && ^
-New-Item -Path . -Name "server.go" -ItemType "file" && ^
-go get github.com/0mjs/zinc</code></pre>
+      <div class="prereq-item">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+            stroke="var(--silver-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>Basic knowledge of Go programming</span>
+      </div>
+      <div class="prereq-item">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+            stroke="var(--silver-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>A text editor or IDE of your choice</span>
+      </div>
     </div>
-  </section>
 
-  <section class="language-beans">
-    <h3>Basic Usage</h3>
-    <p>
-      You can create a new application by calling <code class="inline-code-pink">zinc.New()</code>.
-      For the sake of an initial example, we'll create a simple route that returns a string response when passed a
-      string value
-      as the second argument (or, in the place of a handler method).
-    </p>
-    <p>
-      Zinc's <code class="inline-code-green">.Serve()</code> method infers the default port to be <code
-        class="inline-code-green">8080</code>.
-    </p>
-    <br>
-    <code class="inline-code-green">server.go</code>
-    <div class="code-block">
-      <pre><code>package main
+    <div class="note">
+      <p>Zinc requires Go 1.22+ due to the latest changes to the <code>net/http</code> package. If you don't have Go
+        installed, <a href="https://go.dev/dl/" target="_blank">download it</a> before continuing.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="section-title">Create a New Project</h2>
+
+    <div class="step">
+      <span class="step-number">1</span>
+      <span>Create a new directory for your project</span>
+      <div class="step-content">
+        <pre><code class="language-bash">mkdir zinc-project
+cd zinc-project</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-number">2</span>
+      <span>Initialize your Go module</span>
+      <div class="step-content">
+        <pre><code class="language-bash">go mod init zinc-project</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-number">3</span>
+      <span>Install the Zinc framework</span>
+      <div class="step-content">
+        <pre><code class="language-bash">go get github.com/0mjs/zinc</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="section-title">Create Your First API</h2>
+
+    <div class="step">
+      <span class="step-number">1</span>
+      <span>Create a new file named <code>server.go</code></span>
+      <div class="step-content">
+        <pre><code class="language-go">package main
 
 import "github.com/0mjs/zinc"
 
 func main() {
   app := zinc.New()
+  
+  // Create a simple route
   app.Get("/", "Hello, World!")
+  
+  // More complex route with handler function
+  app.Get("/hello/:name", func(c *zinc.Context) error {
+    name := c.Param("name")
+    return c.Send("Hello, " + name + "!")
+  })
+  
+  // Start the server (default port: 8080)
   app.Serve()
 }</code></pre>
-    </div>
-  </section>
-
-  <section class="language-shell">
-    <h3>Running the server</h3>
-    <p>
-      To run the server:
-    </p>
-    <div class="code-block">
-      <pre><code>go run server.go</code></pre>
+      </div>
     </div>
 
-    <p>
-      Tip: Navigate to <a class="external-link glacier" href="http://localhost:8080">http://localhost:8080</a> in your
-      browser to see the "Hello, World!" message.
-    </p>
-  </section>
+    <div class="step">
+      <span class="step-number">2</span>
+      <span>Run your server</span>
+      <div class="step-content">
+        <pre><code class="language-bash">go run server.go</code></pre>
+        <p>Your server is now running at <a href="http://localhost:8080" target="_blank">http://localhost:8080</a></p>
+      </div>
+    </div>
+  </div>
 
-  <!-- <section class="features">
-    <h3>Key Features</h3>
+  <div class="section">
+    <h2 class="section-title">Test Your API</h2>
 
-    <h4>Route Groups</h4>
-    <div class="code-block">
-      <pre><code>go get github.com/0mjs/zinc</code></pre>
+    <div class="step">
+      <span class="step-number">1</span>
+      <span>Visit the root endpoint</span>
+      <div class="step-content">
+        <p>Open <a href="http://localhost:8080" target="_blank">http://localhost:8080</a> in your browser to see "Hello,
+          World!"</p>
+      </div>
     </div>
 
-    <h4>Middleware Support</h4>
-    <div class="code-block">
-      <pre><code>app.Use(func(c *zinc.Context) {
-    // Your middleware logic
-    c.Next()
-})</code></pre>
+    <div class="step">
+      <span class="step-number">2</span>
+      <span>Try the route with a parameter</span>
+      <div class="step-content">
+        <p>Visit <a href="http://localhost:8080/hello/Zinc" target="_blank">http://localhost:8080/hello/Zinc</a> to see
+          "Hello, Zinc!"</p>
+      </div>
     </div>
+  </div>
 
-    <h4>Path Parameters</h4>
-    <div class="code-block">
-      <pre><code>app.Get("/users/:id", func(c *zinc.Context) {
-    id := c.Param("id")
-    // Handle user retrieval
-})</code></pre>
+  <div class="section">
+    <div class="next-steps">
+      <p>Congratulations! You've created your first Zinc application. Continue exploring by adding more routes,
+        middleware, or check out the <a href="/guide">Full Guide</a> for advanced features.</p>
     </div>
-  </section>
-
-  <script>
-    function copyCode(button) {
-      const codeBlock = button.nextElementSibling.querySelector('code');
-      navigator.clipboard.writeText(codeBlock.textContent);
-
-      button.classList.add('clipboard-copied');
-      setTimeout(() => button.classList.remove('clipboard-copied'), 2000);
-    }
-  </script> -->
-
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const osButtons = document.querySelectorAll('.os-btn');
-      const macCommands = document.querySelector('.mac-commands');
-      const windowsCommands = document.querySelector('.windows-commands');
-
-      osButtons.forEach(button => {
-        button.addEventListener('click', () => {
-          osButtons.forEach(btn => btn.classList.remove('active'));
-          button.classList.add('active');
-
-          if (button.dataset.os === 'mac') {
-            macCommands.style.display = 'block';
-            windowsCommands.style.display = 'none';
-          } else {
-            macCommands.style.display = 'none';
-            windowsCommands.style.display = 'block';
-          }
-        });
-      });
-    });
-  </script>
+  </div>
 </article>
 
 <style>
-  section {
-    margin: 2rem 0;
+  .intro-header {
+    position: relative;
+    margin-bottom: 2rem;
   }
 
-  h3 {
-    color: var(--zinc-light);
-    margin: 1.5rem 0 1rem 0;
-    font-size: 1.3rem;
+  .intro-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #52525b, #71717a);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
-  h4 {
-    color: var(--text);
-    margin: 1.5rem 0 0.5rem 0;
-    font-size: 1.1rem;
+  .intro-subtitle {
+    font-size: 1.2rem;
+    color: var(--zinc-600);
+    max-width: 650px;
+    margin-bottom: 2rem;
   }
 
-  .install-section {
-    background: linear-gradient(135deg, rgba(167, 169, 173, 0.1), rgba(82, 87, 92, 0.1));
-    padding: 2rem;
-    border-radius: 8px;
-    margin: 2rem 0;
+  .section {
+    margin-bottom: 2.5rem;
+  }
+
+  .section-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--zinc-800);
+  }
+
+  .step {
+    margin-bottom: 1.5rem;
+  }
+
+  .step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--silver-600), var(--silver-800));
+    color: white;
+    border-radius: 50%;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-right: 0.75rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .step-content {
+    margin-top: 0.5rem;
+    margin-left: 2.5rem;
+  }
+
+  .prereq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .prereq-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .note {
+    background: rgba(100, 108, 255, 0.08);
+    border-left: 4px solid var(--primary);
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin: 1.5rem 0;
+    font-size: 0.95rem;
+  }
+
+  .note p {
+    margin: 0;
+  }
+
+  .next-steps {
+    background: linear-gradient(135deg, rgba(106, 108, 255, 0.05), rgba(82, 88, 204, 0.05));
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    border: 1px solid rgba(106, 108, 255, 0.1);
+  }
+
+  pre {
+    margin: 0.5rem 0;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 </style>
