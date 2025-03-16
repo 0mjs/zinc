@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	p "github.com/0mjs/zinc/docs/pages"
 )
@@ -19,7 +20,16 @@ func dataLoader(filename string) (template.HTML, error) {
 }
 
 func main() {
-	templatePaths := template.Must(template.ParseGlob("templates/*.html"))
+	// Define template functions
+	funcMap := template.FuncMap{
+		"formatDate": func(t time.Time) string {
+			return t.Format("2006-01-02")
+		},
+	}
+
+	// Parse templates with function map
+	tmpl := template.New("").Funcs(funcMap)
+	templatePaths := template.Must(tmpl.ParseGlob("templates/*.html"))
 
 	http.Handle(
 		"/static/",
@@ -55,7 +65,6 @@ func main() {
 		},
 	}
 
-	// Create route handlers for each page
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		templatePaths.ExecuteTemplate(w, "layout.html", pages["introduction"])
 	})

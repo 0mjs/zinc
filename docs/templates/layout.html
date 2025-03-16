@@ -39,15 +39,23 @@
     });
 
     document.querySelectorAll('pre code').forEach((block) => {
+      const isOsCodeBlock = block.closest('.os-code-block');
+
       const button = document.createElement('button');
       button.className = 'copy-button';
       button.style.position = 'absolute';
       button.style.right = '-0.3rem';
-      // button.style.top = '50%';
       button.style.transform = 'translateY(-50%)';
       button.style.display = 'flex';
       button.style.alignItems = 'center';
       button.style.justifyContent = 'center';
+
+      if (isOsCodeBlock) {
+        button.style.bottom = '0.45rem';
+        button.style.top = 'auto';
+        button.style.transform = 'none';
+      }
+
       button.innerHTML = `
           <svg class="copy-icon" viewBox="0 0 24 24" width="18" height="18">
             <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />

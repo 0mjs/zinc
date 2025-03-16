@@ -1,0 +1,186 @@
+<div class="documentation">
+  <h1>Zinc Framework Concepts</h1>
+
+  <section id="architecture">
+    <h2>Architecture</h2>
+    <p>
+      Zinc is designed with performance and simplicity in mind. Its architecture follows a
+      clean, modular approach with components that work together efficiently.
+    </p>
+  </section>
+
+  <section id="router-internals">
+    <h2>Router Internals</h2>
+    <p>
+      The router is the core component of Zinc, responsible for matching incoming HTTP requests
+      to the appropriate handlers. Understanding its internal design helps to grasp how Zinc
+      achieves its high performance.
+    </p>
+
+    <h3>Route Tree Structure</h3>
+    <p>
+      Zinc uses a tree-based structure for routing, which provides O(log n) lookup times:
+    </p>
+    <ul>
+      <li>Each route is represented as a node in a prefix tree (trie)</li>
+      <li>Path segments are used as edges between nodes</li>
+      <li>Special handling exists for parameter segments (starting with ':') and wildcards ('*')</li>
+      <li>Handlers are attached to leaf nodes or nodes with methods</li>
+    </ul>
+
+    <p>
+      The <code>RouteNode</code> structure represents nodes in this tree:
+    </p>
+
+    <pre><code class="language-go">
+type RouteNode struct {
+    path     string
+    part     string
+    children []*RouteNode
+    handler  RouteHandler
+    handlers map[string]RouteHandler // Map of handlers by method
+    isParam  bool
+    isWild   bool
+    method   string
+}
+        </code></pre>
+
+    <h3>Route Registration</h3>
+    <p>
+      When you register a route using <code>app.Get()</code>, <code>app.Post()</code>, etc.,
+      Zinc performs these steps:
+    </p>
+    <ol>
+      <li>Normalizes the path (handles trailing slashes, etc.)</li>
+      <li>Breaks the path into segments</li>
+      <li>Traverses the route tree, creating nodes as needed</li>
+      <li>Attaches the handler to the final node with the appropriate HTTP method</li>
+    </ol>
+
+    <p>
+      Path parameters and wildcards are detected during this process and marked in the tree.
+    </p>
+
+    <h3>Request Routing</h3>
+    <p>
+      When a request arrives, Zinc:
+    </p>
+    <ol>
+      <li>First checks for direct static route matches (fast path)</li>
+      <li>If not found, checks the route cache for common dynamic routes</li>
+      <li>If still not found, traverses the route tree to find a matching handler</li>
+      <li>Extracts path parameters during traversal</li>
+      <li>Stores matched routes in the cache for future requests</li>
+    </ol>
+
+    <h3>Route Caching</h3>
+    <p>
+      Zinc includes an efficient route cache system that significantly improves performance:
+    </p>
+
+    <pre><code class="language-go">
+type RouteCache struct {
+    cache map[routeCacheKey]routeCacheEntry
+    mu    sync.RWMutex
+    size  int
+}
+
+type routeCacheKey struct {
+    method string
+    path   string
+}
+
+type routeCacheEntry struct {
+    handler RouteHandler
+    context *Context
+}
+        </code></pre>
+
+    <p>
+      The cache avoids expensive tree traversals for frequently accessed routes,
+      particularly dynamic routes with parameters.
+    </p>
+
+    <h3>Path Parameter Handling</h3>
+    <p>
+      Path parameters (e.g., <code>/users/:id</code>) are handled efficiently:
+    </p>
+    <ul>
+      <li>Parameters are detected during route registration</li>
+      <li>Values are extracted during request routing</li>
+      <li>Parameters are stored in a fixed-size array (<code>params</code>) to avoid allocations</li>
+      <li>The Context provides access to these parameters via <code>c.Param("name")</code></li>
+    </ul>
+
+    <pre><code class="language-go">
+type param struct {
+    key   string
+    value string
+}
+
+type params [4]param  // Fixed-size array for common use cases
+        </code></pre>
+
+    <h3>Memory Optimization</h3>
+    <p>
+      Zinc employs several memory optimization strategies:
+    </p>
+    <ul>
+      <li>Context pooling to reduce garbage collection pressure</li>
+      <li>Fixed-size arrays for common operations</li>
+      <li>Path segment caching with sync.Pool</li>
+      <li>Pre-allocation of common data structures</li>
+    </ul>
+
+    <pre><code class="language-go">
+var contextPool = sync.Pool{
+    New: func() interface{} {
+        // Pre-allocate with fixed-size maps to avoid dynamic resizing
+        c := &Context{
+            Store:    make(map[string]interface{}, 4),
+            services: make(map[string]interface{}, 4),
+            status:   http.StatusOK,
+            index:    -1,
+        }
+        return c
+    },
+}
+        </code></pre>
+
+    <h3>Middleware Chain</h3>
+    <p>
+      Middleware in Zinc follows a chain-of-responsibility pattern:
+    </p>
+    <ul>
+      <li>Middleware functions are chained together in a specific order</li>
+      <li>Each middleware can execute code before and after the next middleware</li>
+      <li>The Context's <code>Next()</code> method controls flow through the chain</li>
+      <li>Middleware can be applied at app, group, or route level</li>
+    </ul>
+
+    <p>
+      The middleware execution flow can be visualized as a nested onion-like structure,
+      where each layer can perform operations before and after the inner layers.
+    </p>
+  </section>
+
+  <section id="performance">
+    <h2>Performance Considerations</h2>
+    <p>
+      Zinc is designed for high performance, with several optimizations:
+    </p>
+    <ul>
+      <li>Fast path for static routes</li>
+      <li>Route caching for dynamic routes</li>
+      <li>Memory pooling to reduce garbage collection</li>
+      <li>Efficient path parameter extraction</li>
+      <li>Minimized allocations during request handling</li>
+      <li>Fixed-size data structures where appropriate</li>
+    </ul>
+
+    <p>
+      These optimizations allow Zinc to handle a high number of requests with minimal
+      latency and resource usage, making it suitable for high-performance API servers.
+    </p>
+  </section>
+</div>

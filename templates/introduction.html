@@ -1,0 +1,144 @@
+<div class="two-columns">
+  <aside class="sidebar">
+    <h3>Navigation</h3>
+    <ul>
+      <li><a href="#what-is-zinc">What is Zinc?</a></li>
+      <li><a href="#key-features">Key Features</a></li>
+      <li><a href="#performance">Performance</a></li>
+      <li><a href="#philosophy">Philosophy</a></li>
+      <li><a href="#comparison">Comparison</a></li>
+    </ul>
+  </aside>
+
+  <div>
+    <section id="what-is-zinc">
+      <h2>What is Zinc?</h2>
+      <p>Zinc is a high-performance, minimalist web framework for Go designed to build robust APIs with ease. Created as
+        an alternative to frameworks like Gin, Echo, Chi, and Fiber, Zinc focuses on providing the perfect balance
+        between performance, simplicity, and features.</p>
+
+      <p>Built for modern Go applications (Go 1.24+), Zinc leverages the power of Go's standard library while adding
+        convenient abstractions to simplify common web development tasks without sacrificing performance.</p>
+
+      <div class="code-window">
+        <div class="code-header">
+          <div class="code-title">main.go</div>
+          <div class="code-dots">
+            <div class="dot dot-red"></div>
+            <div class="dot dot-yellow"></div>
+            <div class="dot dot-green"></div>
+          </div>
+        </div>
+        <div class="code-content">
+          <pre><code class="language-go">package main
+
+import "github.com/0mjs/zinc"
+
+func main() {
+    app := zinc.New()
+    
+    app.Get("/", func(c *zinc.Context) {
+        c.Send("Hello World!")
+    })
+    
+    app.Get("/json", func(c *zinc.Context) {
+        c.JSON(zinc.Map{
+            "message": "Welcome to Zinc",
+            "version": "1.0.0",
+        })
+    })
+    
+    app.Serve(":3000")
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="key-features">
+      <h2>Key Features</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h3>High Performance</h3>
+          <p>Optimized routing with route caching and minimized allocations for efficient request handling.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Elegant API</h3>
+          <p>Clean, intuitive API that makes building web services straightforward and enjoyable.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Advanced Routing</h3>
+          <p>Fast router with support for static routes, path parameters, wildcards, and route groups.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Middleware Support</h3>
+          <p>Flexible middleware system for cross-cutting concerns like logging, authentication, and more.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>WebSocket Support</h3>
+          <p>Built-in WebSocket handling with room management for real-time applications.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Cron Jobs</h3>
+          <p>Integrated scheduler for background tasks and periodic jobs.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Validation</h3>
+          <p>Request validation utilities to ensure data integrity.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>Service Container</h3>
+          <p>Dependency injection to manage and access your application's services.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="performance">
+      <h2>Performance</h2>
+      <p>Zinc is built with performance as a primary goal. The framework employs several optimization techniques:</p>
+
+      <ul>
+        <li>Route caching for faster lookups</li>
+        <li>Pooled objects to reduce GC pressure</li>
+        <li>Zero-allocation path handling where possible</li>
+        <li>Fast static route resolution path</li>
+        <li>Optimized header handling</li>
+      </ul>
+
+      <p>Benchmark results show Zinc's performance is competitive with or exceeds other popular Go frameworks.</p>
+    </section>
+
+    <section id="philosophy">
+      <h2>Philosophy</h2>
+      <p>Zinc follows these core principles:</p>
+
+      <ul>
+        <li><strong>Simplicity</strong>: Provide a clean, intuitive API without unnecessary abstractions</li>
+        <li><strong>Performance</strong>: Optimize for speed without sacrificing usability</li>
+        <li><strong>Pragmatism</strong>: Include features that solve real-world problems</li>
+        <li><strong>Standard library friendly</strong>: Work well with Go's standard library</li>
+        <li><strong>Minimal dependencies</strong>: Rely on as few external packages as possible</li>
+      </ul>
+    </section>
+
+    <section id="comparison">
+      <h2>Comparison with Other Frameworks</h2>
+      <p>While there are several excellent Go web frameworks available, Zinc sets itself apart by focusing on a balance
+        of features, performance, and developer experience.</p>
+
+      <ul>
+        <li><strong>vs. Gin</strong>: Similar API with better performance characteristics and lower memory usage</li>
+        <li><strong>vs. Echo</strong>: Comparable feature set with a more streamlined API</li>
+        <li><strong>vs. Chi</strong>: More built-in features while maintaining excellent performance</li>
+        <li><strong>vs. Fiber</strong>: Comparable performance without the dependency on a non-standard HTTP
+          implementation</li>
+      </ul>
+    </section>
+  </div>
+</div>

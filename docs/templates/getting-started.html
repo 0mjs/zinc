@@ -11,20 +11,22 @@
     </a>
   </div>
 
-  <p class="mt-1">
-    <a class="external-link bouquet" href="https://github.com/0mjs/zinc">Zinc</a> is built on top of the <code
-      class="inline-code-green">net/http</code>
-    package from Go's <a class="external-link glacier" href="https://pkg.go.dev/std">Standard library</a>,
-    providing a compact and intuitive set of
-    API's that enable developers to build server applications that
-    are
-    inherently idiomatic from inception, to production.
+  <div class="github-icon">
+    <a href="https://pkg.go.dev/github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <img src="../static/gopher.png" alt="Go Gopher" width="20" height="24">
+    </a>
+  </div>
+
+  <p class="mt-1">Getting started with Zinc is easy, if you're familiar with Go and common API patterns, you'll be
+    right at home.
   </p>
 
   <section class="language-shell">
     <h3>Prerequisites</h3>
     <ul class="prerequisites">
-      <li><a class="external-link glacier" href="https://tip.golang.org/doc/go1.22">Go 1.22+</a></li>
+      <li><a class="external-link glacier" href="https://tip.golang.org/doc/go1.22">Go 1.22+</a>, due to the latest
+        changes
+        to <code class="inline-code-green">net/http</code></li>
       <li>
         You must have Go installed on your machine to use the framework. If you don't have
         it installed, <a class="external-link glacier" href="https://go.dev/dl/">download it</a>
@@ -42,10 +44,17 @@
       create a new <code class="inline-code-green">server.go</code> file, and install <code
         class="inline-code-pink">0mjs/zinc</code> from GitHub as a dependency.
     </p>
-    <div class="code-block">
-      <pre><code>mkdir new-zinc-app && cd new-zinc-app && \
+    <div class="code-block os-code-block">
+      <div class="os-toggle">
+        <button class="os-btn active" data-os="mac">Linux & macOS</button>
+        <button class="os-btn" data-os="windows">Windows</button>
+      </div>
+      <pre><code class="mac-commands">mkdir new-zinc-app && cd new-zinc-app && \
 go mod init new-zinc-app && \
 touch server.go && \
+go get github.com/0mjs/zinc</code><code class="windows-commands" style="display: none">mkdir new-zinc-app && cd new-zinc-app && ^
+go mod init new-zinc-app && ^
+New-Item -Path . -Name "server.go" -ItemType "file" && ^
 go get github.com/0mjs/zinc</code></pre>
     </div>
   </section>
@@ -126,6 +135,29 @@ func main() {
       setTimeout(() => button.classList.remove('clipboard-copied'), 2000);
     }
   </script> -->
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const osButtons = document.querySelectorAll('.os-btn');
+      const macCommands = document.querySelector('.mac-commands');
+      const windowsCommands = document.querySelector('.windows-commands');
+
+      osButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          osButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+
+          if (button.dataset.os === 'mac') {
+            macCommands.style.display = 'block';
+            windowsCommands.style.display = 'none';
+          } else {
+            macCommands.style.display = 'none';
+            windowsCommands.style.display = 'block';
+          }
+        });
+      });
+    });
+  </script>
 </article>
 
 <style>

@@ -1,0 +1,117 @@
+<article>
+  <h1>Introduction</h1>
+
+  <div class="github-icon">
+    <a href="https://github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <svg height="24" width="24" viewBox="0 0 16 16" fill="#fff">
+        <path
+          d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+        </path>
+      </svg>
+    </a>
+  </div>
+
+  <div class="github-icon">
+    <a href="https://pkg.go.dev/github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <img src="../static/gopher.png" alt="Go Gopher" width="20" height="24">
+    </a>
+  </div>
+
+  <p class="mt-1">
+    <a class="external-link bouquet" href="https://pkg.go.dev/github.com/0mjs/zinc">Zinc</a> is built on top of the
+    <code class="inline-code-green">net/http</code>
+    package from Go's <a class="external-link glacier" href="https://pkg.go.dev/std">Standard library</a>,
+    providing a compact and intuitive set of
+    API's that enable developers to build server applications that
+    are
+    inherently performant and scalable.
+  </p>
+  <br>
+  <p>We focus heavily on minimising the amount of code developers must write in order to produce
+    type-safe server
+    applications that can leverage Go's incredibly useful concurrency model, routing capabilities and middleware
+    support.</p>
+
+  <section class="features">
+    <h3>Key Features</h3>
+
+    <h4>Route Groups</h4>
+    <div class="code-block">
+      <pre><code>go get github.com/0mjs/zinc</code></pre>
+    </div>
+
+    <h4>Middleware Support</h4>
+    <div class="code-block">
+      <pre><code>app.Use(func(c *zinc.Context) {
+    // Your middleware logic
+    c.Next()
+})</code></pre>
+    </div>
+
+    <h4>Path Parameters</h4>
+    <div class="code-block">
+      <pre><code>app.Get("/users/:id", func(c *zinc.Context) {
+    id := c.Param("id")
+    // Handle user retrieval
+})</code></pre>
+    </div>
+  </section>
+
+  <script>
+    function copyCode(button) {
+      const codeBlock = button.nextElementSibling.querySelector('code');
+      navigator.clipboard.writeText(codeBlock.textContent);
+
+      button.classList.add('clipboard-copied');
+      setTimeout(() => button.classList.remove('clipboard-copied'), 2000);
+    }
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const osButtons = document.querySelectorAll('.os-btn');
+      const macCommands = document.querySelector('.mac-commands');
+      const windowsCommands = document.querySelector('.windows-commands');
+
+      osButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          osButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+
+          if (button.dataset.os === 'mac') {
+            macCommands.style.display = 'block';
+            windowsCommands.style.display = 'none';
+          } else {
+            macCommands.style.display = 'none';
+            windowsCommands.style.display = 'block';
+          }
+        });
+      });
+    });
+  </script>
+</article>
+
+<style>
+  section {
+    margin: 2rem 0;
+  }
+
+  h3 {
+    color: var(--zinc-light);
+    margin: 1.5rem 0 1rem 0;
+    font-size: 1.3rem;
+  }
+
+  h4 {
+    color: var(--text);
+    margin: 1.5rem 0 0.5rem 0;
+    font-size: 1.1rem;
+  }
+
+  .install-section {
+    background: linear-gradient(135deg, rgba(167, 169, 173, 0.1), rgba(82, 87, 92, 0.1));
+    padding: 2rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+  }
+</style>

@@ -418,7 +418,7 @@ func main() {
 	})
 
 	// Start the server
-	log.Fatal(app.Serve(":8080"))
+	log.Fatal(app.Serve())
 }
 
 // Helpers

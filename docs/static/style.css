@@ -88,13 +88,37 @@ body {
   margin-bottom: 2rem;
   margin-left: 3rem;
   font-weight: bold;
-  background: linear-gradient(135deg, #90c0f0 0%, #959595 50%, #3c6cef 100%);
-  /* background: var(--zinc-light); */
+  background: linear-gradient(135deg, #90f0e7 0%, #7c7c7c 50%, #393939 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   text-shadow: none;
   position: relative;
+  animation: colorChange 30s infinite;
+}
+
+@keyframes colorChange {
+
+  0%,
+  30% {
+    background: linear-gradient(135deg, #90f0e7 0%, #7c7c7c 50%, #393939 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  33%,
+  63% {
+    background: linear-gradient(135deg, #90c0f0 0%, #959595 50%, #3c6cef 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  66%,
+  100% {
+    background: linear-gradient(135deg, #f090e7 0%, #959595 50%, #ef3c6c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
 }
 
 .logo::after {
@@ -328,4 +352,30 @@ article p {
     margin: .5rem 0rem;
     border-radius: 0;
   }
+}
+
+.os-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.os-btn {
+  padding: 0.25rem 0.75rem;
+  /* border: 1px solid var(--zinc-light); */
+  background: #212121;
+  color: var(--text);
+  border: none;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.8rem;
+}
+
+.os-btn:hover {
+  background: rgba(167, 169, 173, 0.1);
 }

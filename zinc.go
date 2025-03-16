@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type App struct {
@@ -128,12 +129,12 @@ func (a *App) Serve(port ...string) error {
 	// Start cron scheduler
 	a.cronScheduler.Start()
 
-	serverPort := parseArgs(a)
+	serverPort := a.config.DefaultAddr
 	if len(port) > 0 && port[0] != "" {
 		serverPort = port[0]
 	}
 	addr := serverPort
-	if serverPort[0] != ':' {
+	if !strings.Contains(serverPort, ":") {
 		addr = ":" + serverPort
 	}
 	fmt.Printf("Server starting on port %s...\n", serverPort)
