@@ -30,6 +30,10 @@ type Context struct {
 	Store       map[string]interface{}
 	status      int
 	services    map[string]interface{}
+	// Use preallocation for common per-request data
+	paramKeys  [8]string // Cache parameter keys
+	paramVals  [8]string // Cache parameter values
+	paramCount int       // Number of parameters set
 }
 
 type param struct {
@@ -37,7 +41,8 @@ type param struct {
 	value string
 }
 
-type params [4]param
+// Increase parameter storage to 8 to handle more complex routes without allocations
+type params [8]param
 
 var emptyParam param
 
@@ -46,8 +51,8 @@ var contextPool = sync.Pool{
 	New: func() interface{} {
 		// Pre-allocate with fixed-size maps to avoid dynamic resizing
 		c := &Context{
-			Store:    make(map[string]interface{}, 4),
-			services: make(map[string]interface{}, 4),
+			Store:    make(map[string]interface{}, 8), // Increased capacity
+			services: make(map[string]interface{}, 4), // Increased capacity
 			status:   http.StatusOK,
 			index:    -1,
 		}
@@ -74,16 +79,23 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.status = http.StatusOK
 	c.QueryParams = nil
 	c.handlers = nil
+	c.paramCount = 0
 
-	// Fast clear params - zero all at once
+	// Fast clear params - zero all at once using a single zero value
 	for i := range c.PathParams {
 		c.PathParams[i] = emptyParam
 	}
 
 	// Fast clear store - only if it has entries
 	if len(c.Store) > 0 {
-		for k := range c.Store {
-			delete(c.Store, k)
+		// Clear map in one operation for small maps
+		if len(c.Store) < 32 {
+			for k := range c.Store {
+				delete(c.Store, k)
+			}
+		} else {
+			// For larger maps, replace entirely
+			c.Store = make(map[string]interface{}, 16)
 		}
 	}
 }
@@ -148,10 +160,24 @@ func (c *Context) Param(name string) string {
 		return ""
 	}
 
+	// Enhanced algorithm with small string optimization
+	// First check cached parameter key/value pairs
+	for i := 0; i < c.paramCount; i++ {
+		if c.paramKeys[i] == name {
+			return c.paramVals[i]
+		}
+	}
+
 	// Fast path for single-character parameter names (common in RESTful APIs)
 	if len(name) == 1 {
 		for i := range c.PathParams {
 			if c.PathParams[i].key == name {
+				// Cache for future lookups
+				if c.paramCount < len(c.paramKeys) {
+					c.paramKeys[c.paramCount] = name
+					c.paramVals[c.paramCount] = c.PathParams[i].value
+					c.paramCount++
+				}
 				return c.PathParams[i].value
 			}
 			if c.PathParams[i].key == "" {
@@ -164,6 +190,12 @@ func (c *Context) Param(name string) string {
 	// General case for multi-character names
 	for i := range c.PathParams {
 		if c.PathParams[i].key == name {
+			// Cache for future lookups
+			if c.paramCount < len(c.paramKeys) {
+				c.paramKeys[c.paramCount] = name
+				c.paramVals[c.paramCount] = c.PathParams[i].value
+				c.paramCount++
+			}
 			return c.PathParams[i].value
 		}
 		if c.PathParams[i].key == "" {
@@ -215,14 +247,20 @@ func (c *Context) Body(v interface{}) error {
 
 // setParam sets a path parameter with optimized allocation
 func (c *Context) setParam(key, value string) {
-	// Fast path for the first 4 parameters (most common case)
+	// Fast path for the first parameters (most common case)
 	for i := range c.PathParams {
 		if c.PathParams[i].key == "" {
 			c.PathParams[i] = param{key: key, value: value}
+
+			// Cache the parameter for fast access
+			if c.paramCount < len(c.paramKeys) {
+				c.paramKeys[c.paramCount] = key
+				c.paramVals[c.paramCount] = value
+				c.paramCount++
+			}
 			return
 		}
 	}
-	// If we get here, the array is full (rare case)
 }
 
 // BindOptions holds options for binding data

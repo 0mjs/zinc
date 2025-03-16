@@ -1,6 +1,9 @@
 package zinc
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Group represents a group of routes with a common prefix.
 type Group struct {
@@ -15,7 +18,7 @@ func (g *Group) Group(prefix string) *Group {
 	return &Group{
 		prefix:     fullPrefix,
 		app:        g.app,
-		middleware: append([]Middleware{}, g.middleware...),
+		middleware: slices.Clone(g.middleware),
 	}
 }
 

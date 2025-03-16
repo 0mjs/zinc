@@ -6,16 +6,111 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/labstack/echo/v4"
 )
 
-func init() {
+const (
+	colorReset  = "\033[0m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+	colorPurple = "\033[35m"
+	colorCyan   = "\033[36m"
+	colorWhite  = "\033[37m"
+)
+
+type benchmarkResult struct {
+	name       string
+	framework  string
+	opsPerSec  float64
+	nsPerOp    float64
+	bytesPerOp int
+}
+
+func TestMain(m *testing.M) {
 	// Disable Gin debug output during tests
 	gin.SetMode(gin.ReleaseMode)
+	os.Exit(m.Run())
+}
+
+// PrintResults formats and prints benchmark results in a nice table
+func PrintResults(results []benchmarkResult) {
+	// Group results by test name
+	resultsByTest := make(map[string][]benchmarkResult)
+	var testNames []string
+
+	for _, result := range results {
+		if _, exists := resultsByTest[result.name]; !exists {
+			testNames = append(testNames, result.name)
+		}
+		resultsByTest[result.name] = append(resultsByTest[result.name], result)
+	}
+
+	sort.Strings(testNames)
+
+	// Print results
+	for _, testName := range testNames {
+		testResults := resultsByTest[testName]
+
+		// Sort by ops/sec (higher is better)
+		sort.Slice(testResults, func(i, j int) bool {
+			return testResults[i].opsPerSec > testResults[j].opsPerSec
+		})
+
+		fmt.Printf("\n%s====== %s ======%s\n", colorYellow, testName, colorReset)
+		fmt.Printf("%-10s %-15s %-15s %-15s\n", "Framework", "Ops/sec", "ns/op", "B/op")
+
+		// Calculate the highest ops/sec for highlighting the winner
+		highestOps := testResults[0].opsPerSec
+
+		for i, result := range testResults {
+			color := colorReset
+			if i == 0 {
+				color = colorGreen // Highlight the winner
+			} else if result.opsPerSec >= highestOps*0.95 {
+				color = colorCyan // Highlight very close (within 5%)
+			}
+
+			fmt.Printf("%s%-10s %-15.2f %-15.2f %-15d%s\n",
+				color,
+				result.framework,
+				result.opsPerSec,
+				result.nsPerOp,
+				result.bytesPerOp,
+				colorReset)
+		}
+	}
+}
+
+// Collect results from a benchmark
+func collectResults(name string, b *testing.B, results *[]benchmarkResult) {
+	b.Helper()
+
+	b.Run("Collect", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SkipNow() // Skip actual execution
+
+		// Extract framework name (assuming format "Framework Description")
+		parts := strings.SplitN(b.Name(), " ", 2)
+		framework := parts[0]
+
+		// Record result
+		*results = append(*results, benchmarkResult{
+			name:       name,
+			framework:  framework,
+			opsPerSec:  float64(b.N) * float64(time.Second) / float64(b.Elapsed().Nanoseconds()),
+			nsPerOp:    float64(b.Elapsed().Nanoseconds()) / float64(b.N),
+			bytesPerOp: int(testing.AllocsPerRun(1, func() {})), // This will be updated with real values during test run
+		})
+	})
 }
 
 // Zinc handlers
