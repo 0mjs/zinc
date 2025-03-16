@@ -2,7 +2,6 @@ package zinc
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,7 +13,7 @@ import (
 type App struct {
 	router         *Router
 	middleware     []Middleware
-	services       map[string]interface{}
+	services       map[string]any
 	config         *Config
 	cronScheduler  *CronScheduler
 	templateEngine *TemplateEngine
@@ -25,7 +24,7 @@ type App struct {
 
 type RouteHandler func(c *Context)
 
-type Map map[string]interface{}
+type Map map[string]any
 
 func New() *App {
 	return &App{
@@ -33,7 +32,7 @@ func New() *App {
 			cache: NewRouteCache(1000), // Cache size of 1000 entries
 		},
 		middleware:    make([]Middleware, 0),
-		services:      make(map[string]interface{}),
+		services:      make(map[string]any),
 		config:        &DefaultConfig,
 		cronScheduler: newCronScheduler(),
 		validator:     NewValidator(),
@@ -299,10 +298,4 @@ func (a *App) Validate(s interface{}) ValidationErrors {
 // SetConfig sets the application configuration
 func (a *App) SetConfig(config *Config) {
 	a.config = config
-}
-
-func parseArgs(a *App) string {
-	port := flag.String("port", a.config.DefaultAddr, "port number for the server")
-	flag.Parse()
-	return *port
 }

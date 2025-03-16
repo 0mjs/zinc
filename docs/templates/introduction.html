@@ -1,6 +1,6 @@
 <article>
   <div class="intro-header">
-    <h1 class="intro-title">Zinc</h1>
+    <h1 class="intro-title">zinc</h1>
     <p class="intro-tagline">A web framework designed for elegance, speed, and simplicity.</p>
     <div class="badge-container">
       <span class="badge badge-performance">High Performance</span>
@@ -13,18 +13,11 @@
     <div class="hero-code">
       <pre><code class="language-go">package main
 
-import (
-	"github.com/0mjs/zinc"
-)
+import "github.com/0mjs/zinc"
 
 func main() {
 	app := zinc.New()
-	
 	app.Get("/", "Welcome to Zinc!")
-	
-	app.Get("/api/v1/users", getUsers)
-	app.Post("/api/v1/users", createUser)
-	
 	app.Serve()
 }</code></pre>
     </div>
@@ -88,7 +81,8 @@ func main() {
         <h3>Performance First</h3>
         <p>Built specifically for Go 1.22+, Zinc takes advantage of the latest optimizations in the
           <code>net/http</code> package. Our benchmarks show we're consistently among the fastest Go web frameworks
-          available, with minimal overhead above raw <code>net/http</code>.</p>
+          available, with minimal overhead above raw <code>net/http</code>.
+        </p>
       </div>
       <div class="philosophy-item">
         <h3>Developer Experience</h3>
@@ -254,23 +248,55 @@ func Logger(c *zinc.Context) error {
   }
 
   .intro-title {
-    font-size: 4rem;
+    font-size: 4.5rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
     background: linear-gradient(135deg,
-        #c0c0c0,
-        #a0a0a0 40%,
-        #808080 50%,
-        #a0a0a0 60%,
-        #c0c0c0);
+        #d4d4d8,
+        #a1a1aa 40%,
+        #71717a 50%,
+        #a1a1aa 60%,
+        #d4d4d8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     position: relative;
+    letter-spacing: -1px;
+    text-transform: lowercase;
+  }
+
+  /* Add shimmering effect to the title */
+  .intro-title::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background: linear-gradient(120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.2) 20%,
+        rgba(255, 255, 255, 0.8) 30%,
+        rgba(255, 255, 255, 0.2) 40%,
+        rgba(255, 255, 255, 0) 60%);
+    background-size: 200% 100%;
+    animation: titleSheen 6s ease-in-out infinite alternate;
+    -webkit-background-clip: text;
+    pointer-events: none;
+  }
+
+  @keyframes titleSheen {
+    0% {
+      background-position: -100% 50%;
+    }
+
+    100% {
+      background-position: 200% 50%;
+    }
   }
 
   .intro-tagline {
     font-size: 1.2rem;
-    color: var(--zinc-600);
+    color: var(--zinc-500);
     max-width: 650px;
     margin: 0 auto 1.5rem;
   }
@@ -292,21 +318,21 @@ func Logger(c *zinc.Context) error {
   }
 
   .badge-performance {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1));
-    color: #059669;
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(56, 189, 248, 0.1));
+    color: #0284c7;
+    border: 1px solid rgba(14, 165, 233, 0.2);
   }
 
   .badge-go {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.1));
-    color: #2563eb;
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(219, 39, 119, 0.1));
+    color: #db2777;
+    border: 1px solid rgba(236, 72, 153, 0.2);
   }
 
   .badge-minimal {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(124, 58, 237, 0.1));
-    color: #7c3aed;
-    border: 1px solid rgba(139, 92, 246, 0.2);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1));
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.2);
   }
 
   .section {
@@ -328,7 +354,7 @@ func Logger(c *zinc.Context) error {
     bottom: -0.5rem;
     width: 3rem;
     height: 3px;
-    background: linear-gradient(90deg, var(--silver-500), var(--silver-300));
+    background: linear-gradient(90deg, #a1a1aa, #d4d4d8);
     border-radius: 3px;
   }
 
@@ -357,7 +383,7 @@ func Logger(c *zinc.Context) error {
   }
 
   .detail-icon {
-    background: linear-gradient(135deg, rgba(100, 108, 255, 0.1), rgba(82, 88, 204, 0.1));
+    background: linear-gradient(135deg, rgba(125, 211, 252, 0.2), rgba(186, 230, 253, 0.2));
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -423,7 +449,7 @@ func Logger(c *zinc.Context) error {
   }
 
   .feature-icon {
-    background: linear-gradient(135deg, rgba(200, 200, 200, 0.2), rgba(150, 150, 150, 0.2));
+    background: linear-gradient(135deg, rgba(226, 232, 240, 0.6), rgba(203, 213, 225, 0.6));
     width: 36px;
     height: 36px;
     border-radius: 8px;
@@ -440,10 +466,11 @@ func Logger(c *zinc.Context) error {
   }
 
   .benchmark-container {
-    background: linear-gradient(135deg, rgba(243, 244, 246, 0.5), rgba(229, 231, 235, 0.5));
+    background: linear-gradient(135deg, rgba(244, 244, 245, 0.7), rgba(228, 228, 231, 0.7));
     border-radius: 12px;
     padding: 2rem;
-    border: 1px solid var(--zinc-200);
+    border: 1px solid var(--zinc-300);
+    box-shadow: 0 4px 6px rgba(24, 24, 27, 0.05);
   }
 
   .benchmark-chart {
@@ -469,13 +496,29 @@ func Logger(c *zinc.Context) error {
 
   .chart-bar {
     height: 24px;
-    background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
     border-radius: 4px;
     position: relative;
     display: flex;
     align-items: center;
     padding: 0 1rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .chart-bar-container:nth-child(2) .chart-bar {
+    background: linear-gradient(90deg, #ec4899, #db2777);
+  }
+
+  .chart-bar-container:nth-child(3) .chart-bar {
+    background: linear-gradient(90deg, #10b981, #059669);
+  }
+
+  .chart-bar-container:nth-child(4) .chart-bar {
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+  }
+
+  .chart-bar-container:nth-child(5) .chart-bar {
+    background: linear-gradient(90deg, #f97316, #ea580c);
   }
 
   .chart-value {
@@ -500,7 +543,7 @@ func Logger(c *zinc.Context) error {
   }
 
   .cta-button {
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(135deg, #71717a, #52525b);
     color: white;
     border: none;
     border-radius: 8px;
@@ -513,19 +556,49 @@ func Logger(c *zinc.Context) error {
     gap: 0.5rem;
     text-decoration: none;
     transition: all 0.2s;
-    box-shadow: 0 4px 6px rgba(100, 108, 255, 0.2);
+    box-shadow: 0 4px 6px rgba(82, 82, 91, 0.3);
+    position: relative;
+    overflow: hidden;
   }
 
   .cta-button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 8px rgba(100, 108, 255, 0.25);
+    box-shadow: 0 6px 8px rgba(82, 82, 91, 0.35);
+  }
+
+  .cta-button::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.1) 20%,
+        rgba(255, 255, 255, 0.2) 30%,
+        rgba(255, 255, 255, 0.1) 40%,
+        rgba(255, 255, 255, 0) 60%);
+    background-size: 200% 100%;
+    animation: buttonSheen 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes buttonSheen {
+    0% {
+      background-position: -100% 50%;
+    }
+
+    100% {
+      background-position: 200% 50%;
+    }
   }
 
   .cta-link {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: var(--primary);
+    color: var(--zinc-700);
     text-decoration: none;
     font-weight: 600;
     font-size: 1rem;
@@ -533,12 +606,13 @@ func Logger(c *zinc.Context) error {
   }
 
   .cta-link:hover {
-    color: var(--primary-dark);
+    color: var(--zinc-900);
   }
 
   pre {
     margin: 0;
     border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   }
 
   code {
