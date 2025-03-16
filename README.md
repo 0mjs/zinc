@@ -1,22 +1,21 @@
-# Zinc
+# zinc.
 
-![Zinc](https://img.shields.io/badge/Zinc-High%20Performance%20Go%20Framework-blue)
-![Version](https://img.shields.io/badge/version-0.1.0-green)
+![Zinc](https://img.shields.io/badge/Zinc-%20Go%20API%20Framework-silver)
+![Version](https://img.shields.io/badge/version-0.0.54-red)
 ![Go Version](https://img.shields.io/badge/Go-1.24.1-blue)
-![License](https://img.shields.io/badge/license-MIT-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer ergonomics. Designed to compete with the most popular frameworks around today in performance and usability.
+Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer velocity. Designed to compete with the most popular frameworks around today in performance and usability.
 
 ## Features
 
-- **Blazing, yes, BLAZING Fast**: Optimized routing and minimal middleware overhead
+- **Fast**: Optimized routing and minimal middleware overhead
 - **Simple API**: Intuitive and expressive API that follows Go idioms
 - **Powerful Router**: Support for static routes, path parameters, route groups, and middleware
 - **Template Engine**: Built-in HTML templating with custom functions and template caching
 - **WebSocket Support**: Real-time communication with room-based broadcasting
 - **File Uploads**: Easy file upload handling with size limits and type validation
 - **Cron Scheduler**: Built-in cron jobs for scheduled tasks
-- **Zero External Dependencies**: Core functionality relies only on the Go standard library
 - **Memory Efficient**: Utilizes sync.Pool and fixed-size data structures to minimize allocations
 - **Well-Tested**: Comprehensive test suite ensures reliability
 
