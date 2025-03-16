@@ -1,28 +1,29 @@
 <div class="documentation">
-  <h1>Zinc Framework Guide</h1>
+    <h1>Zinc Framework Guide</h1>
 
-  <section id="overview">
-    <h2>Overview</h2>
-    <p>
-      Zinc is a high-performance, Go-based API framework designed to compete with Gin, Echo, Chi, and Fiber.
-      It focuses on simplicity, performance, and flexibility, making it ideal for building robust web applications and
-      APIs.
-    </p>
-  </section>
+    <section id="overview">
+        <h2>Overview</h2>
+        <p>
+            Zinc is a high-performance, Go-based API framework designed to compete with Gin, Echo, Chi, and Fiber.
+            It focuses on simplicity, performance, and flexibility, making it ideal for building robust web applications
+            and
+            APIs.
+        </p>
+    </section>
 
-  <section id="router">
-    <h2>Router</h2>
-    <p>
-      The router is the core component of Zinc, responsible for mapping HTTP requests to handler functions.
-      It supports various HTTP methods, path parameters, wildcards, and route grouping.
-    </p>
+    <section id="router">
+        <h2>Router</h2>
+        <p>
+            The router is the core component of Zinc, responsible for mapping HTTP requests to handler functions.
+            It supports various HTTP methods, path parameters, wildcards, and route grouping.
+        </p>
 
-    <h3>Basic Routing</h3>
-    <p>
-      Zinc provides intuitive methods for handling different HTTP methods:
-    </p>
+        <h3>Basic Routing</h3>
+        <p>
+            Zinc provides intuitive methods for handling different HTTP methods:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app := zinc.New()
 
 // Basic GET route
@@ -45,12 +46,12 @@ app.Put("/users/:id", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Path Parameters</h3>
-    <p>
-      Zinc supports dynamic path parameters using the <code>:param</code> syntax:
-    </p>
+        <h3>Path Parameters</h3>
+        <p>
+            Zinc supports dynamic path parameters using the <code>:param</code> syntax:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Path parameters
 app.Get("/users/:id", func(c *zinc.Context) {
     userID := c.Param("id")
@@ -68,12 +69,12 @@ app.Get("/users/:userID/posts/:postID", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Query Parameters</h3>
-    <p>
-      Accessing query parameters is straightforward:
-    </p>
+        <h3>Query Parameters</h3>
+        <p>
+            Accessing query parameters is straightforward:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Query parameters
 app.Get("/search", func(c *zinc.Context) {
     query := c.Query("q")
@@ -92,12 +93,12 @@ app.Get("/filter", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Route Groups</h3>
-    <p>
-      Zinc provides powerful route grouping for organizing routes with common prefixes and middleware:
-    </p>
+        <h3>Route Groups</h3>
+        <p>
+            Zinc provides powerful route grouping for organizing routes with common prefixes and middleware:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Create a route group
 api := app.Group("/api")
 
@@ -126,12 +127,12 @@ adminAPI.Get("/dashboard", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Middleware</h3>
-    <p>
-      Middleware functions can be applied at the application level, group level, or route level:
-    </p>
+        <h3>Middleware</h3>
+        <p>
+            Middleware functions can be applied at the application level, group level, or route level:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Application-level middleware
 app.Use(LoggerMiddleware())
 
@@ -165,12 +166,12 @@ func LoggerMiddleware() zinc.Middleware {
 }
         </code></pre>
 
-    <h3>Context</h3>
-    <p>
-      The Context object provides access to the request and response, as well as utility methods:
-    </p>
+        <h3>Context</h3>
+        <p>
+            The Context object provides access to the request and response, as well as utility methods:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Get("/context-demo", func(c *zinc.Context) {
     // Request information
     method := c.Method
@@ -193,12 +194,12 @@ app.Get("/context-demo", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Request Body Parsing</h3>
-    <p>
-      Zinc makes it easy to parse JSON request bodies:
-    </p>
+        <h3>Request Body Parsing</h3>
+        <p>
+            Zinc makes it easy to parse JSON request bodies:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Post("/users", func(c *zinc.Context) {
     type User struct {
         Name  string `json:"name" validate:"required"`
@@ -224,26 +225,26 @@ app.Post("/users", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Route Caching</h3>
-    <p>
-      Zinc uses an internal route cache to optimize performance for frequently accessed routes.
-      This is handled automatically and requires no configuration.
-    </p>
-  </section>
+        <h3>Route Caching</h3>
+        <p>
+            Zinc uses an internal route cache to optimize performance for frequently accessed routes.
+            This is handled automatically and requires no configuration.
+        </p>
+    </section>
 
-  <section id="templates">
-    <h2>Template Engine</h2>
-    <p>
-      Zinc includes a powerful templating system built on top of Go's <code>html/template</code> package,
-      with additional features like template caching and custom functions.
-    </p>
+    <section id="templates">
+        <h2>Template Engine</h2>
+        <p>
+            Zinc includes a powerful templating system built on top of Go's <code>html/template</code> package,
+            with additional features like template caching and custom functions.
+        </p>
 
-    <h3>Setup</h3>
-    <p>
-      Initialize and configure the template engine:
-    </p>
+        <h3>Setup</h3>
+        <p>
+            Initialize and configure the template engine:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Initialize template engine
 templateEngine := zinc.NewTemplateEngine("./templates")
 
@@ -267,12 +268,12 @@ if err := templateEngine.LoadTemplates(); err != nil {
 app.SetTemplateEngine(templateEngine)
         </code></pre>
 
-    <h3>Rendering Templates</h3>
-    <p>
-      Render templates in your handlers:
-    </p>
+        <h3>Rendering Templates</h3>
+        <p>
+            Render templates in your handlers:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Get("/profile", func(c *zinc.Context) {
     // Data to pass to the template
     data := zinc.Map{
@@ -288,12 +289,12 @@ app.Get("/profile", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Template Example</h3>
-    <p>
-      Example of a template file <code>profile.html</code>:
-    </p>
+        <h3>Template Example</h3>
+        <p>
+            Example of a template file <code>profile.html</code>:
+        </p>
 
-    <pre><code class="language-html">
+        <pre><code class="language-html">
 &lt;!DOCTYPE html&gt;
 &lt;html&gt;
 &lt;head&gt;
@@ -306,22 +307,23 @@ app.Get("/profile", func(c *zinc.Context) {
 &lt;/body&gt;
 &lt;/html&gt;
         </code></pre>
-  </section>
+    </section>
 
-  <section id="cron">
-    <h2>Cron Jobs</h2>
-    <p>
-      Zinc provides a built-in cron scheduler for running scheduled tasks. The cron system is based on the
-      <a href="https://github.com/robfig/cron" target="_blank">robfig/cron</a> package and supports all standard cron
-      expressions.
-    </p>
+    <section id="cron">
+        <h2>Cron Jobs</h2>
+        <p>
+            Zinc provides a built-in cron scheduler for running scheduled tasks. The cron system is based on the
+            <a href="https://github.com/robfig/cron" target="_blank">robfig/cron</a> package and supports all standard
+            cron
+            expressions.
+        </p>
 
-    <h3>Adding Jobs</h3>
-    <p>
-      Create and schedule jobs:
-    </p>
+        <h3>Adding Jobs</h3>
+        <p>
+            Create and schedule jobs:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Schedule a job to run every minute
 app.Cron("minute-job", "* * * * *", func() {
     fmt.Println("This runs every minute")
@@ -348,34 +350,34 @@ app.Cron("error-handling", "@hourly", func() error {
 })
         </code></pre>
 
-    <h3>Cron Expressions</h3>
-    <p>
-      Zinc supports various cron expressions:
-    </p>
-    <ul>
-      <li><code>* * * * *</code> - Standard cron expression (minute, hour, day of month, month, day of week)</li>
-      <li><code>@yearly</code> (or <code>@annually</code>) - Run once a year at midnight on January 1st</li>
-      <li><code>@monthly</code> - Run once a month at midnight on the first day</li>
-      <li><code>@weekly</code> - Run once a week at midnight on Sunday</li>
-      <li><code>@daily</code> (or <code>@midnight</code>) - Run once a day at midnight</li>
-      <li><code>@hourly</code> - Run once an hour at the beginning of the hour</li>
-      <li><code>@every 1h30m</code> - Run at intervals (e.g., every 1 hour and 30 minutes)</li>
-    </ul>
-  </section>
+        <h3>Cron Expressions</h3>
+        <p>
+            Zinc supports various cron expressions:
+        </p>
+        <ul>
+            <li><code>* * * * *</code> - Standard cron expression (minute, hour, day of month, month, day of week)</li>
+            <li><code>@yearly</code> (or <code>@annually</code>) - Run once a year at midnight on January 1st</li>
+            <li><code>@monthly</code> - Run once a month at midnight on the first day</li>
+            <li><code>@weekly</code> - Run once a week at midnight on Sunday</li>
+            <li><code>@daily</code> (or <code>@midnight</code>) - Run once a day at midnight</li>
+            <li><code>@hourly</code> - Run once an hour at the beginning of the hour</li>
+            <li><code>@every 1h30m</code> - Run at intervals (e.g., every 1 hour and 30 minutes)</li>
+        </ul>
+    </section>
 
-  <section id="file-uploads">
-    <h2>File Uploads</h2>
-    <p>
-      Zinc provides a simple yet powerful file upload system with features like size limits,
-      type validation, and multi-file uploads.
-    </p>
+    <section id="file-uploads">
+        <h2>File Uploads</h2>
+        <p>
+            Zinc provides a simple yet powerful file upload system with features like size limits,
+            type validation, and multi-file uploads.
+        </p>
 
-    <h3>Setup</h3>
-    <p>
-      Configure the file upload handler:
-    </p>
+        <h3>Setup</h3>
+        <p>
+            Configure the file upload handler:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Initialize file upload handler
 fileUpload := zinc.NewFileUpload("uploads")
 
@@ -389,12 +391,12 @@ fileUpload.SetAllowedTypes([]string{".jpg", ".png", ".pdf"})
 app.SetFileUpload(fileUpload)
         </code></pre>
 
-    <h3>Single File Upload</h3>
-    <p>
-      Handle a single file upload:
-    </p>
+        <h3>Single File Upload</h3>
+        <p>
+            Handle a single file upload:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Post("/upload", func(c *zinc.Context) {
     // Get the uploaded file from the "file" form field
     file, err := c.File("file")
@@ -417,12 +419,12 @@ app.Post("/upload", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Multiple File Upload</h3>
-    <p>
-      Handle multiple file uploads:
-    </p>
+        <h3>Multiple File Upload</h3>
+        <p>
+            Handle multiple file uploads:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Post("/upload/multiple", func(c *zinc.Context) {
     // Get multiple uploaded files from the "files" form field
     files, err := c.Files("files")
@@ -448,12 +450,12 @@ app.Post("/upload/multiple", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>HTML Form Example</h3>
-    <p>
-      Example HTML form for file uploads:
-    </p>
+        <h3>HTML Form Example</h3>
+        <p>
+            Example HTML form for file uploads:
+        </p>
 
-    <pre><code class="language-html">
+        <pre><code class="language-html">
 &lt;!-- Single file upload form --&gt;
 &lt;form action="/upload" method="post" enctype="multipart/form-data"&gt;
     &lt;input type="file" name="file"&gt;
@@ -466,31 +468,31 @@ app.Post("/upload/multiple", func(c *zinc.Context) {
     &lt;button type="submit"&gt;Upload Files&lt;/button&gt;
 &lt;/form&gt;
         </code></pre>
-  </section>
+    </section>
 
-  <section id="websockets">
-    <h2>WebSockets</h2>
-    <p>
-      Zinc includes built-in WebSocket support for real-time communication, with features like rooms,
-      broadcasting, and connection management.
-    </p>
+    <section id="websockets">
+        <h2>WebSockets</h2>
+        <p>
+            Zinc includes built-in WebSocket support for real-time communication, with features like rooms,
+            broadcasting, and connection management.
+        </p>
 
-    <h3>Setup</h3>
-    <p>
-      Initialize and configure the WebSocket handler:
-    </p>
+        <h3>Setup</h3>
+        <p>
+            Initialize and configure the WebSocket handler:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 // Initialize WebSocket handler
 app.SetWebSocketHandler(zinc.WebSocket())
         </code></pre>
 
-    <h3>Basic WebSocket Endpoint</h3>
-    <p>
-      Create a WebSocket endpoint:
-    </p>
+        <h3>Basic WebSocket Endpoint</h3>
+        <p>
+            Create a WebSocket endpoint:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Get("/ws", func(c *zinc.Context) {
     // Upgrade HTTP connection to WebSocket
     conn, err := c.Upgrade()
@@ -515,12 +517,12 @@ app.Get("/ws", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>WebSocket Rooms</h3>
-    <p>
-      Implement chat rooms with WebSockets:
-    </p>
+        <h3>WebSocket Rooms</h3>
+        <p>
+            Implement chat rooms with WebSockets:
+        </p>
 
-    <pre><code class="language-go">
+        <pre><code class="language-go">
 app.Get("/ws/chat/:room", func(c *zinc.Context) {
     roomID := c.Param("room")
 
@@ -550,12 +552,12 @@ app.Get("/ws/chat/:room", func(c *zinc.Context) {
 })
         </code></pre>
 
-    <h3>Client-Side Example</h3>
-    <p>
-      Example JavaScript for connecting to the WebSocket:
-    </p>
+        <h3>Client-Side Example</h3>
+        <p>
+            Example JavaScript for connecting to the WebSocket:
+        </p>
 
-    <pre><code class="language-javascript">
+        <pre><code class="language-javascript">
 // Connect to WebSocket
 const socket = new WebSocket(`ws://${window.location.host}/ws/chat/room1`);
 
@@ -590,5 +592,5 @@ socket.addEventListener('error', (event) => {
     console.error('WebSocket error:', event);
 });
         </code></pre>
-  </section>
+    </section>
 </div>

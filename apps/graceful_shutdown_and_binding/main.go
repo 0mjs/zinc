@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -55,21 +56,21 @@ func main() {
 	app.Post("/users", func(c *zinc.Context) {
 		var user User
 		if err := c.BindJSON(&user); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
 		// Set creation timestamp
 		user.CreatedAt = time.Now().Format(time.RFC3339)
 
-		c.Status(201).JSON(user)
+		c.Status(http.StatusCreated).JSON(user)
 	})
 
 	// Form binding example
 	app.Post("/login", func(c *zinc.Context) {
 		var login LoginRequest
 		if err := c.BindForm(&login); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -77,7 +78,7 @@ func main() {
 		if login.Email == "user@example.com" && login.Password == "password123" {
 			c.JSON(zinc.Map{"status": "success", "message": "Login successful"})
 		} else {
-			c.Status(401).JSON(zinc.Map{"status": "error", "message": "Invalid credentials"})
+			c.Status(http.StatusUnauthorized).JSON(zinc.Map{"status": "error", "message": "Invalid credentials"})
 		}
 	})
 
@@ -94,7 +95,7 @@ func main() {
 		params.Limit = 10
 
 		if err := c.BindQuery(&params); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -110,7 +111,7 @@ func main() {
 	app.Post("/auto-bind", func(c *zinc.Context) {
 		var login LoginRequest
 		if err := c.Bind(&login); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -121,14 +122,14 @@ func main() {
 	app.Post("/upload", func(c *zinc.Context) {
 		file, err := c.FormFile("file")
 		if err != nil {
-			c.Status(400).JSON(zinc.Map{"error": "Failed to get file"})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": "Failed to get file"})
 			return
 		}
 
 		// Save the file
 		dst := fmt.Sprintf("./uploads/%s", file.Filename)
 		if err := c.SaveFile(file, dst); err != nil {
-			c.Status(500).JSON(zinc.Map{"error": "Failed to save file"})
+			c.Status(http.StatusInternalServerError).JSON(zinc.Map{"error": "Failed to save file"})
 			return
 		}
 

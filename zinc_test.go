@@ -234,7 +234,7 @@ func TestResponseTypes(t *testing.T) {
 		c.Send(nil)
 	})
 	app.Get("/status", func(c *Context) {
-		c.Status(201).Send("Created")
+		c.Status(http.StatusCreated).Send("Created")
 	})
 
 	tests := []struct {
@@ -360,7 +360,7 @@ func TestRequestBody(t *testing.T) {
 		}
 		var user User
 		if err := c.Body(&user); err != nil {
-			c.Status(400).Send(err.Error())
+			c.Status(http.StatusBadRequest).Send(err.Error())
 			return
 		}
 		c.JSON(Map{"received": user})
@@ -531,7 +531,7 @@ func TestServices(t *testing.T) {
 		// This should panic, but we'll recover it for testing
 		defer func() {
 			if r := recover(); r != nil {
-				c.Status(500).Send(fmt.Sprint(r))
+				c.Status(http.StatusInternalServerError).Send(fmt.Sprint(r))
 			}
 		}()
 
@@ -570,7 +570,7 @@ func TestFormData(t *testing.T) {
 	app := New()
 	app.Post("/form", func(c *Context) {
 		if err := c.Request.ParseForm(); err != nil {
-			c.Status(400).Send(err.Error())
+			c.Status(http.StatusBadRequest).Send(err.Error())
 			return
 		}
 
