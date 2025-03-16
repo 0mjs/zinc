@@ -1,8 +1,8 @@
 # zinc.
 
-![Zinc](https://img.shields.io/badge/Zinc-%20Go%20API%20Framework-silver)
+![Zinc](https://img.shields.io/badge/Zinc-%20A%20web%20framework%20for%20Go-silver)
 ![Version](https://img.shields.io/badge/version-0.0.54-red)
-![Go Version](https://img.shields.io/badge/Go-1.24.1-blue)
+![Go Version](https://img.shields.io/badge/Go-1.22+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer velocity. Designed to compete with the most popular frameworks around today in performance and usability.
