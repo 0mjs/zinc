@@ -5,11 +5,11 @@
 ![Go Version](https://img.shields.io/badge/Go-1.24.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer ergonomics. Designed to compete with Gin, Echo, Chi, and Fiber in performance and usability.
+Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer ergonomics. Designed to compete with the most popular frameworks around today in performance and usability.
 
 ## Features
 
-- **Blazing Fast**: Optimized routing and minimal middleware overhead
+- **Blazing, yes, BLAZING Fast**: Optimized routing and minimal middleware overhead
 - **Simple API**: Intuitive and expressive API that follows Go idioms
 - **Powerful Router**: Support for static routes, path parameters, route groups, and middleware
 - **Template Engine**: Built-in HTML templating with custom functions and template caching

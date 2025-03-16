@@ -5,8 +5,228 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Docs | Zinc</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/nord.min.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
+  <style>
+    @font-face {
+      font-family: 'Geist';
+      src: url('/static/fonts/geist-regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Geist';
+      src: url('/static/fonts/geist-medium.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Geist';
+      src: url('/static/fonts/geist-bold.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --zinc-50: #fafafa;
+      --zinc-100: #f4f4f5;
+      --zinc-200: #e4e4e7;
+      --zinc-300: #d4d4d8;
+      --zinc-400: #a1a1aa;
+      --zinc-500: #71717a;
+      --zinc-600: #52525b;
+      --zinc-700: #3f3f46;
+      --zinc-800: #27272a;
+      --zinc-900: #18181b;
+      --zinc-950: #09090b;
+
+      /* Custom colors for code highlighting */
+      --code-bg: #f8fafc;
+      --code-text: #334155;
+      --code-keyword: #0369a1;
+      --code-function: #0284c7;
+      --code-string: #0891b2;
+      --code-comment: #94a3b8;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--zinc-200);
+      color: var(--zinc-800);
+      line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      width: 100%;
+      min-height: 100vh;
+    }
+
+    /* Sidebar with metallic gradient */
+    .sidenav {
+      width: 280px;
+      background: linear-gradient(135deg, var(--zinc-800), var(--zinc-900));
+      color: white;
+      position: fixed;
+      height: 100vh;
+      overflow-y: auto;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Metallic sheen effect */
+    .sidenav::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 100%;
+      background: linear-gradient(45deg,
+          rgba(255, 255, 255, 0.03) 0%,
+          rgba(255, 255, 255, 0.08) 25%,
+          rgba(255, 255, 255, 0.03) 50%,
+          rgba(255, 255, 255, 0.01) 100%);
+      pointer-events: none;
+    }
+
+    .logo {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: white;
+      padding: 2rem 1.5rem 1.5rem;
+      text-transform: lowercase;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, #c0c0c0, #e0e0e0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      position: relative;
+    }
+
+    .nav-links {
+      display: flex;
+      flex-direction: column;
+      padding: 1rem 0;
+    }
+
+    .nav-link {
+      color: var(--zinc-300);
+      text-decoration: none;
+      padding: 0.8rem 1.5rem;
+      font-weight: 500;
+      position: relative;
+      transition: all 0.2s ease;
+      border-left: 3px solid transparent;
+      display: flex;
+      align-items: center;
+      font-size: 0.95rem;
+    }
+
+    .nav-link:hover {
+      color: white;
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .nav-link.active {
+      color: white;
+      border-left: 3px solid #c0c0c0;
+      background-color: rgba(255, 255, 255, 0.07);
+    }
+
+    .content {
+      flex: 1;
+      padding: 2rem 3rem;
+      margin-left: 280px;
+      width: calc(100% - 280px);
+      max-width: 1200px;
+      background-color: var(--zinc-200);
+      background-image: linear-gradient(135deg, #e4e4e7 0%, #d4d4d8 100%);
+    }
+
+    /* Custom code highlighting styles */
+    pre {
+      position: relative;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      background-color: var(--code-bg);
+      border: 1px solid var(--zinc-300);
+    }
+
+    pre code {
+      border-radius: 8px;
+      color: var(--code-text);
+    }
+
+    pre code .hljs-keyword {
+      color: var(--code-keyword);
+    }
+
+    pre code .hljs-function {
+      color: var(--code-function);
+    }
+
+    pre code .hljs-string {
+      color: var(--code-string);
+    }
+
+    pre code .hljs-comment {
+      color: var(--code-comment);
+    }
+
+    .copy-button {
+      background: #e2e8f0;
+      border: none;
+      border-radius: 4px;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 32px;
+      height: 32px;
+      opacity: 0.8;
+    }
+
+    .copy-button:hover {
+      color: #334155;
+      opacity: 1;
+    }
+
+    .copy-button.clipboard-copied {
+      color: #10b981;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+      }
+
+      .sidenav {
+        width: 100%;
+        height: auto;
+        position: relative;
+      }
+
+      .content {
+        margin-left: 0;
+        width: 100%;
+        padding: 1.5rem;
+      }
+    }
+  </style>
 </head>
 
 <body>
@@ -14,10 +234,37 @@
     <aside class="sidenav">
       <h1 class="logo">zinc</h1>
       <nav class="nav-links">
-        <a href="/" class="nav-link nav-intro">Introduction</a>
-        <a href="/getting-started" class="nav-link nav-getting-started">Getting Started</a>
-        <a href="/guide" class="nav-link nav-guide">Guide</a>
-        <a href="/concepts" class="nav-link nav-concepts">Concepts</a>
+        <a href="/" class="nav-link nav-intro">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Introduction
+        </a>
+        <a href="/getting-started" class="nav-link nav-getting-started">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round"></path>
+          </svg>
+          Getting Started
+        </a>
+        <a href="/guide" class="nav-link nav-guide">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Guide
+        </a>
+        <a href="/concepts" class="nav-link nav-concepts">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Concepts
+        </a>
       </nav>
     </aside>
 
@@ -44,16 +291,15 @@
       const button = document.createElement('button');
       button.className = 'copy-button';
       button.style.position = 'absolute';
-      button.style.right = '-0.3rem';
-      button.style.transform = 'translateY(-50%)';
+      button.style.right = '10px';
+      button.style.top = '10px';
       button.style.display = 'flex';
       button.style.alignItems = 'center';
       button.style.justifyContent = 'center';
 
       if (isOsCodeBlock) {
-        button.style.bottom = '0.45rem';
+        button.style.bottom = '10px';
         button.style.top = 'auto';
-        button.style.transform = 'none';
       }
 
       button.innerHTML = `
