@@ -5,6 +5,7 @@ import "time"
 // Config holds the server configuration parameters.
 type Config struct {
 	// DefaultAddr specifies the HTTP server address.
+	// If not set, the server will listen on "0.0.0.0:8080".
 	DefaultAddr string
 	// ShutdownTimeout specifies the maximum duration to wait for server shutdown.
 	ShutdownTimeout time.Duration
