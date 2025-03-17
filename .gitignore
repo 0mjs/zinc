@@ -2,4 +2,5 @@
 tmp/*
 restricted/*
 vendor/*
+.DS_Store
 .cursorrules

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"slices"
 	"time"
 
@@ -225,7 +226,7 @@ func main() {
 			})
 			return
 		}
-		c.Status(201).JSON(user)
+		c.Status(http.StatusCreated).JSON(user)
 	})
 
 	// Cron jobs
@@ -245,12 +246,12 @@ func main() {
 
 		var user User
 		if err := c.Body(&user); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
 		if errs := app.Validate(user); len(errs) > 0 {
-			c.Status(400).JSON(zinc.Map{"errors": errs})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"errors": errs})
 			return
 		}
 
@@ -268,7 +269,7 @@ func main() {
 			"JoinDate": time.Now(),
 		}
 		if err := c.Render("profile", profileData); err != nil {
-			c.Status(500).Send(err.Error())
+			c.Status(http.StatusInternalServerError).Send(err.Error())
 		}
 	})
 
@@ -279,7 +280,7 @@ func main() {
 			"RandomID": fmt.Sprintf("%d", time.Now().UnixNano()%10000),
 		}
 		if err := c.Render("chat", data); err != nil {
-			c.Status(500).Send(err.Error())
+			c.Status(http.StatusInternalServerError).Send(err.Error())
 		}
 	})
 
@@ -290,7 +291,7 @@ func main() {
 		// Upgrade HTTP connection to WebSocket
 		conn, err := c.Upgrade()
 		if err != nil {
-			c.Status(400).Send(err.Error())
+			c.Status(http.StatusBadRequest).Send(err.Error())
 			return
 		}
 
@@ -327,13 +328,13 @@ func main() {
 	app.Post("/upload", func(c *zinc.Context) {
 		file, err := c.File("file")
 		if err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
 		err = c.SaveFile(file, "uploads")
 		if err != nil {
-			c.Status(500).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusInternalServerError).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -346,7 +347,7 @@ func main() {
 	app.Post("/upload/multiple", func(c *zinc.Context) {
 		files, err := c.Files("files")
 		if err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -354,7 +355,7 @@ func main() {
 		for _, file := range files {
 			err = c.SaveFile(file, "uploads")
 			if err != nil {
-				c.Status(500).JSON(zinc.Map{"error": err.Error()})
+				c.Status(http.StatusInternalServerError).JSON(zinc.Map{"error": err.Error()})
 				return
 			}
 			uploaded = append(uploaded, file.Filename)
@@ -376,25 +377,25 @@ func main() {
 
 		var post Post
 		if err := c.Body(&post); err != nil {
-			c.Status(400).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
 		if errs := app.Validate(post); len(errs) > 0 {
-			c.Status(400).JSON(zinc.Map{"errors": errs})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"errors": errs})
 			return
 		}
 
 		// Handle file upload
 		file, err := c.File("image")
 		if err != nil {
-			c.Status(400).JSON(zinc.Map{"error": "Image is required"})
+			c.Status(http.StatusBadRequest).JSON(zinc.Map{"error": "Image is required"})
 			return
 		}
 
 		err = c.SaveFile(file, "uploads")
 		if err != nil {
-			c.Status(500).JSON(zinc.Map{"error": err.Error()})
+			c.Status(http.StatusInternalServerError).JSON(zinc.Map{"error": err.Error()})
 			return
 		}
 
@@ -407,7 +408,7 @@ func main() {
 		}
 
 		if err := c.Render("post", data); err != nil {
-			c.Status(500).Send(err.Error())
+			c.Status(http.StatusInternalServerError).Send(err.Error())
 			return
 		}
 
@@ -443,7 +444,7 @@ func Authorize(permission string) zinc.Middleware {
 		validPermissions := []string{"some-permission", "another-permission"}
 
 		if !slices.Contains(validPermissions, permission) {
-			c.Status(403).JSON(zinc.Map{"error": "Unauthorized"})
+			c.Status(http.StatusForbidden).JSON(zinc.Map{"error": "Unauthorized"})
 			return
 		}
 
