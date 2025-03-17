@@ -1,4 +1,4 @@
-# zinc.
+# zinc
 
 ![Zinc](https://img.shields.io/badge/Zinc-%20A%20web%20framework%20for%20Go-silver)
 ![Version](https://img.shields.io/badge/version-0.0.58-red)
