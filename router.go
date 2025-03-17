@@ -1,6 +1,8 @@
 package zinc
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 )
@@ -44,6 +46,7 @@ type Router struct {
 	router     *RouteNode
 	middleware []Middleware
 	cache      *RouteCache
+	config     *Config // Reference to app config
 }
 
 // Use a fixed array to avoid allocations for common path lengths
@@ -106,70 +109,143 @@ func getPathParts(path string) []string {
 	return parts
 }
 
+// Add adds a route to the router
 func (r *Router) Add(method, path string, handlers ...interface{}) error {
-	// Initialize maps if needed
+	// Ensure we have a handler
+	if len(handlers) == 0 {
+		return fmt.Errorf("no handler provided for %s %s", method, path)
+	}
+
+	// Normalize path
+	path = r.normalizePath(path)
+
+	// Store original path for case-sensitive routing
+	originalPath := path
+
+	// Apply case insensitivity if configured
+	lowerPath := path
+	if r.config != nil && !r.config.CaseSensitive {
+		lowerPath = strings.ToLower(path)
+	}
+
+	// Handle strict routing - store both with and without trailing slash if needed
+	pathWithoutSlash := path
+	if len(path) > 1 && path[len(path)-1] == '/' {
+		pathWithoutSlash = path[:len(path)-1]
+	}
+
+	pathWithSlash := path
+	if len(path) > 0 && path[len(path)-1] != '/' {
+		pathWithSlash = path + "/"
+	}
+
+	// Initialize method map if it doesn't exist
 	if r.routes == nil {
 		r.routes = make(map[string]map[string]*Route)
 	}
 
-	methodRoutes, ok := r.routes[method]
-	if !ok {
-		methodRoutes = make(map[string]*Route)
-		r.routes[method] = methodRoutes
+	// Initialize routes for this method if they don't exist
+	if _, ok := r.routes[method]; !ok {
+		r.routes[method] = make(map[string]*Route)
 	}
 
-	// Fast path for single handler (most common case)
+	// Parse path into parts
+	parts := getPathParts(path)
+
+	// Determine the handler
 	var mainHandler RouteHandler
-	if len(handlers) == 1 {
-		mainHandler = convertToRouteHandler(handlers[0])
-	} else if len(handlers) > 1 {
-		// Pre-allocate routeHandlers slice with exact capacity
-		routeHandlers := make([]RouteHandler, 0, len(r.middleware)+len(handlers))
 
-		// Add middleware handlers if any
-		if len(r.middleware) > 0 {
-			for _, mw := range r.middleware {
-				routeHandlers = append(routeHandlers, RouteHandler(mw))
+	switch h := handlers[len(handlers)-1].(type) {
+	case RouteHandler:
+		mainHandler = h
+	case func(*Context) error:
+		mainHandler = h
+	case string:
+		// Static string response
+		mainHandler = func(c *Context) error {
+			return c.Send(h)
+		}
+	case []byte:
+		// Static byte slice response
+		mainHandler = func(c *Context) error {
+			return c.Send(h)
+		}
+	case func(http.ResponseWriter, *http.Request):
+		// Standard http.Handler
+		mainHandler = func(c *Context) error {
+			h(c.Response, c.Request)
+			return nil
+		}
+	case http.HandlerFunc:
+		// Standard http.HandlerFunc
+		mainHandler = func(c *Context) error {
+			h(c.Response, c.Request)
+			return nil
+		}
+	case http.Handler:
+		// Standard http.Handler
+		mainHandler = func(c *Context) error {
+			h.ServeHTTP(c.Response, c.Request)
+			return nil
+		}
+	default:
+		return fmt.Errorf("unsupported handler type %T", h)
+	}
+
+	// Handle middleware chain if there are multiple handlers
+	if len(handlers) > 1 {
+		middlware := make([]Middleware, 0, len(handlers)-1)
+		for i := 0; i < len(handlers)-1; i++ {
+			switch h := handlers[i].(type) {
+			case Middleware:
+				middlware = append(middlware, h)
+			case func(*Context) error:
+				middlware = append(middlware, h)
+			default:
+				return fmt.Errorf("middleware must be func(*Context) error, got %T", h)
 			}
 		}
 
-		// Add route handlers
-		for _, handler := range handlers {
-			rh := convertToRouteHandler(handler)
-			routeHandlers = append(routeHandlers, rh)
-		}
-
-		mainHandler = chain(routeHandlers)
-	}
-
-	path = r.normalizePath(path)
-
-	// Reuse path parts for static routes from a pool
-	var parts []string
-	if strings.IndexByte(path, ':') >= 0 || strings.IndexByte(path, '*') >= 0 {
-		// Dynamic route - need to parse and process parts
-		parts = getPathParts(path)
-	} else {
-		// Static route - use minimal parts array just to keep the API consistent
-		parts = make([]string, 0, 1)
-		if path != "/" && len(path) > 0 {
-			if path[0] == '/' {
-				parts = append(parts, path[1:])
-			} else {
-				parts = append(parts, path)
-			}
+		// Create a chain handler that runs middleware then the main handler
+		chainHandler := mainHandler
+		mainHandler = func(c *Context) error {
+			c.setHandlers(append(middlware, func(c *Context) error {
+				return chainHandler(c)
+			}))
+			return c.Next()
 		}
 	}
 
-	// Store in routes map
-	methodRoutes[path] = &Route{
+	// Create route object
+	route := &Route{
 		path:    path,
 		handler: mainHandler,
 		method:  method,
 		parts:   parts,
 	}
 
-	// Update trie storage - only needed for dynamic routes or if no cache exists
+	// Add to static routes map
+	if strings.IndexByte(path, ':') < 0 && strings.IndexByte(path, '*') < 0 {
+		// Always add the original path
+		r.routes[method][originalPath] = route
+
+		// If case insensitive, add lowercase version too (if different)
+		if r.config != nil && !r.config.CaseSensitive && lowerPath != originalPath {
+			r.routes[method][lowerPath] = route
+		}
+
+		// If not strict routing, add both with and without trailing slash
+		if r.config != nil && !r.config.StrictRouting {
+			if pathWithoutSlash != originalPath {
+				r.routes[method][pathWithoutSlash] = route
+			}
+			if pathWithSlash != originalPath {
+				r.routes[method][pathWithSlash] = route
+			}
+		}
+	}
+
+	// Add to the trie for dynamic route matching
 	if r.cache == nil || strings.IndexByte(path, ':') >= 0 || strings.IndexByte(path, '*') >= 0 {
 		current := r.router
 		if current == nil {
@@ -296,12 +372,38 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 }
 
 func (r *Router) Find(method, path string) (RouteHandler, *Context) {
+	// Apply config settings to path if needed
+	originalPath := path
+
+	// Handle case sensitivity
+	if r.config != nil && !r.config.CaseSensitive {
+		path = strings.ToLower(path)
+	}
+
+	// Handle strict routing - only modify path if strict routing is disabled
+	trailingSlashModified := false
+	if r.config != nil && !r.config.StrictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+		trailingSlashModified = true
+	}
+
 	// Static route fast path - most common case first
 	if routes, ok := r.routes[method]; ok {
-		if route, ok := routes[path]; ok {
+		// Try with original path first
+		if route, ok := routes[originalPath]; ok {
 			// Create a context with empty params - most common case for APIs
 			ctx := &Context{PathParams: params{}}
 			return route.handler, ctx
+		}
+
+		// If original path didn't match and we modified the path, try with modified path
+		// But only if strict routing is disabled or the modification wasn't due to trailing slash
+		if originalPath != path && (!r.config.StrictRouting || !trailingSlashModified) {
+			if route, ok := routes[path]; ok {
+				// Create a context with empty params - most common case for APIs
+				ctx := &Context{PathParams: params{}}
+				return route.handler, ctx
+			}
 		}
 	}
 
@@ -364,18 +466,17 @@ func (r *Router) Find(method, path string) (RouteHandler, *Context) {
 	}
 
 	// Then check all routes (including params/wildcards)
-	found := current.find(parts, ctx, method)
-	if found != nil {
+	if match := current.find(parts, ctx, method); match != nil {
 		// Get the handler for this method
 		var handler RouteHandler
-		if found.handlers != nil {
-			if h, ok := found.handlers[method]; ok {
+		if match.handlers != nil {
+			if h, ok := match.handlers[method]; ok {
 				handler = h
 			}
 		}
 		// Fallback to the old handler field
-		if handler == nil && found.handler != nil && (found.method == method || found.method == "") {
-			handler = found.handler
+		if handler == nil && match.handler != nil && (match.method == method || match.method == "") {
+			handler = match.handler
 		}
 
 		if handler != nil {
@@ -389,7 +490,6 @@ func (r *Router) Find(method, path string) (RouteHandler, *Context) {
 		}
 	}
 
-	// Return nil handler for 404
 	return nil, nil
 }
 

@@ -41,6 +41,7 @@ func (a *App) Serve(port ...string) error {
 	// Start cron scheduler
 	a.cronScheduler.Start()
 
+	// Apply provided port or use config default
 	serverPort := a.config.DefaultAddr
 	if len(port) > 0 && port[0] != "" {
 		serverPort = port[0]
@@ -50,13 +51,25 @@ func (a *App) Serve(port ...string) error {
 		addr = ":" + serverPort
 	}
 
-	// Create a new server with timeouts
+	// Create a new server with timeouts and other config options
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      a,
 		ReadTimeout:  a.config.ReadTimeout,
 		WriteTimeout: a.config.WriteTimeout,
 		IdleTimeout:  a.config.IdleTimeout,
+		// Set max concurrent connections if configured
+		MaxHeaderBytes: 1 << 20, // 1MB
+	}
+
+	// Set TCP keep-alive settings
+	if a.config.DisableKeepalive {
+		server.SetKeepAlivesEnabled(false)
+	}
+
+	// Optionally print routes
+	if a.config.EnablePrintRoutes {
+		a.printRoutes()
 	}
 
 	// Server run context
@@ -92,8 +105,16 @@ func (a *App) Serve(port ...string) error {
 		serverStopCtx()
 	}()
 
+	// Print startup message if not disabled
+	if !a.config.DisableStartupMessage {
+		appName := "Zinc"
+		if a.config.AppName != "" {
+			appName = a.config.AppName
+		}
+		fmt.Printf("%s server starting on %s...\n", appName, serverPort)
+	}
+
 	// Start server
-	fmt.Printf("Server starting on port %s...\n", serverPort)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
@@ -101,6 +122,24 @@ func (a *App) Serve(port ...string) error {
 	// Wait for server context to be stopped
 	<-serverCtx.Done()
 	return nil
+}
+
+// printRoutes prints all registered routes
+func (a *App) printRoutes() {
+	fmt.Println("📋 Registered Routes:")
+	fmt.Println("┌───────┬─────────────────────────────┐")
+	fmt.Println("│ METHOD │ PATH                       │")
+	fmt.Println("├───────┼─────────────────────────────┤")
+
+	if a.router != nil && a.router.routes != nil {
+		for method, routes := range a.router.routes {
+			for path := range routes {
+				fmt.Printf("│ %-5s │ %-27s │\n", method, path)
+			}
+		}
+	}
+
+	fmt.Println("└───────┴─────────────────────────────┘")
 }
 
 // Cron adds a cron job to be executed on the given schedule

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 )
@@ -38,50 +37,55 @@ var (
 	// }
 )
 
-// Fast path for common string response
+// Send sends a response with the appropriate content type.
 func (c *Context) Send(data interface{}) error {
 	if c.written {
 		return ErrResponseAlreadySent
 	}
 	c.written = true
 
+	// Get app config to check if default content type is disabled
+	app, ok := c.Get("app").(*App)
+	disableDefaultContentType := false
+	if ok && app != nil && app.config != nil {
+		disableDefaultContentType = app.config.DisableDefaultContentType
+	}
+
+	// Set content type based on data type (if not disabled)
+	if !disableDefaultContentType {
+		switch data.(type) {
+		case string:
+			c.Response.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		case []byte:
+			c.Response.Header().Set("Content-Type", "application/octet-stream")
+		case nil:
+			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		default:
+			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		}
+	}
+
 	if c.status == 0 {
 		c.status = http.StatusOK
 	}
 
-	switch v := data.(type) {
-	case string:
-		// Extremely common case optimization
-		if v == "Hello World!" {
-			// Direct write with no allocations for most common benchmark case
-			c.Response.Header().Set("Content-Type", textContentType)
-			c.Response.WriteHeader(c.status)
-			_, err := c.Response.Write(helloWorldBytes)
-			return err
-		}
+	c.Response.WriteHeader(c.status)
 
-		c.Response.Header().Set("Content-Type", textContentType)
-		c.Response.WriteHeader(c.status)
-		_, err := io.WriteString(c.Response, v) // Use io.WriteString for better performance
-		return err
-
-	case []byte:
-		c.Response.Header().Set("Content-Type", octetContentType)
-		c.Response.WriteHeader(c.status)
-		_, err := c.Response.Write(v)
-		return err
-
+	switch d := data.(type) {
 	case nil:
-		c.Response.Header().Set("Content-Type", jsonContentType)
-		c.Response.Header().Set("X-Content-Type-Options", nosniffHeader)
-		c.Response.WriteHeader(c.status)
-		_, err := c.Response.Write(nullBytes)
+		_, err := c.Response.Write([]byte("null"))
 		return err
-
+	case string:
+		_, err := c.Response.Write([]byte(d))
+		return err
+	case []byte:
+		_, err := c.Response.Write(d)
+		return err
 	default:
-		c.Response.Header().Set("Content-Type", jsonContentType)
-		c.Response.Header().Set("X-Content-Type-Options", nosniffHeader)
-		c.Response.WriteHeader(c.status)
+		// For JSON responses, ensure the content type is set correctly
+		if !disableDefaultContentType {
+			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		}
 		return json.NewEncoder(c.Response).Encode(data)
 	}
 }
@@ -93,13 +97,15 @@ func (c *Context) JSON(data interface{}) error {
 	}
 	c.written = true
 
+	// Always set JSON content type since this is an explicit JSON method
+	c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+
 	if c.status == 0 {
 		c.status = http.StatusOK
 	}
 
 	// Fast path for nil data
 	if data == nil {
-		copyHeader(c.Response.Header(), jsonHeaders)
 		c.Response.WriteHeader(c.status)
 		_, err := c.Response.Write(nullBytes)
 		return err
@@ -109,28 +115,24 @@ func (c *Context) JSON(data interface{}) error {
 	switch v := data.(type) {
 	case string:
 		// String fast path (common for API error messages)
-		copyHeader(c.Response.Header(), jsonHeaders)
 		c.Response.WriteHeader(c.status)
 		_, err := c.Response.Write([]byte(`"` + v + `"`))
 		return err
 
 	case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32, bool:
 		// Use fmt.Sprint for simple scalar types
-		copyHeader(c.Response.Header(), jsonHeaders)
 		c.Response.WriteHeader(c.status)
 		_, err := fmt.Fprint(c.Response, v)
 		return err
 
 	case []byte:
 		// Pre-marshaled JSON
-		copyHeader(c.Response.Header(), jsonHeaders)
 		c.Response.WriteHeader(c.status)
 		_, err := c.Response.Write(v)
 		return err
 
 	case map[string]interface{}:
 		// Common map type - can potentially optimize further if needed
-		copyHeader(c.Response.Header(), jsonHeaders)
 		c.Response.WriteHeader(c.status)
 
 		// Use a buffer pool for marshaling to avoid GC pressure
@@ -147,7 +149,6 @@ func (c *Context) JSON(data interface{}) error {
 	}
 
 	// Default path for complex types
-	copyHeader(c.Response.Header(), jsonHeaders)
 	c.Response.WriteHeader(c.status)
 	return json.NewEncoder(c.Response).Encode(data)
 }
@@ -184,7 +185,8 @@ func (c *Context) HTML(data string) error {
 	}
 	c.written = true
 
-	copyHeader(c.Response.Header(), htmlHeaders)
+	// Always set HTML content type since this is an explicit HTML method
+	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if c.status == 0 {
 		c.status = http.StatusOK

@@ -360,7 +360,7 @@ func TestRequestBody(t *testing.T) {
 			Email string `json:"email"`
 		}
 		var user User
-		if err := c.Body(&user); err != nil {
+		if err := c.BodyParser(&user); err != nil {
 			return c.Status(http.StatusBadRequest).Send(err.Error())
 		}
 		return c.JSON(Map{"received": user})

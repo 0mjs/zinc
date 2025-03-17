@@ -327,18 +327,37 @@ func TestContextBody(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	c := &Context{Response: w, Request: r}
+	c := &Context{Response: w, Request: r, Store: make(map[string]interface{})}
 
-	// Test parsing request body
+	// Set app with config for testing
+	app := &App{config: &Config{BodyLimit: 1024 * 1024}} // 1MB limit
+	c.Set("app", app)
+
+	// Test getting request body as string
+	body, err := c.Body()
+	if err != nil {
+		t.Errorf("Body() returned error: %v", err)
+	}
+
+	if body != jsonData {
+		t.Errorf("Body() = %q, want %q", body, jsonData)
+	}
+
+	// Test parsing with BodyParser
 	type User struct {
 		Name  string `json:"name"`
 		Email string `json:"email"`
 	}
 
+	r2 := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(jsonData))
+	r2.Header.Set("Content-Type", "application/json")
+	c2 := &Context{Response: w, Request: r2, Store: make(map[string]interface{})}
+	c2.Set("app", app)
+
 	var user User
-	err := c.Body(&user)
+	err = c2.BodyParser(&user)
 	if err != nil {
-		t.Errorf("Body() returned error: %v", err)
+		t.Errorf("BodyParser() returned error: %v", err)
 	}
 
 	if user.Name != "John Doe" || user.Email != "john@example.com" {

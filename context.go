@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -236,14 +237,81 @@ func (c *Context) HasQuery(name string) bool {
 	return false
 }
 
-// Body decodes the request body into the provided interface.
-func (c *Context) Body(v interface{}) error {
-	if c.Request.Body == nil {
-		return errors.New("request body is nil")
+// Body returns the request body as a string.
+func (c *Context) Body() (string, error) {
+	// Get app reference for accessing config
+	app, ok := c.Get("app").(*App)
+	if !ok {
+		return "", errors.New("unable to get app reference")
 	}
-	defer c.Request.Body.Close()
 
-	return json.NewDecoder(c.Request.Body).Decode(v)
+	// Check for body size limit
+	if app.config.BodyLimit > 0 {
+		r := io.LimitReader(c.Request.Body, app.config.BodyLimit)
+		body, err := io.ReadAll(r)
+		if err != nil {
+			return "", err
+		}
+
+		// Check if the limit was exceeded
+		if int64(len(body)) >= app.config.BodyLimit {
+			return "", fmt.Errorf("request body size exceeds the limit of %d bytes", app.config.BodyLimit)
+		}
+
+		return string(body), nil
+	}
+
+	// No limit set, read entire body
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// BodyParser parses the request body into a provided struct.
+func (c *Context) BodyParser(out interface{}) error {
+	// Get app reference for accessing config
+	app, ok := c.Get("app").(*App)
+	if !ok {
+		return errors.New("unable to get app reference")
+	}
+
+	// Determine content type
+	contentType := c.Request.Header.Get("Content-Type")
+
+	// Check for body size limit
+	var body []byte
+	var err error
+
+	if app.config.BodyLimit > 0 {
+		r := io.LimitReader(c.Request.Body, app.config.BodyLimit+1) // +1 to detect if limit is exceeded
+		body, err = io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+
+		// Check if the limit was exceeded
+		if int64(len(body)) > app.config.BodyLimit {
+			return fmt.Errorf("request body size exceeds the limit of %d bytes", app.config.BodyLimit)
+		}
+	} else {
+		// No limit set, read entire body
+		body, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse based on content type
+	switch {
+	case strings.HasPrefix(contentType, "application/json"):
+		return json.Unmarshal(body, out)
+	case strings.HasPrefix(contentType, "application/xml"):
+		return xml.Unmarshal(body, out)
+	default:
+		return fmt.Errorf("unsupported content type: %s", contentType)
+	}
 }
 
 // setParam sets a path parameter with optimized allocation
@@ -549,4 +617,80 @@ func setFieldValue(value reflect.Value, input string) error {
 	}
 
 	return nil
+}
+
+// IP returns the client's IP address.
+func (c *Context) IP() string {
+	// Get app reference for accessing config
+	app, ok := c.Get("app").(*App)
+	if !ok {
+		return c.RemoteIP()
+	}
+
+	// If trusted proxy checking is enabled
+	if app.config.EnableTrustedProxyCheck {
+		// Get the remote IP from the request
+		remoteIP := c.RemoteIP()
+
+		// Check if the remote IP is in the trusted proxies list
+		if isTrustedProxy(remoteIP, app.config.TrustedProxies) {
+			// If it's trusted, get the client IP from the proxy header
+			if proxyHeader := app.config.ProxyHeader; proxyHeader != "" {
+				if clientIP := c.Request.Header.Get(proxyHeader); clientIP != "" {
+					// The header might contain multiple IPs (e.g. "client, proxy1, proxy2")
+					// We need to get the first one which is the client IP
+					if commaIndex := strings.Index(clientIP, ","); commaIndex > 0 {
+						return strings.TrimSpace(clientIP[:commaIndex])
+					}
+					return strings.TrimSpace(clientIP)
+				}
+			}
+		}
+
+		// Fallback to remote IP if not trusted or no proxy header
+		return remoteIP
+	}
+
+	// If proxy checking is disabled, return the remote IP
+	return c.RemoteIP()
+}
+
+// RemoteIP returns the remote IP address of the request.
+func (c *Context) RemoteIP() string {
+	// Get IP from RemoteAddr
+	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		// If we can't split it, just return it as is
+		return c.Request.RemoteAddr
+	}
+	return ip
+}
+
+// isTrustedProxy checks if the given IP is in the list of trusted proxies.
+func isTrustedProxy(ip string, trustedProxies []string) bool {
+	if len(trustedProxies) == 0 {
+		return false
+	}
+
+	for _, trustedIP := range trustedProxies {
+		if strings.Contains(trustedIP, "/") {
+			// It's a CIDR block
+			_, ipNet, err := net.ParseCIDR(trustedIP)
+			if err != nil {
+				continue
+			}
+
+			parsedIP := net.ParseIP(ip)
+			if parsedIP != nil && ipNet.Contains(parsedIP) {
+				return true
+			}
+		} else {
+			// It's a single IP
+			if ip == trustedIP {
+				return true
+			}
+		}
+	}
+
+	return false
 }
