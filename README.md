@@ -78,7 +78,7 @@ func LoggerMiddleware() zinc.Middleware {
 For complete documentation, visit:
 
 - [Pkg.go.dev Documentation](https://pkg.go.dev/github.com/0mjs/zinc)
-- [Official Guide](https://github.com/0mjs/zinc/docs)
+- [Official Guide]([https://github.com/0mjs/zinc/docs](https://zinc.0mjs.dev/)
 
 ## Benchmarks
 
