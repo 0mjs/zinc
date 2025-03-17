@@ -19,7 +19,7 @@ func TestGracefulShutdown(t *testing.T) {
 	slowHandlerExecuted := make(chan struct{}, 1)
 	slowHandlerFinished := make(chan struct{}, 1)
 
-	app.Get("/slow", func(c *Context) {
+	app.Get("/slow", func(c *Context) error {
 		// Signal that handler was executed
 		select {
 		case slowHandlerExecuted <- struct{}{}:
@@ -27,18 +27,20 @@ func TestGracefulShutdown(t *testing.T) {
 		}
 
 		time.Sleep(300 * time.Millisecond)
-		c.Send("slow response")
+		err := c.Send("slow response")
 
 		// Signal that handler finished
 		select {
 		case slowHandlerFinished <- struct{}{}:
 		default:
 		}
+
+		return err
 	})
 
 	// Add a regular handler for basic functionality testing
-	app.Get("/ping", func(c *Context) {
-		c.Send("pong")
+	app.Get("/ping", func(c *Context) error {
+		return c.Send("pong")
 	})
 
 	// Configure short timeouts for testing
@@ -127,7 +129,7 @@ func TestShutdownTimeout(t *testing.T) {
 	// Add a handler that takes longer than shutdown timeout
 	handlerStarted := make(chan struct{}, 1)
 
-	app.Get("/very-slow", func(c *Context) {
+	app.Get("/very-slow", func(c *Context) error {
 		// Signal that handler started
 		select {
 		case handlerStarted <- struct{}{}:
@@ -136,7 +138,7 @@ func TestShutdownTimeout(t *testing.T) {
 
 		// This handler takes 1 second, but our shutdown timeout is 200ms
 		time.Sleep(1 * time.Second)
-		c.Send("very slow response")
+		return c.Send("very slow response")
 	})
 
 	// Configure very short shutdown timeout for testing

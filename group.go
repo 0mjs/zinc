@@ -53,37 +53,37 @@ func (g *Group) combineHandlers(handlers ...interface{}) []interface{} {
 	return combined
 }
 
-func (g *Group) Get(path string, handlers ...interface{}) {
+func (g *Group) Get(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Get(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Get(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Post(path string, handlers ...interface{}) {
+func (g *Group) Post(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Post(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Post(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Put(path string, handlers ...interface{}) {
+func (g *Group) Put(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Put(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Put(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Delete(path string, handlers ...interface{}) {
+func (g *Group) Delete(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Delete(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Delete(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Patch(path string, handlers ...interface{}) {
+func (g *Group) Patch(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Patch(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Patch(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Head(path string, handlers ...interface{}) {
+func (g *Group) Head(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Head(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Head(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Options(path string, handlers ...interface{}) {
+func (g *Group) Options(path string, handlers ...interface{}) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
-	g.app.Options(fullPath, g.combineHandlers(handlers...)...)
+	return g.app.Options(fullPath, g.combineHandlers(handlers...)...)
 }

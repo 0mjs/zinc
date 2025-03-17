@@ -37,7 +37,7 @@ type Route struct {
 	parts   []string
 }
 
-type Middleware func(c *Context)
+type Middleware func(c *Context) error
 
 type Router struct {
 	routes     map[string]map[string]*Route
@@ -106,7 +106,7 @@ func getPathParts(path string) []string {
 	return parts
 }
 
-func (r *Router) Add(method, path string, handlers ...interface{}) {
+func (r *Router) Add(method, path string, handlers ...interface{}) error {
 	// Initialize maps if needed
 	if r.routes == nil {
 		r.routes = make(map[string]map[string]*Route)
@@ -231,6 +231,8 @@ func (r *Router) Add(method, path string, handlers ...interface{}) {
 			current = child
 		}
 	}
+
+	return nil
 }
 
 type routeCacheKey struct {
@@ -404,21 +406,27 @@ func chain(handlers []RouteHandler) RouteHandler {
 	// Optimization for two handlers case (also common)
 	if len(handlers) == 2 {
 		h1, h2 := handlers[0], handlers[1]
-		return func(c *Context) {
-			h1(c)
-			if !c.written {
-				h2(c)
+		return func(c *Context) error {
+			if err := h1(c); err != nil {
+				return err
 			}
+			if !c.written {
+				return h2(c)
+			}
+			return nil
 		}
 	}
 
 	// For 3+ handlers, use the general case
-	return func(c *Context) {
+	return func(c *Context) error {
 		for i, handler := range handlers {
-			handler(c)
+			if err := handler(c); err != nil {
+				return err
+			}
+
 			if c.written {
 				// Fast return
-				return
+				return nil
 			}
 
 			// Add performance hint for the runtime
@@ -431,8 +439,9 @@ func chain(handlers []RouteHandler) RouteHandler {
 
 		// Handle the last handler(s) directly to avoid loop checks
 		if len(handlers) > 0 && !c.written {
-			handlers[len(handlers)-1](c)
+			return handlers[len(handlers)-1](c)
 		}
+		return nil
 	}
 }
 
@@ -602,40 +611,40 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
-func (a *App) Get(path string, handlers ...interface{}) {
-	a.router.Add(MethodGet, path, handlers...)
+func (a *App) Get(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodGet, path, handlers...)
 }
 
-func (a *App) Post(path string, handlers ...interface{}) {
-	a.router.Add(MethodPost, path, handlers...)
+func (a *App) Post(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodPost, path, handlers...)
 }
 
-func (a *App) Put(path string, handlers ...interface{}) {
-	a.router.Add(MethodPut, path, handlers...)
+func (a *App) Put(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodPut, path, handlers...)
 }
 
-func (a *App) Delete(path string, handlers ...interface{}) {
-	a.router.Add(MethodDelete, path, handlers...)
+func (a *App) Delete(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodDelete, path, handlers...)
 }
 
-func (a *App) Patch(path string, handlers ...interface{}) {
-	a.router.Add(MethodPatch, path, handlers...)
+func (a *App) Patch(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodPatch, path, handlers...)
 }
 
-func (a *App) Head(path string, handlers ...interface{}) {
-	a.router.Add(MethodHead, path, handlers...)
+func (a *App) Head(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodHead, path, handlers...)
 }
 
-func (a *App) Options(path string, handlers ...interface{}) {
-	a.router.Add(MethodOptions, path, handlers...)
+func (a *App) Options(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodOptions, path, handlers...)
 }
 
-func (a *App) Connect(path string, handlers ...interface{}) {
-	a.router.Add(MethodConnect, path, handlers...)
+func (a *App) Connect(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodConnect, path, handlers...)
 }
 
-func (a *App) Trace(path string, handlers ...interface{}) {
-	a.router.Add(MethodTrace, path, handlers...)
+func (a *App) Trace(path string, handlers ...interface{}) error {
+	return a.router.Add(MethodTrace, path, handlers...)
 }
 
 func (r *Router) findRoute(method string, path string) (RouteHandler, *Context) {
@@ -659,13 +668,18 @@ func (r *Router) middlewareToHandlers() []RouteHandler {
 func convertToRouteHandler(handler interface{}) RouteHandler {
 	switch v := handler.(type) {
 	case string:
-		return func(c *Context) {
-			c.Send(v)
+		return func(c *Context) error {
+			return c.Send(v)
 		}
 	case RouteHandler:
 		return v
-	case func(*Context):
+	case func(*Context) error:
 		return v
+	case func(*Context):
+		return func(c *Context) error {
+			v(c)
+			return nil
+		}
 	case Middleware:
 		return RouteHandler(v)
 	default:

@@ -352,20 +352,23 @@ func TestContextNext(t *testing.T) {
 	// Create middleware chain
 	calls := []string{}
 
-	middleware1 := func(c *Context) {
+	middleware1 := func(c *Context) error {
 		calls = append(calls, "middleware1 before")
-		c.Next()
+		err := c.Next()
 		calls = append(calls, "middleware1 after")
+		return err
 	}
 
-	middleware2 := func(c *Context) {
+	middleware2 := func(c *Context) error {
 		calls = append(calls, "middleware2 before")
-		c.Next()
+		err := c.Next()
 		calls = append(calls, "middleware2 after")
+		return err
 	}
 
-	handler := func(c *Context) {
+	handler := func(c *Context) error {
 		calls = append(calls, "handler")
+		return nil
 	}
 
 	// Set up the handlers
@@ -373,7 +376,10 @@ func TestContextNext(t *testing.T) {
 	c.index = -1
 
 	// Call Next to start middleware chain
-	c.Next()
+	err := c.Next()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
 
 	// Verify middleware order
 	expected := []string{
@@ -470,7 +476,7 @@ func TestContextRelease(t *testing.T) {
 	c := &Context{
 		Response:   httptest.NewRecorder(),
 		Request:    httptest.NewRequest(http.MethodGet, "/", nil),
-		handlers:   []Middleware{func(c *Context) {}},
+		handlers:   []Middleware{func(c *Context) error { return nil }},
 		PathParams: params{},
 		Store:      make(map[string]interface{}),
 	}

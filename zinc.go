@@ -22,7 +22,7 @@ type App struct {
 	validator      *Validator
 }
 
-type RouteHandler func(c *Context)
+type RouteHandler func(c *Context) error
 
 type Map map[string]any
 
@@ -54,7 +54,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ctx.Set("app", a)
 
 				// Execute handler directly
-				route.handler(ctx)
+				if err := route.handler(ctx); err != nil {
+					// Handle error - write 500 if response not already written
+					if !ctx.written {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+				}
 				return
 			}
 		}
@@ -80,7 +85,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ctx.PathParams = entry.context.PathParams
 
 			// Execute handler
-			entry.handler(ctx)
+			if err := entry.handler(ctx); err != nil {
+				// Handle error - write 500 if response not already written
+				if !ctx.written {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			}
 			return
 		}
 	}
@@ -101,7 +111,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ctx.services = a.services
 				}
 
-				route.handler(ctx)
+				if err := route.handler(ctx); err != nil {
+					// Handle error - write 500 if response not already written
+					if !ctx.written {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+				}
 				return
 			}
 		}
@@ -122,7 +137,13 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle middleware if present
 	if len(a.middleware) > 0 {
 		ctx.setHandlers(a.middleware)
-		ctx.Next()
+		if err := ctx.Next(); err != nil {
+			// Handle error - write 500 if response not already written
+			if !ctx.written {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
 		if ctx.written {
 			return
 		}
@@ -144,7 +165,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-		handler(ctx)
+		if err := handler(ctx); err != nil {
+			// Handle error - write 500 if response not already written
+			if !ctx.written {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+		}
 		return
 	}
 

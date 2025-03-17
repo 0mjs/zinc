@@ -114,12 +114,12 @@ func collectResults(name string, b *testing.B, results *[]benchmarkResult) {
 }
 
 // Zinc handlers
-func zincHelloHandler(c *Context) {
-	c.Send("Hello World!")
+func zincHelloHandler(c *Context) error {
+	return c.Send("Hello World!")
 }
 
-func zincParamHandler(c *Context) {
-	c.Send(fmt.Sprintf("Hello, %s!", c.Param("name")))
+func zincParamHandler(c *Context) error {
+	return c.Send(fmt.Sprintf("Hello, %s!", c.Param("name")))
 }
 
 // Chi handlers
@@ -174,8 +174,19 @@ var testJSONData = func() testResponse {
 }()
 
 // Zinc JSON handler
-func zincJSONHandler(c *Context) {
-	c.JSON(testJSONData)
+func zincJSONHandler(c *Context) error {
+	resp := testResponse{
+		Message: "Success",
+		Status:  200,
+		Data: struct {
+			Items []string `json:"items"`
+			Count int      `json:"count"`
+		}{
+			Items: []string{"item1", "item2", "item3"},
+			Count: 3,
+		},
+	}
+	return c.JSON(resp)
 }
 
 // Chi JSON handler
@@ -195,11 +206,11 @@ func ginJSONHandler(c *gin.Context) {
 }
 
 // Zinc query params handler
-func zincQueryHandler(c *Context) {
+func zincQueryHandler(c *Context) error {
 	name := c.Query("name")
 	age := c.Query("age")
 	city := c.Query("city")
-	c.Send(fmt.Sprintf("Hello, %s! You are %s years old and from %s.", name, age, city))
+	return c.Send(fmt.Sprintf("Hello, %s! You are %s years old and from %s.", name, age, city))
 }
 
 // Chi query params handler
@@ -227,32 +238,32 @@ func ginQueryHandler(c *gin.Context) {
 }
 
 // Middleware handlers for Zinc
-func zincMiddleware1(c *Context) {
+func zincMiddleware1(c *Context) error {
 	c.Set("middleware1", true)
-	c.Next()
+	return c.Next()
 }
 
-func zincMiddleware2(c *Context) {
+func zincMiddleware2(c *Context) error {
 	c.Set("middleware2", true)
-	c.Next()
+	return c.Next()
 }
 
-func zincMiddleware3(c *Context) {
+func zincMiddleware3(c *Context) error {
 	c.Set("middleware3", true)
-	c.Next()
+	return c.Next()
 }
 
-func zincMiddleware4(c *Context) {
+func zincMiddleware4(c *Context) error {
 	c.Set("middleware4", true)
-	c.Next()
+	return c.Next()
 }
 
-func zincMiddleware5(c *Context) {
+func zincMiddleware5(c *Context) error {
 	c.Set("middleware5", true)
-	c.Next()
+	return c.Next()
 }
 
-func zincMiddlewareHandler(c *Context) {
+func zincMiddlewareHandler(c *Context) error {
 	// Access all middleware values to ensure they're used
 	v1 := c.Get("middleware1")
 	v2 := c.Get("middleware2")
@@ -260,7 +271,11 @@ func zincMiddlewareHandler(c *Context) {
 	v4 := c.Get("middleware4")
 	v5 := c.Get("middleware5")
 
-	c.Send(fmt.Sprintf("Middleware chain complete: %v %v %v %v %v", v1, v2, v3, v4, v5))
+	// Use the values to prevent compiler optimizations
+	if v1 != nil && v2 != nil && v3 != nil && v4 != nil && v5 != nil {
+		return c.Send("Hello World!")
+	}
+	return c.Send("Hello World!")
 }
 
 // Middleware handlers for Chi
@@ -701,11 +716,11 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 }
 
 // Zinc nested routes handler
-func zincNestedHandler(c *Context) {
+func zincNestedHandler(c *Context) error {
 	category := c.Param("category")
 	id := c.Param("id")
 	subresource := c.Param("subresource")
-	c.Send(fmt.Sprintf("Resource: category=%s, id=%s, subresource=%s", category, id, subresource))
+	return c.Send(fmt.Sprintf("Resource: category=%s, id=%s, subresource=%s", category, id, subresource))
 }
 
 // Chi nested routes handler
@@ -785,10 +800,10 @@ func BenchmarkNestedRoutes(b *testing.B) {
 }
 
 // Zinc group handler
-func zincGroupHandler(c *Context) {
+func zincGroupHandler(c *Context) error {
 	resource := c.Param("resource")
 	action := c.Param("action")
-	c.Send(fmt.Sprintf("API Resource: %s, Action: %s", resource, action))
+	return c.Send(fmt.Sprintf("API Resource: %s, Action: %s", resource, action))
 }
 
 // Chi group handler

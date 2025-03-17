@@ -13,23 +13,23 @@ func TestRouterBasic(t *testing.T) {
 	}
 
 	// Add some routes
-	router.Add(MethodGet, "/", func(c *Context) {
-		c.Send("root")
+	router.Add(MethodGet, "/", func(c *Context) error {
+		return c.Send("root")
 	})
-	router.Add(MethodGet, "/users", func(c *Context) {
-		c.Send("users")
+	router.Add(MethodGet, "/users", func(c *Context) error {
+		return c.Send("users")
 	})
-	router.Add(MethodGet, "/users/:id", func(c *Context) {
+	router.Add(MethodGet, "/users/:id", func(c *Context) error {
 		id := c.Param("id")
-		c.Send("user:" + id)
+		return c.Send("user:" + id)
 	})
-	router.Add(MethodGet, "/users/:id/posts", func(c *Context) {
+	router.Add(MethodGet, "/users/:id/posts", func(c *Context) error {
 		id := c.Param("id")
-		c.Send("posts for user:" + id)
+		return c.Send("posts for user:" + id)
 	})
-	router.Add(MethodGet, "/files/*path", func(c *Context) {
+	router.Add(MethodGet, "/files/*path", func(c *Context) error {
 		path := c.Param("*")
-		c.Send("file:" + path)
+		return c.Send("file:" + path)
 	})
 
 	tests := []struct {
@@ -68,15 +68,15 @@ func TestRouterParamPriority(t *testing.T) {
 		cache:  NewRouteCache(100),
 	}
 
-	// Add routes in non-optimal order to test priority
-	router.Add(MethodGet, "/users/:id", func(c *Context) {
-		c.Send("user:" + c.Param("id"))
+	// Add routes with parameter and static paths
+	router.Add(MethodGet, "/users/:id", func(c *Context) error {
+		return c.Send("user:" + c.Param("id"))
 	})
-	router.Add(MethodGet, "/users/new", func(c *Context) {
-		c.Send("new user form")
+	router.Add(MethodGet, "/users/new", func(c *Context) error {
+		return c.Send("new user form")
 	})
-	router.Add(MethodGet, "/users/admin", func(c *Context) {
-		c.Send("admin panel")
+	router.Add(MethodGet, "/users/admin", func(c *Context) error {
+		return c.Send("admin user")
 	})
 
 	tests := []struct {
@@ -84,7 +84,7 @@ func TestRouterParamPriority(t *testing.T) {
 		wantSend string
 	}{
 		{"/users/new", "new user form"},        // Should match exact path, not param
-		{"/users/admin", "admin panel"},        // Should match exact path, not param
+		{"/users/admin", "admin user"},         // Should match exact path, not param
 		{"/users/123", "user:123"},             // Should match param route
 		{"/users/something", "user:something"}, // Should match param route
 	}
@@ -114,12 +114,12 @@ func TestRouterWildcard(t *testing.T) {
 		cache:  NewRouteCache(100),
 	}
 
-	// Add routes with wildcards
-	router.Add(MethodGet, "/static/*filepath", func(c *Context) {
-		c.Send("static:" + c.Param("*"))
+	// Add wildcard routes
+	router.Add(MethodGet, "/static/*filepath", func(c *Context) error {
+		return c.Send("static:" + c.Param("*"))
 	})
-	router.Add(MethodGet, "/download/*filepath", func(c *Context) {
-		c.Send("download:" + c.Param("*"))
+	router.Add(MethodGet, "/download/*filepath", func(c *Context) error {
+		return c.Send("download:" + c.Param("*"))
 	})
 
 	tests := []struct {
@@ -158,18 +158,18 @@ func TestRouterMethodsAndNoMatch(t *testing.T) {
 		cache:  NewRouteCache(100),
 	}
 
-	// Add routes for different HTTP methods
-	router.Add(MethodGet, "/users", func(c *Context) {
-		c.Send("get users")
+	// Add routes with different methods
+	router.Add(MethodGet, "/users", func(c *Context) error {
+		return c.Send("get users")
 	})
-	router.Add(MethodPost, "/users", func(c *Context) {
-		c.Send("create user")
+	router.Add(MethodPost, "/users", func(c *Context) error {
+		return c.Send("create user")
 	})
-	router.Add(MethodPut, "/users/:id", func(c *Context) {
-		c.Send("update user:" + c.Param("id"))
+	router.Add(MethodPut, "/users/:id", func(c *Context) error {
+		return c.Send("update user:" + c.Param("id"))
 	})
-	router.Add(MethodDelete, "/users/:id", func(c *Context) {
-		c.Send("delete user:" + c.Param("id"))
+	router.Add(MethodDelete, "/users/:id", func(c *Context) error {
+		return c.Send("delete user:" + c.Param("id"))
 	})
 
 	// Test finding routes with correct HTTP method
@@ -235,9 +235,9 @@ func TestRouteNodeFind(t *testing.T) {
 	root.children = append(root.children, exactChild, paramChild, wildcardChild)
 
 	// Add a handler to each child
-	exactChild.handler = func(c *Context) { c.Send("exact") }
-	paramChild.handler = func(c *Context) { c.Send("param:" + c.Param("param")) }
-	wildcardChild.handler = func(c *Context) { c.Send("wildcard:" + c.Param("*")) }
+	exactChild.handler = func(c *Context) error { return c.Send("exact") }
+	paramChild.handler = func(c *Context) error { return c.Send("param:" + c.Param("param")) }
+	wildcardChild.handler = func(c *Context) error { return c.Send("wildcard:" + c.Param("*")) }
 
 	// Test cases
 	tests := []struct {
@@ -279,9 +279,9 @@ func TestRouterCache(t *testing.T) {
 		cache:  NewRouteCache(100),
 	}
 
-	// Add routes that will be cached
-	router.Add(MethodGet, "/users/:id", func(c *Context) {
-		c.Send("user:" + c.Param("id"))
+	// Add a route with a parameter
+	router.Add(MethodGet, "/users/:id", func(c *Context) error {
+		return c.Send("user:" + c.Param("id"))
 	})
 
 	// First call should not use cache
@@ -384,19 +384,19 @@ func TestNormalizePath(t *testing.T) {
 func BenchmarkRouterFind(b *testing.B) {
 	router := &Router{
 		routes: make(map[string]map[string]*Route),
-		cache:  NewRouteCache(100),
+		cache:  NewRouteCache(1000),
 	}
 
-	// Add routes
-	router.Add(MethodGet, "/", func(c *Context) {})
-	router.Add(MethodGet, "/users", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id/posts", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id/posts/:postId", func(c *Context) {})
-	router.Add(MethodGet, "/files/*filepath", func(c *Context) {})
-	router.Add(MethodGet, "/static/*filepath", func(c *Context) {})
-	router.Add(MethodGet, "/api/v1/users", func(c *Context) {})
-	router.Add(MethodGet, "/api/v1/users/:id", func(c *Context) {})
+	// Add routes for benchmarking
+	router.Add(MethodGet, "/", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id/posts", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id/posts/:postId", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/files/*filepath", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/static/*filepath", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/api/v1/users", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/api/v1/users/:id", func(c *Context) error { return nil })
 
 	// Define test paths
 	paths := []string{
@@ -427,16 +427,16 @@ func BenchmarkRouterFindWithoutCache(b *testing.B) {
 		routes: make(map[string]map[string]*Route),
 	}
 
-	// Add routes
-	router.Add(MethodGet, "/", func(c *Context) {})
-	router.Add(MethodGet, "/users", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id/posts", func(c *Context) {})
-	router.Add(MethodGet, "/users/:id/posts/:postId", func(c *Context) {})
-	router.Add(MethodGet, "/files/*filepath", func(c *Context) {})
-	router.Add(MethodGet, "/static/*filepath", func(c *Context) {})
-	router.Add(MethodGet, "/api/v1/users", func(c *Context) {})
-	router.Add(MethodGet, "/api/v1/users/:id", func(c *Context) {})
+	// Add routes for benchmarking
+	router.Add(MethodGet, "/", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id/posts", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/users/:id/posts/:postId", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/files/*filepath", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/static/*filepath", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/api/v1/users", func(c *Context) error { return nil })
+	router.Add(MethodGet, "/api/v1/users/:id", func(c *Context) error { return nil })
 
 	// Define test paths
 	paths := []string{
@@ -468,15 +468,15 @@ func TestRouterMethodHandling(t *testing.T) {
 		cache:  NewRouteCache(100),
 	}
 
-	// Add routes for different HTTP methods with the same path pattern
-	router.Add(MethodPut, "/users/:id", func(c *Context) {
-		c.Send("put user:" + c.Param("id"))
+	// Add routes with different methods for the same path
+	router.Add(MethodPut, "/users/:id", func(c *Context) error {
+		return c.Send("put user:" + c.Param("id"))
 	})
-	router.Add(MethodDelete, "/users/:id", func(c *Context) {
-		c.Send("delete user:" + c.Param("id"))
+	router.Add(MethodDelete, "/users/:id", func(c *Context) error {
+		return c.Send("delete user:" + c.Param("id"))
 	})
-	router.Add(MethodPatch, "/users/:id", func(c *Context) {
-		c.Send("patch user:" + c.Param("id"))
+	router.Add(MethodPatch, "/users/:id", func(c *Context) error {
+		return c.Send("patch user:" + c.Param("id"))
 	})
 
 	// Test each method separately

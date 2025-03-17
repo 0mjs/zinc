@@ -15,29 +15,30 @@ import (
 // TestRouting tests basic routing functionality
 func TestRouting(t *testing.T) {
 	app := New()
-	app.Get("/", func(c *Context) {
-		c.Send("root")
+	app.Get("/", func(c *Context) error {
+		return c.Send("root")
 	})
-	app.Get("/hello", func(c *Context) {
-		c.Send("Hello World!")
+	app.Get("/hello", func(c *Context) error {
+		return c.Send("Hello World!")
 	})
-	app.Post("/post", func(c *Context) {
-		c.Send("post")
+	app.Post("/post", func(c *Context) error {
+		return c.Send("post")
 	})
-	app.Put("/put", func(c *Context) {
-		c.Send("put")
+	app.Put("/put", func(c *Context) error {
+		return c.Send("put")
 	})
-	app.Delete("/delete", func(c *Context) {
-		c.Send("delete")
+	app.Delete("/delete", func(c *Context) error {
+		return c.Send("delete")
 	})
-	app.Patch("/patch", func(c *Context) {
-		c.Send("patch")
+	app.Patch("/patch", func(c *Context) error {
+		return c.Send("patch")
 	})
-	app.Head("/head", func(c *Context) {
+	app.Head("/head", func(c *Context) error {
 		// HEAD requests typically don't have a body
+		return nil
 	})
-	app.Options("/options", func(c *Context) {
-		c.Send("options")
+	app.Options("/options", func(c *Context) error {
+		return c.Send("options")
 	})
 
 	tests := []struct {
@@ -77,18 +78,18 @@ func TestRouting(t *testing.T) {
 // TestRouteParams tests route parameter handling
 func TestRouteParams(t *testing.T) {
 	app := New()
-	app.Get("/users/:id", func(c *Context) {
+	app.Get("/users/:id", func(c *Context) error {
 		id := c.Param("id")
-		c.Send(fmt.Sprintf("User ID: %s", id))
+		return c.Send(fmt.Sprintf("User ID: %s", id))
 	})
-	app.Get("/posts/:postID/comments/:commentID", func(c *Context) {
+	app.Get("/posts/:postID/comments/:commentID", func(c *Context) error {
 		postID := c.Param("postID")
 		commentID := c.Param("commentID")
-		c.Send(fmt.Sprintf("Post %s, Comment %s", postID, commentID))
+		return c.Send(fmt.Sprintf("Post %s, Comment %s", postID, commentID))
 	})
-	app.Get("/files/*path", func(c *Context) {
+	app.Get("/files/*path", func(c *Context) error {
 		path := c.Param("*")
-		c.Send(fmt.Sprintf("File path: %s", path))
+		return c.Send(fmt.Sprintf("File path: %s", path))
 	})
 
 	tests := []struct {
@@ -124,23 +125,23 @@ func TestRouteGroups(t *testing.T) {
 	app := New()
 
 	api := app.Group("api")
-	api.Get("/status", func(c *Context) {
-		c.Send("API Status: OK")
+	api.Get("/status", func(c *Context) error {
+		return c.Send("API Status: OK")
 	})
 
 	v1 := api.Group("v1")
-	v1.Get("/users", func(c *Context) {
-		c.Send("API v1 Users")
+	v1.Get("/users", func(c *Context) error {
+		return c.Send("API v1 Users")
 	})
 
 	v2 := api.Group("v2")
-	v2.Get("/users", func(c *Context) {
-		c.Send("API v2 Users")
+	v2.Get("/users", func(c *Context) error {
+		return c.Send("API v2 Users")
 	})
 
 	admin := app.Group("admin")
-	admin.Get("/dashboard", func(c *Context) {
-		c.Send("Admin Dashboard")
+	admin.Get("/dashboard", func(c *Context) error {
+		return c.Send("Admin Dashboard")
 	})
 
 	tests := []struct {
@@ -173,17 +174,17 @@ func TestRouteGroups(t *testing.T) {
 // TestQueryParams tests query parameter handling
 func TestQueryParams(t *testing.T) {
 	app := New()
-	app.Get("/search", func(c *Context) {
-		query := c.Query("q")
+	app.Get("/search", func(c *Context) error {
+		q := c.Query("q")
 		limit := c.Query("limit")
-		c.Send(fmt.Sprintf("Query: %s, Limit: %s", query, limit))
+		return c.Send(fmt.Sprintf("Query: %s, Limit: %s", q, limit))
 	})
 
-	app.Get("/hasquery", func(c *Context) {
+	app.Get("/hasquery", func(c *Context) error {
 		if c.HasQuery("exists") {
-			c.Send("Has Query")
+			return c.Send("Has Query")
 		} else {
-			c.Send("Missing Query")
+			return c.Send("Missing Query")
 		}
 	})
 
@@ -218,23 +219,23 @@ func TestQueryParams(t *testing.T) {
 // TestResponseTypes tests different response types
 func TestResponseTypes(t *testing.T) {
 	app := New()
-	app.Get("/text", func(c *Context) {
-		c.Send("Plain text response")
+	app.Get("/text", func(c *Context) error {
+		return c.Send("Plain text response")
 	})
-	app.Get("/bytes", func(c *Context) {
-		c.Send([]byte("Bytes response"))
+	app.Get("/bytes", func(c *Context) error {
+		return c.Send([]byte("Bytes response"))
 	})
-	app.Get("/json", func(c *Context) {
-		c.JSON(Map{"message": "JSON response", "status": "success"})
+	app.Get("/json", func(c *Context) error {
+		return c.JSON(Map{"message": "JSON response", "status": "success"})
 	})
-	app.Get("/html", func(c *Context) {
-		c.HTML("<h1>HTML response</h1>")
+	app.Get("/html", func(c *Context) error {
+		return c.HTML("<h1>HTML response</h1>")
 	})
-	app.Get("/nil", func(c *Context) {
-		c.Send(nil)
+	app.Get("/nil", func(c *Context) error {
+		return c.Send(nil)
 	})
-	app.Get("/status", func(c *Context) {
-		c.Status(http.StatusCreated).Send("Created")
+	app.Get("/status", func(c *Context) error {
+		return c.Status(http.StatusCreated).Send("Created")
 	})
 
 	tests := []struct {
@@ -282,44 +283,44 @@ func TestMiddleware(t *testing.T) {
 	app := New()
 
 	// Add global middleware
-	app.Use(func(c *Context) {
+	app.Use(func(c *Context) error {
 		c.Set("global", "set")
-		c.Next()
+		return c.Next()
 	})
 
 	// Route with route-specific middleware
-	app.Get("/middleware", func(c *Context) {
+	app.Get("/middleware", func(c *Context) error {
 		c.Set("route", "set")
-		c.Next()
-	}, func(c *Context) {
+		return c.Next()
+	}, func(c *Context) error {
 		globalVal := c.Get("global")
 		routeVal := c.Get("route")
-		c.Send(fmt.Sprintf("Global: %v, Route: %v", globalVal, routeVal))
+		return c.Send(fmt.Sprintf("Global: %v, Route: %v", globalVal, routeVal))
 	})
 
 	// Route that tests middleware termination
-	app.Get("/terminate", func(c *Context) {
-		c.Send("Early response")
+	app.Get("/terminate", func(c *Context) error {
+		return c.Send("Early response")
 		// Not calling Next() should terminate the chain
-	}, func(c *Context) {
+	}, func(c *Context) error {
 		// This should never be called
-		c.Send("Should not reach here")
+		return c.Send("Should not reach here")
 	})
 
 	// Test middleware order
 	var order []string
 	app.Get("/order",
-		func(c *Context) {
+		func(c *Context) error {
 			order = append(order, "first")
-			c.Next()
+			return c.Next()
 		},
-		func(c *Context) {
+		func(c *Context) error {
 			order = append(order, "second")
-			c.Next()
+			return c.Next()
 		},
-		func(c *Context) {
+		func(c *Context) error {
 			order = append(order, "third")
-			c.Send(strings.Join(order, ","))
+			return c.Send(strings.Join(order, ","))
 		},
 	)
 
@@ -353,17 +354,16 @@ func TestMiddleware(t *testing.T) {
 // TestRequestBody tests request body handling
 func TestRequestBody(t *testing.T) {
 	app := New()
-	app.Post("/json", func(c *Context) {
+	app.Post("/json", func(c *Context) error {
 		type User struct {
 			Name  string `json:"name"`
 			Email string `json:"email"`
 		}
 		var user User
 		if err := c.Body(&user); err != nil {
-			c.Status(http.StatusBadRequest).Send(err.Error())
-			return
+			return c.Status(http.StatusBadRequest).Send(err.Error())
 		}
-		c.JSON(Map{"received": user})
+		return c.JSON(Map{"received": user})
 	})
 
 	tests := []struct {
@@ -410,7 +410,7 @@ func TestRequestBody(t *testing.T) {
 // TestContextStore tests the context store functionality
 func TestContextStore(t *testing.T) {
 	app := New()
-	app.Get("/store", func(c *Context) {
+	app.Get("/store", func(c *Context) error {
 		c.Set("string", "value")
 		c.Set("number", 123)
 		c.Set("bool", true)
@@ -419,7 +419,7 @@ func TestContextStore(t *testing.T) {
 		numberVal := c.Get("number")
 		boolVal := c.Get("bool")
 
-		c.JSON(Map{
+		return c.JSON(Map{
 			"string": stringVal,
 			"number": numberVal,
 			"bool":   boolVal,
@@ -457,7 +457,7 @@ func TestContextStore(t *testing.T) {
 // TestMultipleResponses tests that multiple responses are handled correctly
 func TestMultipleResponses(t *testing.T) {
 	app := New()
-	app.Get("/multiple", func(c *Context) {
+	app.Get("/multiple", func(c *Context) error {
 		// First response should work
 		c.Send("First response")
 
@@ -471,6 +471,7 @@ func TestMultipleResponses(t *testing.T) {
 		if err != ErrResponseAlreadySent {
 			t.Errorf("Expected ErrResponseAlreadySent, got %v", err)
 		}
+		return nil
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/multiple", nil)
@@ -520,14 +521,14 @@ func TestServices(t *testing.T) {
 	app.Service("users", userService)
 
 	// Route that uses the service
-	app.Get("/users/:id", func(c *Context) {
+	app.Get("/users/:id", func(c *Context) error {
 		service := c.Service("users").(*UserService)
 		userId := c.Param("id")
-		c.Send(service.GetUser(userId))
+		return c.Send(service.GetUser(userId))
 	})
 
 	// Route that uses a non-existent service
-	app.Get("/unknown-service", func(c *Context) {
+	app.Get("/unknown-service", func(c *Context) error {
 		// This should panic, but we'll recover it for testing
 		defer func() {
 			if r := recover(); r != nil {
@@ -536,7 +537,7 @@ func TestServices(t *testing.T) {
 		}()
 
 		c.Service("nonexistent")
-		c.Send("Should not reach here")
+		return c.Send("Should not reach here")
 	})
 
 	tests := []struct {
@@ -568,15 +569,14 @@ func TestServices(t *testing.T) {
 // TestGETRequest tests a form data handling
 func TestFormData(t *testing.T) {
 	app := New()
-	app.Post("/form", func(c *Context) {
+	app.Post("/form", func(c *Context) error {
 		if err := c.Request.ParseForm(); err != nil {
-			c.Status(http.StatusBadRequest).Send(err.Error())
-			return
+			return c.Status(http.StatusBadRequest).Send(err.Error())
 		}
 
 		name := c.Request.FormValue("name")
 		email := c.Request.FormValue("email")
-		c.Send(fmt.Sprintf("Name: %s, Email: %s", name, email))
+		return c.Send(fmt.Sprintf("Name: %s, Email: %s", name, email))
 	})
 
 	formData := "name=John+Doe&email=john@example.com"
@@ -603,8 +603,8 @@ func TestStaticFiles(t *testing.T) {
 	}
 
 	app := New()
-	app.Get("/static", func(c *Context) {
-		c.Static(tempFile)
+	app.Get("/static", func(c *Context) error {
+		return c.Static(tempFile)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/static", nil)

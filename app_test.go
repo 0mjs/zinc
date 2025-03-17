@@ -3,7 +3,6 @@ package zinc
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -11,32 +10,33 @@ func TestAppRouting(t *testing.T) {
 	app := New()
 
 	// Register some routes
-	app.Get("/", func(c *Context) {
-		c.Send("root")
+	app.Get("/", func(c *Context) error {
+		return c.Send("root")
 	})
 
-	app.Post("/users", func(c *Context) {
-		c.Send("create user")
+	app.Post("/users", func(c *Context) error {
+		return c.Send("create user")
 	})
 
-	app.Put("/users/:id", func(c *Context) {
-		c.Send("update user " + c.Param("id"))
+	app.Put("/users/:id", func(c *Context) error {
+		return c.Send("update user " + c.Param("id"))
 	})
 
-	app.Delete("/users/:id", func(c *Context) {
-		c.Send("delete user " + c.Param("id"))
+	app.Delete("/users/:id", func(c *Context) error {
+		return c.Send("delete user " + c.Param("id"))
 	})
 
-	app.Patch("/users/:id", func(c *Context) {
-		c.Send("patch user " + c.Param("id"))
+	app.Patch("/users/:id", func(c *Context) error {
+		return c.Send("patch user " + c.Param("id"))
 	})
 
-	app.Head("/users", func(c *Context) {
+	app.Head("/users", func(c *Context) error {
 		// HEAD response typically has no body
+		return nil
 	})
 
-	app.Options("/users", func(c *Context) {
-		c.Send("options for users")
+	app.Options("/users", func(c *Context) error {
+		return c.Send("options for users")
 	})
 
 	// Test each route
@@ -78,23 +78,23 @@ func TestAppMiddleware(t *testing.T) {
 	app := New()
 
 	// Add global middleware
-	app.Use(func(c *Context) {
+	app.Use(func(c *Context) error {
 		c.Set("global", "middleware")
-		c.Next()
+		return c.Next()
 	})
 
 	// Add route with middleware
-	app.Get("/middleware", func(c *Context) {
+	app.Get("/middleware", func(c *Context) error {
 		c.Set("first", "middleware")
-		c.Next()
-	}, func(c *Context) {
+		return c.Next()
+	}, func(c *Context) error {
 		c.Set("second", "middleware")
-		c.Next()
-	}, func(c *Context) {
+		return c.Next()
+	}, func(c *Context) error {
 		global := c.Get("global")
 		first := c.Get("first")
 		second := c.Get("second")
-		c.Send(strings.Join([]string{global.(string), first.(string), second.(string)}, "-"))
+		return c.Send(global.(string) + " " + first.(string) + " " + second.(string))
 	})
 
 	// Test middleware execution
@@ -103,7 +103,7 @@ func TestAppMiddleware(t *testing.T) {
 
 	app.ServeHTTP(w, req)
 
-	wantBody := "middleware-middleware-middleware"
+	wantBody := "middleware middleware middleware"
 	if w.Body.String() != wantBody {
 		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
 	}
@@ -114,18 +114,18 @@ func TestAppGroup(t *testing.T) {
 
 	// Create route groups
 	api := app.Group("/api")
-	api.Get("/status", func(c *Context) {
-		c.Send("API is running")
+	api.Get("/status", func(c *Context) error {
+		return c.Send("API Status")
 	})
 
 	v1 := api.Group("/v1")
-	v1.Get("/users", func(c *Context) {
-		c.Send("v1 users")
+	v1.Get("/users", func(c *Context) error {
+		return c.Send("API v1 Users")
 	})
 
 	v2 := api.Group("/v2")
-	v2.Get("/users", func(c *Context) {
-		c.Send("v2 users")
+	v2.Get("/users", func(c *Context) error {
+		return c.Send("API v2 Users")
 	})
 
 	// Test grouped routes
@@ -133,9 +133,9 @@ func TestAppGroup(t *testing.T) {
 		path     string
 		wantBody string
 	}{
-		{"/api/status", "API is running"},
-		{"/api/v1/users", "v1 users"},
-		{"/api/v2/users", "v2 users"},
+		{"/api/status", "API Status"},
+		{"/api/v1/users", "API v1 Users"},
+		{"/api/v2/users", "API v2 Users"},
 	}
 
 	for _, tt := range tests {
@@ -161,14 +161,14 @@ func TestAppGroupMiddleware(t *testing.T) {
 
 	// Create route group with middleware
 	api := app.Group("/api")
-	api.Use(func(c *Context) {
+	api.Use(func(c *Context) error {
 		c.Set("group", "middleware")
-		c.Next()
+		return c.Next()
 	})
 
-	api.Get("/test", func(c *Context) {
+	api.Get("/test", func(c *Context) error {
 		groupMw := c.Get("group")
-		c.Send(groupMw.(string))
+		return c.Send(groupMw.(string))
 	})
 
 	// Test group middleware
@@ -201,9 +201,9 @@ func TestAppServices(t *testing.T) {
 	app.Service("test", service)
 
 	// Add a route that uses the service
-	app.Get("/service", func(c *Context) {
-		svc := c.Service("test").(*TestService)
-		c.Send(svc.GetValue())
+	app.Get("/service", func(c *Context) error {
+		service := c.Service("test").(*TestService)
+		return c.Send(service.GetValue())
 	})
 
 	// Test accessing the service
@@ -260,8 +260,8 @@ func TestAppFastPath(t *testing.T) {
 	app := New()
 
 	// Add a simple static route for fast path testing
-	app.Get("/fast", func(c *Context) {
-		c.Send("fast path")
+	app.Get("/fast", func(c *Context) error {
+		return c.Send("Hello World!")
 	})
 
 	// Make multiple requests to the same route to trigger fast path
@@ -275,8 +275,8 @@ func TestAppFastPath(t *testing.T) {
 			t.Errorf("Iteration %d: Status code = %d, want %d", i, w.Code, 200)
 		}
 
-		if w.Body.String() != "fast path" {
-			t.Errorf("Iteration %d: Response body = %q, want %q", i, w.Body.String(), "fast path")
+		if w.Body.String() != "Hello World!" {
+			t.Errorf("Iteration %d: Response body = %q, want %q", i, w.Body.String(), "Hello World!")
 		}
 	}
 }
@@ -285,20 +285,20 @@ func benchmarkApp(b *testing.B, path string) {
 	app := New()
 
 	// Add routes
-	app.Get("/", func(c *Context) {
-		c.Send("root")
+	app.Get("/", func(c *Context) error {
+		return c.Send("root")
 	})
 
-	app.Get("/users", func(c *Context) {
-		c.Send("users")
+	app.Get("/users", func(c *Context) error {
+		return c.Send("users")
 	})
 
-	app.Get("/users/:id", func(c *Context) {
-		c.Send("user:" + c.Param("id"))
+	app.Get("/users/:id", func(c *Context) error {
+		return c.Send("user " + c.Param("id"))
 	})
 
-	app.Get("/users/:id/posts", func(c *Context) {
-		c.Send("posts for user:" + c.Param("id"))
+	app.Get("/users/:id/posts", func(c *Context) error {
+		return c.Send("user " + c.Param("id") + " posts")
 	})
 
 	// Run the benchmark
