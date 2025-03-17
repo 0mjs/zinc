@@ -126,7 +126,7 @@ func (a *App) Serve(port ...string) error {
 
 // printRoutes prints all registered routes
 func (a *App) printRoutes() {
-	fmt.Println("📋 Registered Routes:")
+	fmt.Println("Registered Routes:")
 	fmt.Println("┌───────┬─────────────────────────────┐")
 	fmt.Println("│ METHOD │ PATH                       │")
 	fmt.Println("├───────┼─────────────────────────────┤")
