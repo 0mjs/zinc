@@ -1,7 +1,7 @@
 # zinc.
 
 ![Zinc](https://img.shields.io/badge/Zinc-%20A%20web%20framework%20for%20Go-silver)
-![Version](https://img.shields.io/badge/version-0.0.57-red)
+![Version](https://img.shields.io/badge/version-0.0.58-red)
 ![Go Version](https://img.shields.io/badge/Go-1.22+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
