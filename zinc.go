@@ -11,7 +11,13 @@ func New(config ...Config) *App {
 	// Use default config if none provided
 	cfg := DefaultConfig
 	if len(config) > 0 {
+		// Apply provided config, but make sure defaults are preserved for zero values
 		cfg = config[0]
+
+		// Make sure DefaultAddr is set to default value if it's empty
+		if cfg.DefaultAddr == "" {
+			cfg.DefaultAddr = DefaultConfig.DefaultAddr
+		}
 	}
 
 	// Create cache based on config

@@ -652,3 +652,24 @@ func TestPerformance(t *testing.T) {
 	t.Logf("Performed %d requests in %v", iterations, elapsed)
 	t.Logf("Average request time: %v", elapsed/time.Duration(iterations))
 }
+
+// TestDefaultAddrEmptyConfig tests the fix for the DefaultAddr port bug, when a config is passed with an empty DefaultAddr.
+func TestDefaultAddrEmptyConfig(t *testing.T) {
+	// Test with an empty DefaultAddr in the config
+	emptyAddrConfig := Config{
+		// Leave DefaultAddr empty but set some other option
+		ServerHeader: "TestServer",
+	}
+
+	app := New(emptyAddrConfig)
+
+	if app.config.DefaultAddr != "0.0.0.0:8080" {
+		t.Errorf("want default address %q when DefaultAddr is empty, got %q",
+			"0.0.0.0:8080", app.config.DefaultAddr)
+	}
+
+	// Verify other settings were preserved
+	if app.config.ServerHeader != "TestServer" {
+		t.Errorf("want ServerHeader %q, got %q", "TestServer", app.config.ServerHeader)
+	}
+}
