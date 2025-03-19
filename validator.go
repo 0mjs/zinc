@@ -57,7 +57,7 @@ func (v *Validator) Validate(s interface{}) ValidationErrors {
 
 		rules := strings.Split(tag, ",")
 		for _, rule := range rules {
-			if err := v.validateField(field, fieldType.Name, rule); err != nil {
+			if err := v.validateField(field, rule); err != nil {
 				errors = append(errors, ValidationError{
 					Field:   fieldType.Name,
 					Message: err.Error(),
@@ -69,7 +69,7 @@ func (v *Validator) Validate(s interface{}) ValidationErrors {
 	return errors
 }
 
-func (v *Validator) validateField(field reflect.Value, fieldName, rule string) error {
+func (v *Validator) validateField(field reflect.Value, rule string) error {
 	parts := strings.Split(rule, "=")
 	ruleName := parts[0]
 	ruleValue := ""

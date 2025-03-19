@@ -8,9 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sort"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
@@ -90,36 +88,13 @@ func PrintResults(results []benchmarkResult) {
 	}
 }
 
-// Collect results from a benchmark
-func collectResults(name string, b *testing.B, results *[]benchmarkResult) {
-	b.Helper()
-
-	b.Run("Collect", func(b *testing.B) {
-		b.ReportAllocs()
-		b.SkipNow() // Skip actual execution
-
-		// Extract framework name (assuming format "Framework Description")
-		parts := strings.SplitN(b.Name(), " ", 2)
-		framework := parts[0]
-
-		// Record result
-		*results = append(*results, benchmarkResult{
-			name:       name,
-			framework:  framework,
-			opsPerSec:  float64(b.N) * float64(time.Second) / float64(b.Elapsed().Nanoseconds()),
-			nsPerOp:    float64(b.Elapsed().Nanoseconds()) / float64(b.N),
-			bytesPerOp: int(testing.AllocsPerRun(1, func() {})), // This will be updated with real values during test run
-		})
-	})
-}
-
 // Zinc handlers
 func zincHelloHandler(c *Context) error {
-	return c.Send("Hello World!")
+	return c.String("Hello World!")
 }
 
 func zincParamHandler(c *Context) error {
-	return c.Send(fmt.Sprintf("Hello, %s!", c.Param("name")))
+	return c.String(fmt.Sprintf("Hello, %s!", c.Param("name")))
 }
 
 // Chi handlers
@@ -210,7 +185,7 @@ func zincQueryHandler(c *Context) error {
 	name := c.Query("name")
 	age := c.Query("age")
 	city := c.Query("city")
-	return c.Send(fmt.Sprintf("Hello, %s! You are %s years old and from %s.", name, age, city))
+	return c.String(fmt.Sprintf("Hello, %s! You are %s years old and from %s.", name, age, city))
 }
 
 // Chi query params handler
@@ -273,9 +248,9 @@ func zincMiddlewareHandler(c *Context) error {
 
 	// Use the values to prevent compiler optimizations
 	if v1 != nil && v2 != nil && v3 != nil && v4 != nil && v5 != nil {
-		return c.Send("Hello World!")
+		return c.String("Hello World!")
 	}
-	return c.Send("Hello World!")
+	return c.String("Hello World!")
 }
 
 // Middleware handlers for Chi
@@ -322,42 +297,6 @@ func chiMiddlewareHandler(w http.ResponseWriter, r *http.Request) {
 	v5 := r.Context().Value("middleware5")
 
 	w.Write([]byte(fmt.Sprintf("Middleware chain complete: %v %v %v %v %v", v1, v2, v3, v4, v5)))
-}
-
-// Middleware handlers for Echo
-func echoMiddleware1(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Set("middleware1", true)
-		return next(c)
-	}
-}
-
-func echoMiddleware2(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Set("middleware2", true)
-		return next(c)
-	}
-}
-
-func echoMiddleware3(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Set("middleware3", true)
-		return next(c)
-	}
-}
-
-func echoMiddleware4(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Set("middleware4", true)
-		return next(c)
-	}
-}
-
-func echoMiddleware5(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Set("middleware5", true)
-		return next(c)
-	}
 }
 
 // Proper Echo middleware
@@ -444,22 +383,11 @@ func ginMiddlewareHandler(c *gin.Context) {
 
 // Benchmark Hello World
 func BenchmarkHelloWorld(b *testing.B) {
-	// Zinc
-	b.Run("Zinc 🪙", func(b *testing.B) {
-		app := New()
-		app.Get("/", zincHelloHandler)
-		req := httptest.NewRequest("GET", "/", nil)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			w := httptest.NewRecorder()
-			app.ServeHTTP(w, req)
-		}
-	})
-
-	// Chi
-	b.Run("Chi", func(b *testing.B) {
-		r := chi.NewRouter()
-		r.Get("/", chiHelloHandler)
+	// Gin
+	b.Run("Gin", func(b *testing.B) {
+		gin.SetMode(gin.ReleaseMode)
+		r := gin.New()
+		r.GET("/", ginHelloHandler)
 		req := httptest.NewRequest("GET", "/", nil)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -480,11 +408,22 @@ func BenchmarkHelloWorld(b *testing.B) {
 		}
 	})
 
-	// Gin
-	b.Run("Gin", func(b *testing.B) {
-		gin.SetMode(gin.ReleaseMode)
-		r := gin.New()
-		r.GET("/", ginHelloHandler)
+	// Zinc
+	b.Run("Zinc 🪙", func(b *testing.B) {
+		app := New()
+		app.Get("/", zincHelloHandler)
+		req := httptest.NewRequest("GET", "/", nil)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, req)
+		}
+	})
+
+	// Chi
+	b.Run("Chi", func(b *testing.B) {
+		r := chi.NewRouter()
+		r.Get("/", chiHelloHandler)
 		req := httptest.NewRequest("GET", "/", nil)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -720,7 +659,7 @@ func zincNestedHandler(c *Context) error {
 	category := c.Param("category")
 	id := c.Param("id")
 	subresource := c.Param("subresource")
-	return c.Send(fmt.Sprintf("Resource: category=%s, id=%s, subresource=%s", category, id, subresource))
+	return c.String(fmt.Sprintf("Resource: category=%s, id=%s, subresource=%s", category, id, subresource))
 }
 
 // Chi nested routes handler
@@ -803,7 +742,7 @@ func BenchmarkNestedRoutes(b *testing.B) {
 func zincGroupHandler(c *Context) error {
 	resource := c.Param("resource")
 	action := c.Param("action")
-	return c.Send(fmt.Sprintf("API Resource: %s, Action: %s", resource, action))
+	return c.String(fmt.Sprintf("API Resource: %s, Action: %s", resource, action))
 }
 
 // Chi group handler
