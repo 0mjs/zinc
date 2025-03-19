@@ -137,7 +137,7 @@ func (c *Context) Service(name string) interface{} {
 		}
 	}
 
-	panic("Service '" + name + "' not found")
+	return nil
 }
 
 // Next calls the next middleware in the chain.
@@ -752,4 +752,51 @@ func isTrustedProxy(ip string, trustedProxies []string) bool {
 // Version returns the current version of the Zinc framework.
 func (c *Context) Version() string {
 	return Version
+}
+
+// ContextServiceOf is a helper function to retrieve a service by type from a Context
+// Usage example: service, ok := zinc.ContextServiceOf[*UserService](c)
+func ContextServiceOf[T any](c *Context) (service T, ok bool) {
+	// Check if we have direct app access
+	if c.app != nil {
+		// Get the type we're looking for
+		typ := reflect.TypeOf((*T)(nil)).Elem()
+
+		// Try to get the service directly from the app's typedServices map
+		if s := c.app.typedServices[typ]; s != nil {
+			if svc, isOk := s.(T); isOk {
+				return svc, true
+			}
+		}
+
+		// If not found by type, try using type name string lookup
+		if s := c.app.services[typ.String()]; s != nil {
+			if svc, isOk := s.(T); isOk {
+				return svc, true
+			}
+		}
+	}
+
+	// As a fallback, try to get the app from the Store if it's not directly set
+	if c.app == nil {
+		if app, exists := c.Store["app"].(*App); exists && app != nil {
+			// Same lookup logic but with the app from Store
+			typ := reflect.TypeOf((*T)(nil)).Elem()
+
+			if s := app.typedServices[typ]; s != nil {
+				if svc, isOk := s.(T); isOk {
+					return svc, true
+				}
+			}
+
+			if s := app.services[typ.String()]; s != nil {
+				if svc, isOk := s.(T); isOk {
+					return svc, true
+				}
+			}
+		}
+	}
+
+	var zero T
+	return zero, false
 }

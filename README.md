@@ -90,6 +90,101 @@ Zinc is designed for high performance, with benchmarks showing it to be competit
 - Dynamic routes: ~1.2μs/op
 - Middleware chain: ~2.0μs/op
 
+## Typed Service Dependency Injection
+
+Zinc provides a powerful type-safe service dependency injection system that allows you to register and retrieve services by their concrete types.
+
+### Registering Services
+
+You can register services using either the string-based approach or the new type-based approach:
+
+```go
+// String-based service registration (legacy)
+app.Service("userService", userService)
+
+// Type-based service registration (recommended)
+app.Register(userService)
+```
+
+### Retrieving Services
+
+There are several ways to retrieve services:
+
+1. String-based retrieval (legacy):
+
+```go
+userService := c.Service("userService").(*UserService)
+```
+
+2. Type-based retrieval using generics:
+
+```go
+// From App instance
+userService, ok := zinc.ServiceOf[*UserService](app)
+if !ok {
+    // Handle service not found
+}
+
+// From Context
+userService, ok := zinc.ContextServiceOf[*UserService](c)
+if !ok {
+    // Handle service not found
+}
+```
+
+The type-based approach provides several advantages:
+- Compile-time type safety
+- No need for type assertions
+- No string literals that could contain typos
+- Better IDE support with code completion
+
+### Examples
+
+#### Basic Usage
+
+```go
+// Register a service
+app.Register(userService)
+
+// Use the service in a handler
+app.Get("/users", func(c *zinc.Context) error {
+    service, ok := zinc.ContextServiceOf[*UserService](c)
+    if !ok {
+        return c.Status(zinc.StatusInternalServerError).String("Service not available")
+    }
+    return service.GetUsers(c)
+})
+```
+
+#### Using Services in Middleware
+
+Services can be accessed directly from middleware functions:
+
+```go
+// Middleware that uses typed services
+authMiddleware := func(c *zinc.Context) error {
+    // Access the auth service directly from context
+    authService, ok := zinc.ContextServiceOf[*AuthService](c)
+    if !ok {
+        return c.Status(zinc.StatusInternalServerError).String("Auth service not available")
+    }
+    
+    // Use the service
+    token := c.Request.Header.Get("Authorization")
+    if err := authService.ValidateToken(token); err != nil {
+        return c.Status(zinc.StatusUnauthorized).String("Invalid token")
+    }
+    
+    // Continue with the next handler
+    return c.Next()
+}
+
+// Apply the middleware to routes or groups
+app.Get("/protected", authMiddleware, func(c *zinc.Context) error {
+    return c.String("Protected resource")
+})
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

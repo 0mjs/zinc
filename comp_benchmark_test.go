@@ -3,89 +3,26 @@ package zinc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/labstack/echo/v4"
 )
 
-const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorPurple = "\033[35m"
-	colorCyan   = "\033[36m"
-	colorWhite  = "\033[37m"
-)
-
-type benchmarkResult struct {
-	name       string
-	framework  string
-	opsPerSec  float64
-	nsPerOp    float64
-	bytesPerOp int
-}
-
 func TestMain(m *testing.M) {
 	// Disable Gin debug output during tests
 	gin.SetMode(gin.ReleaseMode)
 	os.Exit(m.Run())
-}
-
-// PrintResults formats and prints benchmark results in a nice table
-func PrintResults(results []benchmarkResult) {
-	// Group results by test name
-	resultsByTest := make(map[string][]benchmarkResult)
-	var testNames []string
-
-	for _, result := range results {
-		if _, exists := resultsByTest[result.name]; !exists {
-			testNames = append(testNames, result.name)
-		}
-		resultsByTest[result.name] = append(resultsByTest[result.name], result)
-	}
-
-	sort.Strings(testNames)
-
-	// Print results
-	for _, testName := range testNames {
-		testResults := resultsByTest[testName]
-
-		// Sort by ops/sec (higher is better)
-		sort.Slice(testResults, func(i, j int) bool {
-			return testResults[i].opsPerSec > testResults[j].opsPerSec
-		})
-
-		fmt.Printf("\n%s====== %s ======%s\n", colorYellow, testName, colorReset)
-		fmt.Printf("%-10s %-15s %-15s %-15s\n", "Framework", "Ops/sec", "ns/op", "B/op")
-
-		// Calculate the highest ops/sec for highlighting the winner
-		highestOps := testResults[0].opsPerSec
-
-		for i, result := range testResults {
-			color := colorReset
-			if i == 0 {
-				color = colorGreen // Highlight the winner
-			} else if result.opsPerSec >= highestOps*0.95 {
-				color = colorCyan // Highlight very close (within 5%)
-			}
-
-			fmt.Printf("%s%-10s %-15.2f %-15.2f %-15d%s\n",
-				color,
-				result.framework,
-				result.opsPerSec,
-				result.nsPerOp,
-				result.bytesPerOp,
-				colorReset)
-		}
-	}
 }
 
 // Zinc handlers
@@ -186,6 +123,23 @@ func zincQueryHandler(c *Context) error {
 	age := c.Query("age")
 	city := c.Query("city")
 	return c.String(fmt.Sprintf("Hello, %s! You are %s years old and from %s.", name, age, city))
+}
+
+// RequestsPerSecond handlers for each framework
+func zincRPSHandler(c *Context) error {
+	return c.String("OK")
+}
+
+func chiRPSHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("OK"))
+}
+
+func echoRPSHandler(c echo.Context) error {
+	return c.String(http.StatusOK, "OK")
+}
+
+func ginRPSHandler(c *gin.Context) {
+	c.String(http.StatusOK, "OK")
 }
 
 // Chi query params handler
@@ -829,4 +783,145 @@ func BenchmarkRouteGroups(b *testing.B) {
 			r.ServeHTTP(w, req)
 		}
 	})
+}
+
+// Benchmark Requests Per Second
+// This benchmark measures how many requests each framework can handle per second
+// by running concurrent requests in multiple goroutines
+func BenchmarkRequestsPerSecond(b *testing.B) {
+	// Number of concurrent workers
+	concurrency := 100
+	// Duration to run the test
+	duration := 1 * time.Second
+
+	// Zinc
+	b.Run("Zinc", func(b *testing.B) {
+		app := New()
+		app.Get("/rps", zincRPSHandler)
+		server := httptest.NewServer(app)
+		defer server.Close()
+
+		url := server.URL + "/rps"
+		measureRPS(b, url, concurrency, duration)
+	})
+
+	// Chi
+	b.Run("Chi", func(b *testing.B) {
+		r := chi.NewRouter()
+		r.Get("/rps", chiRPSHandler)
+		server := httptest.NewServer(r)
+		defer server.Close()
+
+		url := server.URL + "/rps"
+		measureRPS(b, url, concurrency, duration)
+	})
+
+	// Echo
+	b.Run("Echo", func(b *testing.B) {
+		e := echo.New()
+		e.GET("/rps", echoRPSHandler)
+		server := httptest.NewServer(e)
+		defer server.Close()
+
+		url := server.URL + "/rps"
+		measureRPS(b, url, concurrency, duration)
+	})
+
+	// Gin
+	b.Run("Gin", func(b *testing.B) {
+		gin.SetMode(gin.ReleaseMode)
+		r := gin.New()
+		r.GET("/rps", ginRPSHandler)
+		server := httptest.NewServer(r)
+		defer server.Close()
+
+		url := server.URL + "/rps"
+		measureRPS(b, url, concurrency, duration)
+	})
+}
+
+// measureRPS runs a load test against the specified URL with the given concurrency and duration
+// and reports metrics about requests per second
+func measureRPS(b *testing.B, url string, concurrency int, duration time.Duration) {
+	var (
+		totalRequests int64
+		wg            sync.WaitGroup
+		client        = &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: concurrency,
+				DisableKeepAlives:   false,
+			},
+		}
+	)
+
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+
+	// Start goroutines to make requests
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+					if err != nil {
+						b.Logf("Error creating request: %v", err)
+						continue
+					}
+
+					resp, err := client.Do(req)
+					if err != nil {
+						if !errors.Is(err, context.DeadlineExceeded) {
+							b.Logf("Request error: %v", err)
+						}
+						continue
+					}
+
+					// Read and discard response body to properly reuse connections
+					_, _ = io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+
+					if resp.StatusCode == http.StatusOK {
+						atomic.AddInt64(&totalRequests, 1)
+					}
+				}
+			}
+		}()
+	}
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	// Calculate requests per second
+	elapsed := duration.Seconds()
+	requestsPerSec := float64(totalRequests) / elapsed
+
+	// Report the results
+	b.ReportMetric(requestsPerSec, "reqs/s")
+}
+
+// TestRunBenchmarks provides instructions for running benchmarks
+func TestRunBenchmarks(t *testing.T) {
+	t.Skip(`
+To run all benchmarks and see performance comparison between frameworks:
+    go test -bench . -run=^$ -benchmem
+
+To run a specific benchmark:
+    go test -bench BenchmarkHelloWorld -run=^$ -benchmem
+
+To run the requests per second benchmark:
+    go test -bench BenchmarkRequestsPerSecond -run=^$
+
+The benchmark results will show:
+- Operations per second (higher is better)
+- Nanoseconds per operation (lower is better)
+- Bytes allocated per operation (lower is better)
+- For the RequestsPerSecond benchmark: requests/sec (higher is better)
+`)
 }

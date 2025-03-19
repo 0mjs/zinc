@@ -2,6 +2,7 @@ package zinc
 
 import (
 	"net/http"
+	"reflect"
 	"strings"
 )
 
@@ -37,6 +38,7 @@ func New(config ...Config) *App {
 		router:        router,
 		middleware:    make([]Middleware, 0),
 		services:      make(map[string]any),
+		typedServices: make(map[reflect.Type]any),
 		cronScheduler: newCronScheduler(),
 		validator:     NewValidator(),
 	}
@@ -198,7 +200,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewContext(w, r)
 	defer ctx.release()
 
-	// Set app reference in context using Store map
+	// Set app reference in context using both direct field and Store map for backwards compatibility
+	ctx.app = a
 	ctx.Set("app", a)
 
 	// Only set services if needed
@@ -239,6 +242,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if foundCtx != nil {
 			// Copy params
 			ctx.PathParams = foundCtx.PathParams
+
+			// IMPORTANT: Always ensure app reference is set
+			ctx.app = a
 
 			// Store in cache for future use
 			if a.router.cache != nil {
