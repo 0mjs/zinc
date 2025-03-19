@@ -38,52 +38,52 @@ func (g *Group) Use(middleware ...Middleware) *Group {
 }
 
 // combineHandlers combines the group middleware with the route handlers
-func (g *Group) combineHandlers(handlers ...interface{}) []interface{} {
-	// Convert middleware to interface{} for combination
-	middlewareInterfaces := make([]interface{}, len(g.middleware))
+func (g *Group) combineHandlers(handlers ...RouteHandler) []RouteHandler {
+	// Convert middleware to RouteHandler for combination
+	middlewareHandlers := make([]RouteHandler, len(g.middleware))
 	for i, mw := range g.middleware {
-		middlewareInterfaces[i] = mw
+		middlewareHandlers[i] = RouteHandler(mw)
 	}
 
 	// Combine middleware with handlers
-	combined := make([]interface{}, len(middlewareInterfaces)+len(handlers))
-	copy(combined, middlewareInterfaces)
-	copy(combined[len(middlewareInterfaces):], handlers)
+	combined := make([]RouteHandler, len(middlewareHandlers)+len(handlers))
+	copy(combined, middlewareHandlers)
+	copy(combined[len(middlewareHandlers):], handlers)
 
 	return combined
 }
 
-func (g *Group) Get(path string, handlers ...interface{}) error {
+func (g *Group) Get(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Get(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Post(path string, handlers ...interface{}) error {
+func (g *Group) Post(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Post(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Put(path string, handlers ...interface{}) error {
+func (g *Group) Put(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Put(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Delete(path string, handlers ...interface{}) error {
+func (g *Group) Delete(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Delete(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Patch(path string, handlers ...interface{}) error {
+func (g *Group) Patch(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Patch(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Head(path string, handlers ...interface{}) error {
+func (g *Group) Head(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Head(fullPath, g.combineHandlers(handlers...)...)
 }
 
-func (g *Group) Options(path string, handlers ...interface{}) error {
+func (g *Group) Options(path string, handlers ...RouteHandler) error {
 	fullPath := "/" + g.prefix + "/" + strings.Trim(path, "/")
 	return g.app.Options(fullPath, g.combineHandlers(handlers...)...)
 }

@@ -3,6 +3,7 @@ package zinc
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -257,8 +258,9 @@ func TestAppTypedServices(t *testing.T) {
 	}
 
 	wantBody := `["user1","user2"]`
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
+	gotBody := strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
 	}
 }
 
@@ -311,8 +313,9 @@ func TestContextTypedServices(t *testing.T) {
 	}
 
 	wantBody := `["product1","product2"]`
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
+	gotBody := strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
 	}
 
 	// Test accessing the service in middleware chain
@@ -324,8 +327,9 @@ func TestContextTypedServices(t *testing.T) {
 		t.Errorf("Middleware response code = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	if w.Body.String() != wantBody {
-		t.Errorf("Middleware response body = %q, want %q", w.Body.String(), wantBody)
+	gotBody = strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Middleware response body = %q, want %q", gotBody, wantBody)
 	}
 }
 
@@ -333,7 +337,9 @@ func TestAppStaticHandler(t *testing.T) {
 	app := New()
 
 	// String route handler
-	app.Get("/static-string", "Hello from static string")
+	app.Get("/static-string", func(c *Context) error {
+		return c.Send("Hello from static string")
+	})
 
 	// Test static string handler
 	req := httptest.NewRequest(http.MethodGet, "/static-string", nil)

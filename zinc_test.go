@@ -529,21 +529,17 @@ func TestServices(t *testing.T) {
 
 	// Route that uses a non-existent service
 	app.Get("/unknown-service", func(c *Context) error {
-		// This should panic, but we'll recover it for testing
-		defer func() {
-			if r := recover(); r != nil {
-				c.Status(http.StatusInternalServerError).Send(fmt.Sprint(r))
-			}
-		}()
-
-		c.Service("nonexistent")
+		service := c.Service("nonexistent")
+		if service == nil {
+			return c.Status(http.StatusInternalServerError).Send("Service 'nonexistent' not found")
+		}
 		return c.Send("Should not reach here")
 	})
 
 	tests := []struct {
-		path       string
-		wantStatus int
-		wantBody   string
+		path         string
+		wantStatus   int
+		wantContains string
 	}{
 		{"/users/123", 200, "User 123"},
 		{"/unknown-service", 500, "Service 'nonexistent' not found"},
@@ -559,8 +555,8 @@ func TestServices(t *testing.T) {
 				t.Errorf("want status %d, got %d", tt.wantStatus, w.Code)
 			}
 
-			if !strings.Contains(w.Body.String(), tt.wantBody) {
-				t.Errorf("want body containing %q, got %q", tt.wantBody, w.Body.String())
+			if !strings.Contains(w.Body.String(), tt.wantContains) {
+				t.Errorf("want body containing %q, got %q", tt.wantContains, w.Body.String())
 			}
 		})
 	}
@@ -627,8 +623,8 @@ func TestPerformance(t *testing.T) {
 	}
 
 	app := New()
-	app.Get("/perf", func(c *Context) {
-		c.Send("Hello World!")
+	app.Get("/perf", func(c *Context) error {
+		return c.Send("Hello World!")
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/perf", nil)

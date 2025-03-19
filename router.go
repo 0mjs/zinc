@@ -2,7 +2,6 @@ package zinc
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 )
@@ -133,7 +132,7 @@ func getPathParts(path string) []string {
 }
 
 // Add adds a route to the router
-func (r *Router) Add(method, path string, handlers ...interface{}) error {
+func (r *Router) Add(method, path string, handlers ...RouteHandler) error {
 	// Ensure we have a handler
 	if len(handlers) == 0 {
 		return fmt.Errorf("no handler provided for %s %s", method, path)
@@ -175,64 +174,21 @@ func (r *Router) Add(method, path string, handlers ...interface{}) error {
 	// Parse path into parts
 	parts := getPathParts(path)
 
-	// Determine the handler
-	var mainHandler RouteHandler
-
-	switch h := handlers[len(handlers)-1].(type) {
-	case RouteHandler:
-		mainHandler = h
-	case func(*Context) error:
-		mainHandler = h
-	case string:
-		// Static string response
-		mainHandler = func(c *Context) error {
-			return c.Send(h)
-		}
-	case []byte:
-		// Static byte slice response
-		mainHandler = func(c *Context) error {
-			return c.Send(h)
-		}
-	case func(http.ResponseWriter, *http.Request):
-		// Standard http.Handler
-		mainHandler = func(c *Context) error {
-			h(c.Response, c.Request)
-			return nil
-		}
-	case http.HandlerFunc:
-		// Standard http.HandlerFunc
-		mainHandler = func(c *Context) error {
-			h(c.Response, c.Request)
-			return nil
-		}
-	case http.Handler:
-		// Standard http.Handler
-		mainHandler = func(c *Context) error {
-			h.ServeHTTP(c.Response, c.Request)
-			return nil
-		}
-	default:
-		return fmt.Errorf("unsupported handler type %T", h)
-	}
+	// Get the main handler
+	mainHandler := handlers[len(handlers)-1]
 
 	// Handle middleware chain if there are multiple handlers
 	if len(handlers) > 1 {
-		middlware := make([]Middleware, 0, len(handlers)-1)
-		for i := 0; i < len(handlers)-1; i++ {
-			switch h := handlers[i].(type) {
-			case Middleware:
-				middlware = append(middlware, h)
-			case func(*Context) error:
-				middlware = append(middlware, h)
-			default:
-				return fmt.Errorf("middleware must be func(*Context) error, got %T", h)
-			}
+		// Convert RouteHandlers to Middleware
+		middleware := make([]Middleware, len(handlers)-1)
+		for i, h := range handlers[:len(handlers)-1] {
+			middleware[i] = Middleware(h)
 		}
 
 		// Create a chain handler that runs middleware then the main handler
 		chainHandler := mainHandler
 		mainHandler = func(c *Context) error {
-			c.setHandlers(append(middlware, func(c *Context) error {
+			c.setHandlers(append(middleware, func(c *Context) error {
 				return chainHandler(c)
 			}))
 			return c.Next()
@@ -734,39 +690,48 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
-func (a *App) Get(path string, handlers ...interface{}) error {
+// Get registers a route for the GET HTTP method with RouteHandler
+func (a *App) Get(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodGet, path, handlers...)
 }
 
-func (a *App) Post(path string, handlers ...interface{}) error {
+// Post registers a route for the POST HTTP method with RouteHandler
+func (a *App) Post(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPost, path, handlers...)
 }
 
-func (a *App) Put(path string, handlers ...interface{}) error {
+// Put registers a route for the PUT HTTP method with RouteHandler
+func (a *App) Put(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPut, path, handlers...)
 }
 
-func (a *App) Delete(path string, handlers ...interface{}) error {
+// Delete registers a route for the DELETE HTTP method with RouteHandler
+func (a *App) Delete(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodDelete, path, handlers...)
 }
 
-func (a *App) Patch(path string, handlers ...interface{}) error {
+// Patch registers a route for the PATCH HTTP method with RouteHandler
+func (a *App) Patch(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPatch, path, handlers...)
 }
 
-func (a *App) Head(path string, handlers ...interface{}) error {
+// Head registers a route for the HEAD HTTP method with RouteHandler
+func (a *App) Head(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodHead, path, handlers...)
 }
 
-func (a *App) Options(path string, handlers ...interface{}) error {
+// Options registers a route for the OPTIONS HTTP method with RouteHandler
+func (a *App) Options(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodOptions, path, handlers...)
 }
 
-func (a *App) Connect(path string, handlers ...interface{}) error {
+// Connect registers a route for the CONNECT HTTP method with RouteHandler
+func (a *App) Connect(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodConnect, path, handlers...)
 }
 
-func (a *App) Trace(path string, handlers ...interface{}) error {
+// Trace registers a route for the TRACE HTTP method with RouteHandler
+func (a *App) Trace(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodTrace, path, handlers...)
 }
 
@@ -807,5 +772,12 @@ func convertToRouteHandler(handler interface{}) RouteHandler {
 		return RouteHandler(v)
 	default:
 		panic("handler must be either a string, RouteHandler, or Middleware")
+	}
+}
+
+// StringHandler creates a RouteHandler that returns the provided string
+func StringHandler(str string) RouteHandler {
+	return func(c *Context) error {
+		return c.Send(str)
 	}
 }
