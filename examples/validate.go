@@ -33,6 +33,6 @@ func main() {
 	})
 
 	// Start the server
-	log.Println("Server started on http://localhost:8080")
+	log.Println("Server started on http://localhost:6530")
 	app.Serve()
 }

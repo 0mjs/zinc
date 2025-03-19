@@ -108,10 +108,14 @@ func (a *App) Serve(port ...string) error {
 	// Print startup message if not disabled
 	if !a.config.DisableStartupMessage {
 		appName := "Zinc"
+		appVersion := Version
 		if a.config.AppName != "" {
 			appName = a.config.AppName
 		}
-		fmt.Printf("%s server starting on %s...\n", appName, serverPort)
+		if a.config.AppVersion != "" {
+			appVersion = a.config.AppVersion
+		}
+		fmt.Printf("%s v%s server starting on %s...\n", appName, appVersion, serverPort)
 	}
 
 	// Start server
@@ -208,11 +212,16 @@ func (a *App) SetFileUpload(upload *FileUpload) {
 }
 
 // Validate validates a struct using the validator
-func (a *App) Validate(s interface{}) ValidationErrors {
+func (a *App) Validate(s any) ValidationErrors {
 	return a.validator.Validate(s)
 }
 
 // SetConfig sets the application configuration
 func (a *App) SetConfig(config *Config) {
 	a.config = config
+}
+
+// Version returns the current version of the Zinc framework.
+func (a *App) Version() string {
+	return Version
 }

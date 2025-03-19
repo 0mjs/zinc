@@ -18,7 +18,7 @@ app := zinc.New(zinc.Config{
 
 | Property     | Type   | Description                                            | Default        |
 | ------------ | ------ | ------------------------------------------------------ | -------------- |
-| DefaultAddr  | string | The default address the server will listen on          | "0.0.0.0:8080" |
+| DefaultAddr  | string | The default address the server will listen on          | "0.0.0.0:6530" |
 | ServerHeader | string | Sets the value of the Server HTTP header               | "Zinc"         |
 | AppName      | string | The name of the application (used in startup messages) | ""             |
 

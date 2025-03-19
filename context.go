@@ -748,3 +748,8 @@ func isTrustedProxy(ip string, trustedProxies []string) bool {
 
 	return false
 }
+
+// Version returns the current version of the Zinc framework.
+func (c *Context) Version() string {
+	return Version
+}
