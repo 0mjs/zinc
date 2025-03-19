@@ -735,46 +735,6 @@ func (a *App) Trace(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodTrace, path, handlers...)
 }
 
-func (r *Router) findRoute(method string, path string) (RouteHandler, *Context) {
-	if route := r.routes[method][path]; route != nil {
-		ctx := &Context{}
-		return route.handler, ctx
-	}
-	return nil, nil
-}
-
-// Helper function to convert middleware slice to RouteHandler slice
-func (r *Router) middlewareToHandlers() []RouteHandler {
-	handlers := make([]RouteHandler, len(r.middleware))
-	for i, m := range r.middleware {
-		handlers[i] = RouteHandler(m)
-	}
-	return handlers
-}
-
-// Helper function to convert interface{} to RouteHandler
-func convertToRouteHandler(handler interface{}) RouteHandler {
-	switch v := handler.(type) {
-	case string:
-		return func(c *Context) error {
-			return c.Send(v)
-		}
-	case RouteHandler:
-		return v
-	case func(*Context) error:
-		return v
-	case func(*Context):
-		return func(c *Context) error {
-			v(c)
-			return nil
-		}
-	case Middleware:
-		return RouteHandler(v)
-	default:
-		panic("handler must be either a string, RouteHandler, or Middleware")
-	}
-}
-
 // StringHandler creates a RouteHandler that returns the provided string
 func StringHandler(str string) RouteHandler {
 	return func(c *Context) error {
