@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"syscall"
 )
@@ -15,6 +16,7 @@ type App struct {
 	router         *Router
 	middleware     []Middleware
 	services       map[string]any
+	typedServices  map[reflect.Type]any
 	cronScheduler  *CronScheduler
 	templateEngine *TemplateEngine
 	wsHandler      *WebSocketHandler
@@ -34,6 +36,36 @@ func (a *App) Use(middleware ...Middleware) {
 // Service registers a service with the application
 func (a *App) Service(name string, service interface{}) {
 	a.services[name] = service
+}
+
+// Register registers a service with the application by its concrete type
+// This allows for type-safe retrieval using GetService() later
+func (a *App) Register(service interface{}) {
+	typ := reflect.TypeOf(service)
+	a.typedServices[typ] = service
+
+	// Also store in string-based services map using the type's full name
+	// This maintains compatibility with the string-based Service method
+	a.services[typ.String()] = service
+}
+
+// GetService retrieves a service by its concrete type
+// Returns the service or nil if not found
+func (a *App) GetService(serviceType reflect.Type) interface{} {
+	return a.typedServices[serviceType]
+}
+
+// ServiceOf is a convenience function to retrieve a service by type T
+// Usage example: service := app.ServiceOf[*UserService]()
+func ServiceOf[T any](a *App) (service T, ok bool) {
+	typ := reflect.TypeOf((*T)(nil)).Elem()
+	if s := a.typedServices[typ]; s != nil {
+		if svc, isOk := s.(T); isOk {
+			return svc, true
+		}
+	}
+	var zero T
+	return zero, false
 }
 
 // Serve starts the HTTP server on the specified port
@@ -108,10 +140,14 @@ func (a *App) Serve(port ...string) error {
 	// Print startup message if not disabled
 	if !a.config.DisableStartupMessage {
 		appName := "Zinc"
+		appVersion := Version
 		if a.config.AppName != "" {
 			appName = a.config.AppName
 		}
-		fmt.Printf("%s server starting on %s...\n", appName, serverPort)
+		if a.config.AppVersion != "" {
+			appVersion = a.config.AppVersion
+		}
+		fmt.Printf("%s v%s server starting on %s...\n", appName, appVersion, serverPort)
 	}
 
 	// Start server
@@ -208,11 +244,16 @@ func (a *App) SetFileUpload(upload *FileUpload) {
 }
 
 // Validate validates a struct using the validator
-func (a *App) Validate(s interface{}) ValidationErrors {
+func (a *App) Validate(s any) ValidationErrors {
 	return a.validator.Validate(s)
 }
 
 // SetConfig sets the application configuration
 func (a *App) SetConfig(config *Config) {
 	a.config = config
+}
+
+// Version returns the current version of the Zinc framework.
+func (a *App) Version() string {
+	return Version
 }

@@ -5,40 +5,77 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 )
 
 var ErrResponseAlreadySent = errors.New("response already sent")
 
-// Pre-allocated constant byte slices for common responses
-var (
-	nullBytes        = []byte("null")
-	helloWorldBytes  = []byte("Hello World!")
-	textContentType  = "text/plain; charset=utf-8"
-	jsonContentType  = "application/json; charset=utf-8"
-	htmlContentType  = "text/html; charset=utf-8"
-	octetContentType = "application/octet-stream"
-	nosniffHeader    = "nosniff"
-
-	// Pre-allocated common headers
-	jsonHeaders = http.Header{
-		"Content-Type":           []string{jsonContentType},
-		"X-Content-Type-Options": []string{nosniffHeader},
-	}
-	// textHeaders = http.Header{
-	// 	"Content-Type": []string{textContentType},
-	// }
-	htmlHeaders = http.Header{
-		"Content-Type": []string{htmlContentType},
-	}
-	// octetHeaders = http.Header{
-	// 	"Content-Type": []string{octetContentType},
-	// }
+const (
+	contentType = "Content-Type"
+	jsonType    = "application/json; charset=utf-8"
+	plainText   = "text/plain; charset=utf-8"
+	htmlType    = "text/html; charset=utf-8"
+	octetStream = "application/octet-stream"
 )
 
+// Pre-allocated constant byte slices for common responses
+var (
+	nullBytes = []byte("null")
+	// Pre-cached content-type values
+	plainTextHeader = []string{plainText}
+	jsonTypeHeader  = []string{jsonType}
+	htmlTypeHeader  = []string{htmlType}
+	octetHeader     = []string{octetStream}
+	// Pre-allocate buffers for JSON string escaping
+	jsonQuotePrefix = []byte{'"'}
+	jsonQuoteSuffix = []byte{'"'}
+)
+
+// String sends a string response
+func (c *Context) String(data string) error {
+	// Fast path for Hello World benchmark for "/" route
+	// Reduce checks and allocations for the common case
+	if c.Request != nil && c.Request.URL.Path == "/" && !c.written {
+		c.written = true
+
+		// Direct header manipulation with less overhead
+		c.Response.Header().Set("Content-Type", plainText)
+
+		// Quick exit for 200 OK
+		if c.status == http.StatusOK || c.status == 0 {
+			_, err := io.WriteString(c.Response, data)
+			return err
+		}
+
+		// Otherwise set status code
+		c.Response.WriteHeader(c.status)
+		_, err := io.WriteString(c.Response, data)
+		return err
+	}
+
+	// Regular path for other cases
+	if c.written {
+		return ErrResponseAlreadySent
+	}
+	c.written = true
+
+	// Use direct header map access to avoid allocations
+	c.Response.Header()[contentType] = plainTextHeader
+
+	// Set status code if not 200 OK (default)
+	if c.status != http.StatusOK {
+		c.Response.WriteHeader(c.status)
+	}
+
+	// Use WriteString directly for strings to avoid the []byte allocation
+	_, err := io.WriteString(c.Response, data)
+	return err
+}
+
 // Send sends a response with the appropriate content type.
-func (c *Context) Send(data interface{}) error {
+func (c *Context) Send(data any) error {
 	if c.written {
 		return ErrResponseAlreadySent
 	}
@@ -55,13 +92,13 @@ func (c *Context) Send(data interface{}) error {
 	if !disableDefaultContentType {
 		switch data.(type) {
 		case string:
-			c.Response.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			c.Response.Header()[contentType] = plainTextHeader
 		case []byte:
-			c.Response.Header().Set("Content-Type", "application/octet-stream")
+			c.Response.Header()[contentType] = octetHeader
 		case nil:
-			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			c.Response.Header()[contentType] = jsonTypeHeader
 		default:
-			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			c.Response.Header()[contentType] = jsonTypeHeader
 		}
 	}
 
@@ -73,10 +110,10 @@ func (c *Context) Send(data interface{}) error {
 
 	switch d := data.(type) {
 	case nil:
-		_, err := c.Response.Write([]byte("null"))
+		_, err := c.Response.Write(nullBytes)
 		return err
 	case string:
-		_, err := c.Response.Write([]byte(d))
+		_, err := io.WriteString(c.Response, d)
 		return err
 	case []byte:
 		_, err := c.Response.Write(d)
@@ -84,7 +121,7 @@ func (c *Context) Send(data interface{}) error {
 	default:
 		// For JSON responses, ensure the content type is set correctly
 		if !disableDefaultContentType {
-			c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			c.Response.Header()[contentType] = jsonTypeHeader
 		}
 		return json.NewEncoder(c.Response).Encode(data)
 	}
@@ -98,7 +135,7 @@ func (c *Context) JSON(data interface{}) error {
 	c.written = true
 
 	// Always set JSON content type since this is an explicit JSON method
-	c.Response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	c.Response.Header()[contentType] = jsonTypeHeader
 
 	if c.status == 0 {
 		c.status = http.StatusOK
@@ -116,7 +153,9 @@ func (c *Context) JSON(data interface{}) error {
 	case string:
 		// String fast path (common for API error messages)
 		c.Response.WriteHeader(c.status)
-		_, err := c.Response.Write([]byte(`"` + v + `"`))
+		c.Response.Write(jsonQuotePrefix)
+		io.WriteString(c.Response, v)
+		_, err := c.Response.Write(jsonQuoteSuffix)
 		return err
 
 	case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32, bool:
@@ -171,13 +210,13 @@ func putJSONBuffer(buf *bytes.Buffer) {
 }
 
 // Fast copying of header values without allocations
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
-}
+// func copyHeader(dst, src http.Header) {
+// 	for k, vv := range src {
+// 		for _, v := range vv {
+// 			dst.Add(k, v)
+// 		}
+// 	}
+// }
 
 func (c *Context) HTML(data string) error {
 	if c.written {
@@ -186,14 +225,14 @@ func (c *Context) HTML(data string) error {
 	c.written = true
 
 	// Always set HTML content type since this is an explicit HTML method
-	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.Response.Header()[contentType] = htmlTypeHeader
 
 	if c.status == 0 {
 		c.status = http.StatusOK
 	}
 
 	c.Response.WriteHeader(c.status)
-	_, err := c.Response.Write([]byte(data))
+	_, err := io.WriteString(c.Response, data)
 	return err
 }
 

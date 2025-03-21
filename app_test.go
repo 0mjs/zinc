@@ -3,6 +3,7 @@ package zinc
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -212,9 +213,123 @@ func TestAppServices(t *testing.T) {
 
 	app.ServeHTTP(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
+	}
+
 	wantBody := "service value"
 	if w.Body.String() != wantBody {
 		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
+	}
+}
+
+func TestAppTypedServices(t *testing.T) {
+	app := New()
+
+	// Create a test service
+	type UserService struct {
+		users []string
+	}
+
+	service := &UserService{
+		users: []string{"user1", "user2"},
+	}
+
+	// Register the service using type-based registration
+	app.Register(service)
+
+	// Add a route that uses the typed service
+	app.Get("/typed-service", func(c *Context) error {
+		// Get service using the generic helper function
+		userService, ok := ServiceOf[*UserService](app)
+		if !ok {
+			return c.Status(StatusInternalServerError).String("Service not found")
+		}
+		return c.JSON(userService.users)
+	})
+
+	// Test accessing the service
+	req := httptest.NewRequest(http.MethodGet, "/typed-service", nil)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	wantBody := `["user1","user2"]`
+	gotBody := strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
+	}
+}
+
+// Test using context-based service retrieval
+func TestContextTypedServices(t *testing.T) {
+	app := New()
+
+	// Create a test service
+	type ProductService struct {
+		products []string
+	}
+
+	service := &ProductService{
+		products: []string{"product1", "product2"},
+	}
+
+	// Register the service using type-based registration
+	app.Register(service)
+
+	// Add a route that uses the typed service from context
+	app.Get("/context-service", func(c *Context) error {
+		// Get service using the context helper function
+		productService, ok := ContextServiceOf[*ProductService](c)
+		if !ok {
+			return c.Status(StatusInternalServerError).String("Service not found")
+		}
+		return c.JSON(productService.products)
+	})
+
+	// Add another route to test service retrieval in middleware chain
+	app.Get("/middleware-service", func(c *Context) error {
+		c.Set("test_key", "testing the middleware chain")
+		return c.Next()
+	}, func(c *Context) error {
+		// Get service using the context helper function
+		productService, ok := ContextServiceOf[*ProductService](c)
+		if !ok {
+			return c.Status(StatusInternalServerError).String("Service not found in middleware")
+		}
+		return c.JSON(productService.products)
+	})
+
+	// Test accessing the service
+	req := httptest.NewRequest(http.MethodGet, "/context-service", nil)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	wantBody := `["product1","product2"]`
+	gotBody := strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
+	}
+
+	// Test accessing the service in middleware chain
+	req = httptest.NewRequest(http.MethodGet, "/middleware-service", nil)
+	w = httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Middleware response code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	gotBody = strings.TrimSpace(w.Body.String())
+	if gotBody != wantBody {
+		t.Errorf("Middleware response body = %q, want %q", gotBody, wantBody)
 	}
 }
 
@@ -222,7 +337,9 @@ func TestAppStaticHandler(t *testing.T) {
 	app := New()
 
 	// String route handler
-	app.Get("/static-string", "Hello from static string")
+	app.Get("/static-string", func(c *Context) error {
+		return c.Send("Hello from static string")
+	})
 
 	// Test static string handler
 	req := httptest.NewRequest(http.MethodGet, "/static-string", nil)
@@ -239,8 +356,8 @@ func TestAppStaticHandler(t *testing.T) {
 func TestAppTestConfig(t *testing.T) {
 	// Test default config
 	app1 := New()
-	if app1.config.DefaultAddr != "0.0.0.0:8080" {
-		t.Errorf("Default address = %q, want %q", app1.config.DefaultAddr, "0.0.0.0:8080")
+	if app1.config.DefaultAddr != "0.0.0.0:6530" {
+		t.Errorf("Default address = %q, want %q", app1.config.DefaultAddr, "0.0.0.0:6530")
 	}
 
 	// Test custom config

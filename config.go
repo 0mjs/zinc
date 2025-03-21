@@ -6,12 +6,14 @@ import "time"
 type Config struct {
 	// Server configuration
 	// DefaultAddr specifies the HTTP server address.
-	// If not set, the server will listen on "0.0.0.0:8080".
+	// If not set, the server will listen on "0.0.0.0:6530".
 	DefaultAddr string
 	// ServerHeader sets the value of the Server HTTP header.
 	ServerHeader string
 	// AppName specifies the name of the application.
 	AppName string
+	// AppVersion specifies the version of the application.
+	AppVersion string
 
 	// Timeout settings
 	// ShutdownTimeout specifies the maximum duration to wait for server shutdown.
@@ -63,9 +65,10 @@ type Config struct {
 // DefaultConfig provides the default server configuration.
 // It can be used as a base configuration for the server initialisation.
 var DefaultConfig = Config{
-	DefaultAddr:               "0.0.0.0:8080",
-	ServerHeader:              "Zinc",
+	DefaultAddr:               "0.0.0.0:6530",
+	ServerHeader:              "Zinc/" + Version,
 	AppName:                   "",
+	AppVersion:                Version,
 	ShutdownTimeout:           10 * time.Second,
 	ReadTimeout:               5 * time.Second,
 	WriteTimeout:              10 * time.Second,

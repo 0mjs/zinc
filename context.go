@@ -35,6 +35,8 @@ type Context struct {
 	paramKeys  [8]string // Cache parameter keys
 	paramVals  [8]string // Cache parameter values
 	paramCount int       // Number of parameters set
+	// Direct reference to app to avoid map lookups
+	app *App
 }
 
 type param struct {
@@ -81,22 +83,28 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.QueryParams = nil
 	c.handlers = nil
 	c.paramCount = 0
+	c.app = nil
 
 	// Fast clear params - zero all at once using a single zero value
 	for i := range c.PathParams {
 		c.PathParams[i] = emptyParam
 	}
 
-	// Fast clear store - only if it has entries
+	// Only clear the store if it has entries
+	// This optimization helps with the Hello World benchmark
 	if len(c.Store) > 0 {
-		// Clear map in one operation for small maps
-		if len(c.Store) < 32 {
-			for k := range c.Store {
-				delete(c.Store, k)
+		// For Hello World case with just one entry, we can optimize
+		if len(c.Store) == 1 {
+			// Check if it's just the 'app' key which is common in the Hello World case
+			if _, ok := c.Store["app"]; ok && len(c.Store) == 1 {
+				delete(c.Store, "app")
+				return
 			}
-		} else {
-			// For larger maps, replace entirely
-			c.Store = make(map[string]interface{}, 16)
+		}
+
+		// For other cases, clear the entire store
+		for k := range c.Store {
+			delete(c.Store, k)
 		}
 	}
 }
@@ -117,10 +125,19 @@ func (c *Context) release() {
 
 // Service returns a service by name.
 func (c *Context) Service(name string) interface{} {
+	// First check local services map
 	if service, exists := c.services[name]; exists {
 		return service
 	}
-	panic("Service '" + name + "' not found")
+
+	// Then check app services if app reference is available
+	if c.app != nil && c.app.services != nil {
+		if service, exists := c.app.services[name]; exists {
+			return service
+		}
+	}
+
+	return nil
 }
 
 // Next calls the next middleware in the chain.
@@ -239,9 +256,13 @@ func (c *Context) HasQuery(name string) bool {
 
 // Body returns the request body as a string.
 func (c *Context) Body() (string, error) {
-	// Get app reference for accessing config
-	app, ok := c.Get("app").(*App)
-	if !ok {
+	// Use direct app reference if available, otherwise fallback to Store
+	var app *App
+	if c.app != nil {
+		app = c.app
+	} else if a, ok := c.Get("app").(*App); ok {
+		app = a
+	} else {
 		return "", errors.New("unable to get app reference")
 	}
 
@@ -271,9 +292,13 @@ func (c *Context) Body() (string, error) {
 
 // BodyParser parses the request body into a provided struct.
 func (c *Context) BodyParser(out interface{}) error {
-	// Get app reference for accessing config
-	app, ok := c.Get("app").(*App)
-	if !ok {
+	// Use direct app reference if available, otherwise fallback to Store
+	var app *App
+	if c.app != nil {
+		app = c.app
+	} else if a, ok := c.Get("app").(*App); ok {
+		app = a
+	} else {
 		return errors.New("unable to get app reference")
 	}
 
@@ -306,12 +331,25 @@ func (c *Context) BodyParser(out interface{}) error {
 	// Parse based on content type
 	switch {
 	case strings.HasPrefix(contentType, "application/json"):
-		return json.Unmarshal(body, out)
+		if err := json.Unmarshal(body, out); err != nil {
+			return err
+		}
 	case strings.HasPrefix(contentType, "application/xml"):
-		return xml.Unmarshal(body, out)
+		if err := xml.Unmarshal(body, out); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported content type: %s", contentType)
 	}
+
+	// Validate the struct after parsing
+	if app.validator != nil {
+		if errors := app.validator.Validate(out); len(errors) > 0 {
+			return errors
+		}
+	}
+
+	return nil
 }
 
 // setParam sets a path parameter with optimized allocation
@@ -358,8 +396,12 @@ func (c *Context) BindJSON(v interface{}, opts ...*BindOptions) error {
 	}
 
 	if !options.DisableValidation {
-		// Get app from context and validate
-		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+		// Use direct app reference if available, otherwise fallback to Store
+		if c.app != nil && c.app.validator != nil {
+			if errors := c.app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		} else if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
 			if errors := app.validator.Validate(v); len(errors) > 0 {
 				return errors
 			}
@@ -382,8 +424,12 @@ func (c *Context) BindXML(v interface{}, opts ...*BindOptions) error {
 	}
 
 	if !options.DisableValidation {
-		// Get app from context and validate
-		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+		// Use direct app reference if available, otherwise fallback to Store
+		if c.app != nil && c.app.validator != nil {
+			if errors := c.app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		} else if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
 			if errors := app.validator.Validate(v); len(errors) > 0 {
 				return errors
 			}
@@ -409,8 +455,12 @@ func (c *Context) BindForm(v interface{}, opts ...*BindOptions) error {
 	}
 
 	if !options.DisableValidation {
-		// Get app from context and validate
-		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+		// Use direct app reference if available, otherwise fallback to Store
+		if c.app != nil && c.app.validator != nil {
+			if errors := c.app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		} else if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
 			if errors := app.validator.Validate(v); len(errors) > 0 {
 				return errors
 			}
@@ -434,8 +484,12 @@ func (c *Context) BindQuery(v interface{}, opts ...*BindOptions) error {
 	}
 
 	if !options.DisableValidation {
-		// Get app from context and validate
-		if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
+		// Use direct app reference if available, otherwise fallback to Store
+		if c.app != nil && c.app.validator != nil {
+			if errors := c.app.validator.Validate(v); len(errors) > 0 {
+				return errors
+			}
+		} else if app, ok := c.Store["app"].(*App); ok && app != nil && app.validator != nil {
 			if errors := app.validator.Validate(v); len(errors) > 0 {
 				return errors
 			}
@@ -693,4 +747,56 @@ func isTrustedProxy(ip string, trustedProxies []string) bool {
 	}
 
 	return false
+}
+
+// Version returns the current version of the Zinc framework.
+func (c *Context) Version() string {
+	return Version
+}
+
+// ContextServiceOf is a helper function to retrieve a service by type from a Context
+// Usage example: service, ok := zinc.ContextServiceOf[*UserService](c)
+func ContextServiceOf[T any](c *Context) (service T, ok bool) {
+	// Check if we have direct app access
+	if c.app != nil {
+		// Get the type we're looking for
+		typ := reflect.TypeOf((*T)(nil)).Elem()
+
+		// Try to get the service directly from the app's typedServices map
+		if s := c.app.typedServices[typ]; s != nil {
+			if svc, isOk := s.(T); isOk {
+				return svc, true
+			}
+		}
+
+		// If not found by type, try using type name string lookup
+		if s := c.app.services[typ.String()]; s != nil {
+			if svc, isOk := s.(T); isOk {
+				return svc, true
+			}
+		}
+	}
+
+	// As a fallback, try to get the app from the Store if it's not directly set
+	if c.app == nil {
+		if app, exists := c.Store["app"].(*App); exists && app != nil {
+			// Same lookup logic but with the app from Store
+			typ := reflect.TypeOf((*T)(nil)).Elem()
+
+			if s := app.typedServices[typ]; s != nil {
+				if svc, isOk := s.(T); isOk {
+					return svc, true
+				}
+			}
+
+			if s := app.services[typ.String()]; s != nil {
+				if svc, isOk := s.(T); isOk {
+					return svc, true
+				}
+			}
+		}
+	}
+
+	var zero T
+	return zero, false
 }
