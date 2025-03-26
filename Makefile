@@ -1,14 +1,6 @@
-.PHONY: test
-test:
-	gotestsum --format testname
-
 .PHONY: dev
 dev:
 	air
-
-.PHONY: benchmark
-benchmark:
-	go test -bench=. -benchmem
 
 .PHONY: tag
 tag:
@@ -17,6 +9,10 @@ ifndef version
 endif
 	git tag v$(version) && git push origin v$(version)
 
-.PHONY: tidy
-tidy:
-	go mod tidy && go mod vendor && go mod verify && go mod download
+.PHONY: test
+test:
+	gotestsum --format testname
+
+.PHONY: benchmark
+benchmark:
+	go test -bench=. -benchmem

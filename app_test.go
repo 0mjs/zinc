@@ -199,11 +199,11 @@ func TestAppServices(t *testing.T) {
 	}
 
 	// Register the service
-	app.Service("test", service)
+	app.Injectable(service)
 
 	// Add a route that uses the service
 	app.Get("/service", func(c *Context) error {
-		service := c.Service("test").(*TestService)
+		service := c.Service(service).(*TestService)
 		return c.Send(service.GetValue())
 	})
 
@@ -236,7 +236,7 @@ func TestAppTypedServices(t *testing.T) {
 	}
 
 	// Register the service using type-based registration
-	app.Register(service)
+	app.Injectable(service)
 
 	// Add a route that uses the typed service
 	app.Get("/typed-service", func(c *Context) error {
@@ -278,7 +278,7 @@ func TestContextTypedServices(t *testing.T) {
 	}
 
 	// Register the service using type-based registration
-	app.Register(service)
+	app.Injectable(service)
 
 	// Add a route that uses the typed service from context
 	app.Get("/context-service", func(c *Context) error {

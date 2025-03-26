@@ -30,7 +30,7 @@ type Context struct {
 	index       int
 	Store       map[string]interface{}
 	status      int
-	services    map[string]interface{}
+	services    map[reflect.Type]interface{}
 	// Use preallocation for common per-request data
 	paramKeys  [8]string // Cache parameter keys
 	paramVals  [8]string // Cache parameter values
@@ -54,8 +54,8 @@ var contextPool = sync.Pool{
 	New: func() interface{} {
 		// Pre-allocate with fixed-size maps to avoid dynamic resizing
 		c := &Context{
-			Store:    make(map[string]interface{}, 8), // Increased capacity
-			services: make(map[string]interface{}, 4), // Increased capacity
+			Store:    make(map[string]interface{}, 8),       // Increased capacity
+			services: make(map[reflect.Type]interface{}, 4), // Increased capacity
 			status:   http.StatusOK,
 			index:    -1,
 		}
@@ -124,15 +124,15 @@ func (c *Context) release() {
 }
 
 // Service returns a service by name.
-func (c *Context) Service(name string) interface{} {
+func (c *Context) Service(name interface{}) interface{} {
 	// First check local services map
-	if service, exists := c.services[name]; exists {
+	if service, exists := c.services[reflect.TypeOf(name)]; exists {
 		return service
 	}
 
 	// Then check app services if app reference is available
 	if c.app != nil && c.app.services != nil {
-		if service, exists := c.app.services[name]; exists {
+		if service, exists := c.app.services[reflect.TypeOf(name)]; exists {
 			return service
 		}
 	}
@@ -763,14 +763,7 @@ func ContextServiceOf[T any](c *Context) (service T, ok bool) {
 		typ := reflect.TypeOf((*T)(nil)).Elem()
 
 		// Try to get the service directly from the app's typedServices map
-		if s := c.app.typedServices[typ]; s != nil {
-			if svc, isOk := s.(T); isOk {
-				return svc, true
-			}
-		}
-
-		// If not found by type, try using type name string lookup
-		if s := c.app.services[typ.String()]; s != nil {
+		if s := c.app.services[typ]; s != nil {
 			if svc, isOk := s.(T); isOk {
 				return svc, true
 			}
@@ -783,13 +776,7 @@ func ContextServiceOf[T any](c *Context) (service T, ok bool) {
 			// Same lookup logic but with the app from Store
 			typ := reflect.TypeOf((*T)(nil)).Elem()
 
-			if s := app.typedServices[typ]; s != nil {
-				if svc, isOk := s.(T); isOk {
-					return svc, true
-				}
-			}
-
-			if s := app.services[typ.String()]; s != nil {
+			if s := app.services[typ]; s != nil {
 				if svc, isOk := s.(T); isOk {
 					return svc, true
 				}

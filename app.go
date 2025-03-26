@@ -15,16 +15,13 @@ type App struct {
 	config         *Config
 	router         *Router
 	middleware     []Middleware
-	services       map[string]any
-	typedServices  map[reflect.Type]any
+	services       map[reflect.Type]any
 	cronScheduler  *CronScheduler
 	templateEngine *TemplateEngine
 	wsHandler      *WebSocketHandler
 	uploader       *FileUpload
 	validator      *Validator
 }
-
-type RouteHandler func(c *Context) error
 
 type Map map[string]any
 
@@ -33,33 +30,24 @@ func (a *App) Use(middleware ...Middleware) {
 	a.middleware = append(a.middleware, middleware...)
 }
 
-// Service registers a service with the application
-func (a *App) Service(name string, service interface{}) {
-	a.services[name] = service
-}
-
 // Register registers a service with the application by its concrete type
 // This allows for type-safe retrieval using GetService() later
-func (a *App) Register(service interface{}) {
+func (a *App) Injectable(service interface{}) {
 	typ := reflect.TypeOf(service)
-	a.typedServices[typ] = service
-
-	// Also store in string-based services map using the type's full name
-	// This maintains compatibility with the string-based Service method
-	a.services[typ.String()] = service
+	a.services[typ] = service
 }
 
 // GetService retrieves a service by its concrete type
 // Returns the service or nil if not found
 func (a *App) GetService(serviceType reflect.Type) interface{} {
-	return a.typedServices[serviceType]
+	return a.services[serviceType]
 }
 
 // ServiceOf is a convenience function to retrieve a service by type T
 // Usage example: service := app.ServiceOf[*UserService]()
 func ServiceOf[T any](a *App) (service T, ok bool) {
 	typ := reflect.TypeOf((*T)(nil)).Elem()
-	if s := a.typedServices[typ]; s != nil {
+	if s := a.services[typ]; s != nil {
 		if svc, isOk := s.(T); isOk {
 			return svc, true
 		}
@@ -195,36 +183,18 @@ func (a *App) Cron(id string, schedule string, handler interface{}) error {
 	}
 }
 
-// For backward compatibility
-// Schedule adds a cron job to be executed on the given schedule
-func (a *App) Schedule(id string, schedule string, handler func() error) error {
-	return a.Cron(id, schedule, handler)
-}
-
-// For backward compatibility
-// ScheduleFunc adds a cron job that executes a function without returning an error
-func (a *App) ScheduleFunc(id string, schedule string, handler func()) error {
-	return a.Cron(id, schedule, handler)
-}
-
-// RemoveCron removes a scheduled job by ID
-func (a *App) RemoveCron(id string) {
+// RemoveCRON removes a scheduled job by ID
+func (a *App) RemoveCRON(id string) {
 	a.cronScheduler.RemoveJob(id)
 }
 
-// For backward compatibility
-// RemoveSchedule removes a scheduled job by ID
-func (a *App) RemoveSchedule(id string) {
-	a.RemoveCron(id)
-}
-
 // StopScheduler stops all scheduled jobs
-func (a *App) StopScheduler() {
+func (a *App) StopCRON() {
 	a.cronScheduler.Stop()
 }
 
-// StartScheduler starts the scheduler
-func (a *App) StartScheduler() {
+// StartCRON starts the scheduler
+func (a *App) StartCRON() {
 	a.cronScheduler.Start()
 }
 

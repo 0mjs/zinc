@@ -518,20 +518,21 @@ func TestServices(t *testing.T) {
 		},
 	}
 
-	app.Service("users", userService)
+	app.Injectable(userService)
 
 	// Route that uses the service
 	app.Get("/users/:id", func(c *Context) error {
-		service := c.Service("users").(*UserService)
+		service := c.Service((*UserService)(nil)).(*UserService)
 		userId := c.Param("id")
 		return c.Send(service.GetUser(userId))
 	})
 
 	// Route that uses a non-existent service
 	app.Get("/unknown-service", func(c *Context) error {
-		service := c.Service("nonexistent")
+		type NonExistentService struct{}
+		service := c.Service((*NonExistentService)(nil))
 		if service == nil {
-			return c.Status(http.StatusInternalServerError).Send("Service 'nonexistent' not found")
+			return c.Status(http.StatusInternalServerError).Send("Service not found")
 		}
 		return c.Send("Should not reach here")
 	})
@@ -542,7 +543,7 @@ func TestServices(t *testing.T) {
 		wantContains string
 	}{
 		{"/users/123", 200, "User 123"},
-		{"/unknown-service", 500, "Service 'nonexistent' not found"},
+		{"/unknown-service", 500, "Service not found"},
 	}
 
 	for _, tt := range tests {

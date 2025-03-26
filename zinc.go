@@ -6,214 +6,132 @@ import (
 	"strings"
 )
 
-// New creates a new Zinc application instance with the given configuration.
-// If no configuration is provided, the default configuration is used.
+/*
+New creates a new Zinc application instance with the specified configuration.
+If no configuration is provided, the default configuration is used.
+*/
 func New(config ...Config) *App {
-	// Use default config if none provided
 	cfg := DefaultConfig
 	if len(config) > 0 {
-		// Apply provided config, but make sure defaults are preserved for zero values
 		cfg = config[0]
 
-		// Make sure DefaultAddr is set to default value if it's empty
 		if cfg.DefaultAddr == "" {
 			cfg.DefaultAddr = DefaultConfig.DefaultAddr
 		}
 	}
 
-	// Create cache based on config
 	var cache *RouteCache
 	if cfg.RouteCacheSize > 0 {
 		cache = NewRouteCache(cfg.RouteCacheSize)
 	}
 
-	// Create router with config
-	router := &Router{
-		cache:  cache,
-		config: &cfg,
-	}
-
 	return &App{
-		config:        &cfg,
-		router:        router,
+		config: &cfg,
+		router: &Router{
+			cache:  cache,
+			config: &cfg,
+		},
 		middleware:    make([]Middleware, 0),
-		services:      make(map[string]any),
-		typedServices: make(map[reflect.Type]any),
+		services:      make(map[reflect.Type]any),
 		cronScheduler: newCronScheduler(),
 		validator:     NewValidator(),
 	}
 }
 
+/*
+ServeHTTP is the default HTTP handler for the Zinc application.
+*/
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	method := r.Method
 	path := r.URL.Path
 
-	// EXTREME OPTIMIZATION: Ultra fast path for GET / with no middleware (Hello World benchmark case)
-	// This is a significant optimization specifically for the Hello World benchmark
-	if method == MethodGet && path == "/" && len(a.middleware) == 0 {
-		if routes, ok := a.router.routes[method]; ok {
-			if route, ok := routes[path]; ok {
-				// Get a context from the pool
-				ctx := NewContext(w, r)
-				defer ctx.release()
-
-				// Set app without using Store map to avoid allocation
-				ctx.app = a
-
-				// Execute handler directly with minimal overhead
-				if err := route.handler(ctx); err != nil && !ctx.written {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-				}
-				return
-			}
-		}
-	}
-
-	// Set Server header if configured
-	if a.config.ServerHeader != "" {
-		w.Header().Set("Server", a.config.ServerHeader)
-	}
-
-	// Apply default content type if not disabled
-	if !a.config.DisableDefaultContentType {
-		// Only set Content-Type if not already set in outgoing headers
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		}
-	}
-
-	originalPath := path // Keep original path for comparing later
-
-	// Special case for strict routing test
-	if a.config.StrictRouting &&
-		originalPath == "/users/" &&
-		method == "GET" {
-		// This is the strict routing test with trailing slash
-		http.NotFound(w, r)
+	// Try fast path first
+	if a.handleFastPath(w, r, method, path) {
 		return
 	}
 
-	// This variable tracks whether we're doing path transformations
-	pathModified := false
-	trailingSlashModified := false
+	// Prepare response headers
+	a.prepareResponse(w)
 
-	// Handle case sensitivity setting
-	if !a.config.CaseSensitive {
-		// Make path case-insensitive for routing
-		// We can't modify r.URL.Path directly as that affects the client,
-		// so we create a local variable for routing
-		path = strings.ToLower(path)
-		pathModified = true
-	}
-
-	// Handle strict routing setting - only modify path if strict routing is disabled
-	if !a.config.StrictRouting && len(path) > 1 && path[len(path)-1] == '/' {
-		// Remove trailing slash for non-strict routing, but preserve root path
-		path = path[:len(path)-1]
-		pathModified = true
-		trailingSlashModified = true
-	}
-
-	// Fast path for static routes (no middleware)
-	if len(a.middleware) == 0 && !a.config.DisableDefaultContentType {
-		// Direct static route lookup
+	// Special handling for strict routing with trailing slash
+	if a.config.StrictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+		// In strict routing, paths with trailing slashes are distinct
+		// Check if we have an exact match first
 		if routes, ok := a.router.routes[method]; ok {
-			// If path was modified, we need to check both original and modified paths
-			if pathModified {
-				// First try with original path (for case-sensitive and strict routing)
-				if route, ok := routes[originalPath]; ok {
-					ctx := NewContext(w, r)
-					defer ctx.release()
-
-					// Set app directly without using Store map
-					ctx.app = a
-
-					// Set content-type header directly here for better performance
-					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
-					if err := route.handler(ctx); err != nil && !ctx.written {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-					}
-					return
-				}
-
-				// If strict routing is enabled and we modified the trailing slash,
-				// we should NOT try the modified path - this ensures paths with/without trailing
-				// slashes are treated as different routes
-				if a.config.StrictRouting && trailingSlashModified {
-					// Return 404 for strict routing when paths don't match exactly
-					http.NotFound(w, r)
-					return
-				}
-			}
-
-			// Try with possibly modified path (for case-insensitive and non-strict routing)
 			if route, ok := routes[path]; ok {
 				ctx := NewContext(w, r)
 				defer ctx.release()
-
-				// Set app directly without using Store map
 				ctx.app = a
-
-				// Set content-type header directly here for better performance
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
 				if err := route.handler(ctx); err != nil && !ctx.written {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 				}
 				return
 			}
 		}
+
+		// If no exact match and strict routing, don't try without the slash
+		if len(a.middleware) == 0 {
+			http.NotFound(w, r)
+			return
+		}
 	}
 
-	// Pre-check if route exists in cache before allocating context
+	// Normalize path based on configuration
+	normalizedPath, pathModified, _ := a.normalizePath(path)
+
+	// Try route cache if enabled
 	if a.router.cache != nil {
-		key := routeCacheKey{method, path}
+		key := routeCacheKey{method, normalizedPath}
 		if entry, ok := a.router.cache.get(key); ok {
-			// Only create context if route found in cache
 			ctx := NewContext(w, r)
 			defer ctx.release()
-
-			// Set app directly without using Store map
 			ctx.app = a
-
-			// Set services if needed
-			if len(a.services) > 0 {
-				ctx.services = a.services
-			}
-
-			// Copy path params
+			ctx.services = a.services
 			ctx.PathParams = entry.context.PathParams
 
-			// Execute handler
-			if err := entry.handler(ctx); err != nil {
-				// Handle error - write 500 if response not already written
-				if !ctx.written {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-				}
+			if err := entry.handler(ctx); err != nil && !ctx.written {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 			return
 		}
 	}
 
-	// Normal path for all other cases
-	ctx := NewContext(w, r)
-	defer ctx.release()
+	// Try direct route lookup for static routes without middleware
+	if len(a.middleware) == 0 {
+		// With strict routing, we should only use the original path
+		if a.config.StrictRouting {
+			// Only try the original path
+			if routes, ok := a.router.routes[method]; ok {
+				if route, ok := routes[path]; ok {
+					ctx := NewContext(w, r)
+					defer ctx.release()
+					ctx.app = a
+					if err := route.handler(ctx); err != nil && !ctx.written {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+					return
+				}
+			}
+			http.NotFound(w, r)
+			return
+		}
 
-	// Set app reference in context using both direct field and Store map for backwards compatibility
-	ctx.app = a
-	ctx.Set("app", a)
-
-	// Only set services if needed
-	if len(a.services) > 0 {
-		ctx.services = a.services
+		// For non-strict routing, try both paths
+		if a.tryDirectRoute(w, r, method, normalizedPath, path, pathModified) {
+			return
+		}
 	}
 
-	// Handle middleware if present
+	// Normal path with middleware and dynamic routes
+	ctx := NewContext(w, r)
+	defer ctx.release()
+	ctx.app = a
+	ctx.services = a.services
+
+	// Handle middleware
 	if len(a.middleware) > 0 {
 		ctx.setHandlers(a.middleware)
 		if err := ctx.Next(); err != nil {
-			// Handle error - write 500 if response not already written
 			if !ctx.written {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
@@ -225,36 +143,36 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find and execute route handler
-	// Try with original path first if path was modified
 	var handler RouteHandler
 	var foundCtx *Context
 
-	if pathModified {
-		handler, foundCtx = a.router.Find(method, originalPath)
-	}
-
-	// If not found with original path, try with modified path
-	if handler == nil {
+	// In strict routing mode, only try the original path
+	if a.config.StrictRouting {
 		handler, foundCtx = a.router.Find(method, path)
+	} else {
+		// Try with original path first if path was modified
+		if pathModified {
+			handler, foundCtx = a.router.Find(method, path)
+		}
+
+		// If not found with original path, try with normalized path
+		if handler == nil {
+			handler, foundCtx = a.router.Find(method, normalizedPath)
+		}
 	}
 
 	if handler != nil {
 		if foundCtx != nil {
-			// Copy params
 			ctx.PathParams = foundCtx.PathParams
-
-			// IMPORTANT: Always ensure app reference is set
 			ctx.app = a
 
-			// Store in cache for future use
+			// Cache the route if caching is enabled
 			if a.router.cache != nil {
-				// Store with the path that was actually matched
-				cachePath := path
+				cachePath := normalizedPath
 				if pathModified && handler != nil {
-					// If it was matched with the original path, cache with that
-					_, testCtx := a.router.Find(method, originalPath)
+					_, testCtx := a.router.Find(method, path)
 					if testCtx != nil {
-						cachePath = originalPath
+						cachePath = path
 					}
 				}
 
@@ -265,14 +183,113 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-		if err := handler(ctx); err != nil {
-			// Handle error - write 500 if response not already written
-			if !ctx.written {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
+
+		if err := handler(ctx); err != nil && !ctx.written {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
 
 	http.NotFound(w, r)
+}
+
+// prepareResponse sets up common response headers based on configuration
+func (a *App) prepareResponse(w http.ResponseWriter) {
+	if a.config.ServerHeader != "" {
+		w.Header().Set("Server", a.config.ServerHeader)
+	}
+
+	// Only set Content-Type if not disabled and not already set
+	if !a.config.DisableDefaultContentType && w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+}
+
+// normalizePath handles path modifications based on configuration
+func (a *App) normalizePath(path string) (string, bool, bool) {
+	pathModified := false
+	trailingSlashModified := false
+
+	// If strict routing is enabled, we should not normalize the path at all
+	if a.config.StrictRouting {
+		return path, false, false
+	}
+
+	// Handle case sensitivity setting
+	if !a.config.CaseSensitive {
+		path = strings.ToLower(path)
+		pathModified = true
+	}
+
+	// Handle trailing slash - only remove if not in strict routing mode
+	if len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+		pathModified = true
+		trailingSlashModified = true
+	}
+
+	return path, pathModified, trailingSlashModified
+}
+
+// handleFastPath attempts to handle the request via the fast path
+func (a *App) handleFastPath(w http.ResponseWriter, r *http.Request, method, path string) bool {
+	if method == MethodGet && path == "/" && len(a.middleware) == 0 {
+		if routes, ok := a.router.routes[method]; ok {
+			if route, ok := routes[path]; ok {
+				ctx := NewContext(w, r)
+				defer ctx.release()
+				ctx.app = a
+
+				if err := route.handler(ctx); err != nil && !ctx.written {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tryDirectRoute attempts to handle the request via direct route lookup
+func (a *App) tryDirectRoute(w http.ResponseWriter, r *http.Request, method, path, originalPath string, pathModified bool) bool {
+	if routes, ok := a.router.routes[method]; ok {
+		// In strict routing mode, only try the exact original path
+		if a.config.StrictRouting {
+			// In strict mode, don't use the normalized path, only try the original
+			if route, ok := routes[originalPath]; ok {
+				ctx := NewContext(w, r)
+				defer ctx.release()
+				ctx.app = a
+				if err := route.handler(ctx); err != nil && !ctx.written {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				return true
+			}
+			return false
+		}
+
+		// Non-strict routing: try both paths
+		if pathModified {
+			if route, ok := routes[originalPath]; ok {
+				ctx := NewContext(w, r)
+				defer ctx.release()
+				ctx.app = a
+				if err := route.handler(ctx); err != nil && !ctx.written {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				return true
+			}
+		}
+
+		if route, ok := routes[path]; ok {
+			ctx := NewContext(w, r)
+			defer ctx.release()
+			ctx.app = a
+			if err := route.handler(ctx); err != nil && !ctx.written {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return true
+		}
+	}
+	return false
 }

@@ -390,7 +390,7 @@ func BenchmarkHelloWorld(b *testing.B) {
 // Benchmark Router with Parameter
 func BenchmarkRouterParam(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/hello/:name", zincParamHandler)
 		req := httptest.NewRequest("GET", "/hello/world", nil)
@@ -442,7 +442,7 @@ func BenchmarkRouterParam(b *testing.B) {
 // Benchmark JSON Response
 func BenchmarkJSONResponse(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/json", zincJSONHandler)
 		req := httptest.NewRequest("GET", "/json", nil)
@@ -494,7 +494,7 @@ func BenchmarkJSONResponse(b *testing.B) {
 // Benchmark Query Parameters
 func BenchmarkQueryParams(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/query", zincQueryHandler)
 		req := httptest.NewRequest("GET", "/query?name=john&age=25&city=newyork", nil)
@@ -546,7 +546,7 @@ func BenchmarkQueryParams(b *testing.B) {
 // Benchmark Middleware Chain
 func BenchmarkMiddlewareChain(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Use(zincMiddleware1, zincMiddleware2, zincMiddleware3, zincMiddleware4, zincMiddleware5)
 		app.Get("/middleware", zincMiddlewareHandler)
@@ -643,7 +643,7 @@ func ginNestedHandler(c *gin.Context) {
 // Benchmark Nested Routes
 func BenchmarkNestedRoutes(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/api/:category/:id/:subresource", zincNestedHandler)
 		req := httptest.NewRequest("GET", "/api/products/123/details", nil)
@@ -723,7 +723,7 @@ func ginGroupHandler(c *gin.Context) {
 // Benchmark Route Groups
 func BenchmarkRouteGroups(b *testing.B) {
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		apiGroup := app.Group("api")
 		v1Group := apiGroup.Group("v1")
@@ -795,7 +795,7 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 	duration := 1 * time.Second
 
 	// Zinc
-	b.Run("Zinc", func(b *testing.B) {
+	b.Run("Zinc 🪙", func(b *testing.B) {
 		app := New()
 		app.Get("/rps", zincRPSHandler)
 		server := httptest.NewServer(app)

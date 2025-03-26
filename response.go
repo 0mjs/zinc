@@ -82,10 +82,10 @@ func (c *Context) Send(data any) error {
 	c.written = true
 
 	// Get app config to check if default content type is disabled
-	app, ok := c.Get("app").(*App)
+	// Use direct app reference for better performance
 	disableDefaultContentType := false
-	if ok && app != nil && app.config != nil {
-		disableDefaultContentType = app.config.DisableDefaultContentType
+	if c.app != nil && c.app.config != nil {
+		disableDefaultContentType = c.app.config.DisableDefaultContentType
 	}
 
 	// Set content type based on data type (if not disabled)
@@ -171,7 +171,6 @@ func (c *Context) JSON(data interface{}) error {
 		return err
 
 	case map[string]interface{}:
-		// Common map type - can potentially optimize further if needed
 		c.Response.WriteHeader(c.status)
 
 		// Use a buffer pool for marshaling to avoid GC pressure

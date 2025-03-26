@@ -6,75 +6,45 @@ import (
 	"sync"
 )
 
-const (
-	MethodGet     = "GET"     // RFC 7231, 4.3.1
-	MethodHead    = "HEAD"    // RFC 7231, 4.3.2
-	MethodPost    = "POST"    // RFC 7231, 4.3.3
-	MethodPut     = "PUT"     // RFC 7231, 4.3.4
-	MethodPatch   = "PATCH"   // RFC 5789
-	MethodDelete  = "DELETE"  // RFC 7231, 4.3.5
-	MethodConnect = "CONNECT" // RFC 7231, 4.3.6
-	MethodOptions = "OPTIONS" // RFC 7231, 4.3.7
-	MethodTrace   = "TRACE"   // RFC 7231, 4.3.8
-	methodUse     = "USE"
-)
+type RouteHandler func(c *Context) error
 
-const (
-	MIMETextXML               = "text/xml"
-	MIMETextHTML              = "text/html"
-	MIMETextPlain             = "text/plain"
-	MIMEApplicationXML        = "application/xml"
-	MIMEApplicationJSON       = "application/json"
-	MIMEApplicationJavaScript = "application/javascript"
-	MIMEApplicationForm       = "application/x-www-form-urlencoded"
-	MIMEOctetStream           = "application/octet-stream"
-	MIMEMultipartForm         = "multipart/form-data"
-
-	MIMETextXMLCharsetUTF8               = "text/xml; charset=utf-8"
-	MIMETextHTMLCharsetUTF8              = "text/html; charset=utf-8"
-	MIMETextPlainCharsetUTF8             = "text/plain; charset=utf-8"
-	MIMEApplicationXMLCharsetUTF8        = "application/xml; charset=utf-8"
-	MIMEApplicationJSONCharsetUTF8       = "application/json; charset=utf-8"
-	MIMEApplicationJavaScriptCharsetUTF8 = "application/javascript; charset=utf-8"
-)
-
-const (
-	paramIdentifier    = ':'
-	wildcardIdentifier = '*'
-)
+type RouteHandlerMap map[string]RouteHandler
 
 type RouteNode struct {
-	path     string
-	part     string
 	children []*RouteNode
 	handler  RouteHandler
-	handlers map[string]RouteHandler // Map of handlers by method
+	handlers RouteHandlerMap
 	isParam  bool
 	isWild   bool
 	method   string
+	part     string
+	path     string
 }
 
 type Route struct {
-	path    string
 	handler RouteHandler
 	method  string
 	parts   []string
+	path    string
 }
 
 type Middleware func(c *Context) error
 
+type RouteMap map[string]map[string]*Route
+
 type Router struct {
-	routes     map[string]map[string]*Route
-	router     *RouteNode
-	middleware []Middleware
 	cache      *RouteCache
-	config     *Config // Reference to app config
+	config     *Config
+	middleware []Middleware
+	router     *RouteNode
+	routes     RouteMap
 }
 
-// Use a fixed array to avoid allocations for common path lengths
+// getPathParts returns the parts of the path
 func getPathParts(path string) []string {
 	// Use a local fixed-size array for most paths (which are short)
 	var fixedParts [8]string
+	// Use a slice to avoid allocations, reusing the same array
 	parts := fixedParts[:0]
 
 	// Fast path for empty and root paths
@@ -240,10 +210,10 @@ func (r *Router) Add(method, path string, handlers ...RouteHandler) error {
 
 			if len(part) > 0 {
 				switch part[0] {
-				case paramIdentifier:
+				case ParamIdentifier:
 					isParam = true
 					part = part[1:]
-				case wildcardIdentifier:
+				case WildcardIdentifier:
 					isWild = true
 					part = "*"
 				}
@@ -476,53 +446,53 @@ func (r *Router) Use(middleware ...Middleware) {
 	r.middleware = append(r.middleware, middleware...)
 }
 
-func chain(handlers []RouteHandler) RouteHandler {
-	// Optimization for single handler case (common)
-	if len(handlers) == 1 {
-		return handlers[0]
-	}
+// func chain(handlers []RouteHandler) RouteHandler {
+// 	// Optimization for single handler case (common)
+// 	if len(handlers) == 1 {
+// 		return handlers[0]
+// 	}
 
-	// Optimization for two handlers case (also common)
-	if len(handlers) == 2 {
-		h1, h2 := handlers[0], handlers[1]
-		return func(c *Context) error {
-			if err := h1(c); err != nil {
-				return err
-			}
-			if !c.written {
-				return h2(c)
-			}
-			return nil
-		}
-	}
+// 	// Optimization for two handlers case (also common)
+// 	if len(handlers) == 2 {
+// 		h1, h2 := handlers[0], handlers[1]
+// 		return func(c *Context) error {
+// 			if err := h1(c); err != nil {
+// 				return err
+// 			}
+// 			if !c.written {
+// 				return h2(c)
+// 			}
+// 			return nil
+// 		}
+// 	}
 
-	// For 3+ handlers, use the general case
-	return func(c *Context) error {
-		for i, handler := range handlers {
-			if err := handler(c); err != nil {
-				return err
-			}
+// 	// For 3+ handlers, use the general case
+// 	return func(c *Context) error {
+// 		for i, handler := range handlers {
+// 			if err := handler(c); err != nil {
+// 				return err
+// 			}
 
-			if c.written {
-				// Fast return
-				return nil
-			}
+// 			if c.written {
+// 				// Fast return
+// 				return nil
+// 			}
 
-			// Add performance hint for the runtime
-			// Using simple check to help branch prediction
-			if i >= len(handlers)-2 {
-				// Last two handlers, no need for complex checks
-				break
-			}
-		}
+// 			// Add performance hint for the runtime
+// 			// Using simple check to help branch prediction
+// 			if i >= len(handlers)-2 {
+// 				// Last two handlers, no need for complex checks
+// 				break
+// 			}
+// 		}
 
-		// Handle the last handler(s) directly to avoid loop checks
-		if len(handlers) > 0 && !c.written {
-			return handlers[len(handlers)-1](c)
-		}
-		return nil
-	}
-}
+// 		// Handle the last handler(s) directly to avoid loop checks
+// 		if len(handlers) > 0 && !c.written {
+// 			return handlers[len(handlers)-1](c)
+// 		}
+// 		return nil
+// 	}
+// }
 
 func (n *RouteNode) find(parts []string, ctx *Context, method string) *RouteNode {
 	if len(parts) == 0 {

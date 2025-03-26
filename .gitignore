@@ -1,6 +1,9 @@
 .air.toml
+.DS_Store
+.cursorrules
+
 tmp/*
 restricted/*
 vendor/*
-.DS_Store
-.cursorrules
+examples/*
+benchmarks/*
