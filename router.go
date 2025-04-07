@@ -6,21 +6,31 @@ import (
 	"sync"
 )
 
+// RouteHandler represents a function that handles a route request.
 type RouteHandler func(c *Context) error
 
+// RouteHandlerMap is a map of HTTP methods to route handlers.
 type RouteHandlerMap map[string]RouteHandler
 
+// Middleware represents a function that can be used as middleware.
+type Middleware func(c *Context) error
+
+// RouteMap is a map of HTTP methods to paths to routes.
+type RouteMap map[string]map[string]*Route
+
+// RouteNode represents a node in the route trie.
 type RouteNode struct {
 	children []*RouteNode
-	handler  RouteHandler
+	handler  RouteHandler // Deprecated: use handlers map instead
 	handlers RouteHandlerMap
 	isParam  bool
 	isWild   bool
-	method   string
+	method   string // Deprecated: use handlers map instead
 	part     string
 	path     string
 }
 
+// Route represents a route in the router.
 type Route struct {
 	handler RouteHandler
 	method  string
@@ -28,10 +38,7 @@ type Route struct {
 	path    string
 }
 
-type Middleware func(c *Context) error
-
-type RouteMap map[string]map[string]*Route
-
+// Router handles HTTP routes and dispatches to the appropriate handler.
 type Router struct {
 	cache      *RouteCache
 	config     *Config
@@ -40,68 +47,43 @@ type Router struct {
 	routes     RouteMap
 }
 
-// getPathParts returns the parts of the path
-func getPathParts(path string) []string {
-	// Use a local fixed-size array for most paths (which are short)
-	var fixedParts [8]string
-	// Use a slice to avoid allocations, reusing the same array
-	parts := fixedParts[:0]
-
-	// Fast path for empty and root paths
-	if path == "" || path == "/" {
-		return parts
-	}
-
-	// Fast path for single component path (common case)
-	if path[0] == '/' && !strings.ContainsRune(path[1:], '/') {
-		if len(path) > 1 {
-			parts = append(parts, path[1:])
-		}
-		return parts
-	}
-
-	// Skip the leading slash
-	if path[0] == '/' {
-		path = path[1:]
-	}
-
-	// Optimization: use pre-allocations for common path patterns
-	pathLen := len(path)
-
-	// Fast path for 1-2 slashes (most common case)
-	slashCount := 0
-	for i := range path {
-		if path[i] == '/' {
-			slashCount++
-		}
-	}
-
-	// Preallocate exact capacity
-	if cap(parts) < slashCount+1 {
-		// Rare case for extremely deep paths
-		parts = make([]string, 0, slashCount+1)
-	}
-
-	// Fast split without regexp
-	start := 0
-	for i := 0; i < pathLen; i++ {
-		if path[i] == '/' {
-			if i > start {
-				parts = append(parts, path[start:i])
-			}
-			start = i + 1
-		}
-	}
-
-	// Add final part if path doesn't end with slash
-	if start < pathLen {
-		parts = append(parts, path[start:])
-	}
-
-	return parts
+// routeCacheKey is used as a key for the route cache.
+type routeCacheKey struct {
+	method string
+	path   string
 }
 
-// Add adds a route to the router
+// routeCacheEntry represents a cached route handler and context.
+type routeCacheEntry struct {
+	handler RouteHandler
+	context *Context
+}
+
+// RouteCache provides an LRU cache for routes.
+type RouteCache struct {
+	cache map[routeCacheKey]routeCacheEntry
+	mu    sync.RWMutex
+	size  int
+	keys  []routeCacheKey // Track keys for simple LRU eviction
+}
+
+// Pool for string builders to reduce allocations
+var pathBuilderPool = sync.Pool{
+	New: func() interface{} {
+		return new(strings.Builder)
+	},
+}
+
+// NewRouteCache creates a new route cache with the specified size.
+func NewRouteCache(size int) *RouteCache {
+	return &RouteCache{
+		cache: make(map[routeCacheKey]routeCacheEntry, size),
+		size:  size,
+		keys:  make([]routeCacheKey, 0, size),
+	}
+}
+
+// Add adds a route to the router.
 func (r *Router) Add(method, path string, handlers ...RouteHandler) error {
 	// Ensure we have a handler
 	if len(handlers) == 0 {
@@ -260,66 +242,7 @@ func (r *Router) Add(method, path string, handlers ...RouteHandler) error {
 	return nil
 }
 
-type routeCacheKey struct {
-	method string
-	path   string
-}
-
-type routeCacheEntry struct {
-	handler RouteHandler
-	context *Context
-}
-
-// Add LRU cache for routes
-type RouteCache struct {
-	cache map[routeCacheKey]routeCacheEntry
-	mu    sync.RWMutex
-	size  int
-	keys  []routeCacheKey // Track keys for simple LRU eviction
-}
-
-func NewRouteCache(size int) *RouteCache {
-	return &RouteCache{
-		cache: make(map[routeCacheKey]routeCacheEntry, size),
-		size:  size,
-		keys:  make([]routeCacheKey, 0, size),
-	}
-}
-
-func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
-	rc.mu.RLock()
-	entry, ok := rc.cache[key]
-	rc.mu.RUnlock()
-	return entry, ok
-}
-
-func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	// If already exists, just update
-	if _, exists := rc.cache[key]; exists {
-		rc.cache[key] = entry
-		return
-	}
-
-	// If cache is full, evict one entry
-	if len(rc.cache) >= rc.size {
-		// Simple FIFO eviction strategy
-		if len(rc.keys) > 0 {
-			// Evict oldest entry
-			oldKey := rc.keys[0]
-			delete(rc.cache, oldKey)
-			// Remove the key
-			rc.keys = rc.keys[1:]
-		}
-	}
-
-	// Add new entry
-	rc.cache[key] = entry
-	rc.keys = append(rc.keys, key)
-}
-
+// Find finds a route handler for the given method and path.
 func (r *Router) Find(method, path string) (RouteHandler, *Context) {
 	// Apply config settings to path if needed
 	originalPath := path
@@ -442,58 +365,30 @@ func (r *Router) Find(method, path string) (RouteHandler, *Context) {
 	return nil, nil
 }
 
+// Use adds middleware to the router.
 func (r *Router) Use(middleware ...Middleware) {
 	r.middleware = append(r.middleware, middleware...)
 }
 
-// func chain(handlers []RouteHandler) RouteHandler {
-// 	// Optimization for single handler case (common)
-// 	if len(handlers) == 1 {
-// 		return handlers[0]
-// 	}
+// normalizePath ensures the path starts with a forward slash.
+func (r *Router) normalizePath(path string) string {
+	if path == "" {
+		return "/"
+	}
+	if path[0] == '/' {
+		return path
+	}
 
-// 	// Optimization for two handlers case (also common)
-// 	if len(handlers) == 2 {
-// 		h1, h2 := handlers[0], handlers[1]
-// 		return func(c *Context) error {
-// 			if err := h1(c); err != nil {
-// 				return err
-// 			}
-// 			if !c.written {
-// 				return h2(c)
-// 			}
-// 			return nil
-// 		}
-// 	}
+	builder := pathBuilderPool.Get().(*strings.Builder)
+	builder.Reset()
+	builder.WriteByte('/')
+	builder.WriteString(path)
+	result := builder.String()
+	pathBuilderPool.Put(builder)
+	return result
+}
 
-// 	// For 3+ handlers, use the general case
-// 	return func(c *Context) error {
-// 		for i, handler := range handlers {
-// 			if err := handler(c); err != nil {
-// 				return err
-// 			}
-
-// 			if c.written {
-// 				// Fast return
-// 				return nil
-// 			}
-
-// 			// Add performance hint for the runtime
-// 			// Using simple check to help branch prediction
-// 			if i >= len(handlers)-2 {
-// 				// Last two handlers, no need for complex checks
-// 				break
-// 			}
-// 		}
-
-// 		// Handle the last handler(s) directly to avoid loop checks
-// 		if len(handlers) > 0 && !c.written {
-// 			return handlers[len(handlers)-1](c)
-// 		}
-// 		return nil
-// 	}
-// }
-
+// find searches for a matching route node for the given path parts.
 func (n *RouteNode) find(parts []string, ctx *Context, method string) *RouteNode {
 	if len(parts) == 0 {
 		// Check if this node has a handler for the requested method
@@ -628,6 +523,7 @@ func (n *RouteNode) find(parts []string, ctx *Context, method string) *RouteNode
 	return nil
 }
 
+// findChild finds a child node with the given part, isParam and isWild properties.
 func (n *RouteNode) findChild(part string, isParam, isWild bool) *RouteNode {
 	for _, child := range n.children {
 		if child.part == part && child.isParam == isParam && child.isWild == isWild {
@@ -637,75 +533,151 @@ func (n *RouteNode) findChild(part string, isParam, isWild bool) *RouteNode {
 	return nil
 }
 
-var pathBuilderPool = sync.Pool{
-	New: func() interface{} {
-		return new(strings.Builder)
-	},
+// get retrieves a route handler from the cache.
+func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
+	rc.mu.RLock()
+	entry, ok := rc.cache[key]
+	rc.mu.RUnlock()
+	return entry, ok
 }
 
-func (r *Router) normalizePath(path string) string {
-	if path == "" {
-		return "/"
+// set adds a route handler to the cache.
+func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	// If already exists, just update
+	if _, exists := rc.cache[key]; exists {
+		rc.cache[key] = entry
+		return
 	}
+
+	// If cache is full, evict one entry
+	if len(rc.cache) >= rc.size {
+		// Simple FIFO eviction strategy
+		if len(rc.keys) > 0 {
+			// Evict oldest entry
+			oldKey := rc.keys[0]
+			delete(rc.cache, oldKey)
+			// Remove the key
+			rc.keys = rc.keys[1:]
+		}
+	}
+
+	// Add new entry
+	rc.cache[key] = entry
+	rc.keys = append(rc.keys, key)
+}
+
+// getPathParts splits a path into its component parts.
+func getPathParts(path string) []string {
+	// Use a local fixed-size array for most common, short paths
+	var fixedParts [8]string
+	// Use a slice to avoid allocations, reusing the same array
+	parts := fixedParts[:0]
+
+	// Fast path for empty and root paths
+	if path == "" || path == "/" {
+		return parts
+	}
+
+	// Fast path for single component path (common case)
+	if path[0] == '/' && !strings.ContainsRune(path[1:], '/') {
+		if len(path) > 1 {
+			parts = append(parts, path[1:])
+		}
+		return parts
+	}
+
+	// Skip the leading slash
 	if path[0] == '/' {
-		return path
+		path = path[1:]
 	}
 
-	builder := pathBuilderPool.Get().(*strings.Builder)
-	builder.Reset()
-	builder.WriteByte('/')
-	builder.WriteString(path)
-	result := builder.String()
-	pathBuilderPool.Put(builder)
-	return result
+	// Use pre-allocations for common path patterns
+	pathLen := len(path)
+
+	// Fast path for 1-2 slashes (most common case)
+	slashCount := 0
+	for i := range path {
+		if path[i] == '/' {
+			slashCount++
+		}
+	}
+
+	// Preallocate exact capacity
+	if cap(parts) < slashCount+1 {
+		// Rare case for extremely deep paths
+		parts = make([]string, 0, slashCount+1)
+	}
+
+	// Fast split without regexp
+	start := 0
+	for i := 0; i < pathLen; i++ {
+		if path[i] == '/' {
+			if i > start {
+				parts = append(parts, path[start:i])
+			}
+			start = i + 1
+		}
+	}
+
+	// Add final part if path doesn't end with slash
+	if start < pathLen {
+		parts = append(parts, path[start:])
+	}
+
+	return parts
 }
 
-// Get registers a route for the GET HTTP method with RouteHandler
+// HTTP method handlers for App
+
+// Get registers a route for the GET HTTP method.
 func (a *App) Get(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodGet, path, handlers...)
 }
 
-// Post registers a route for the POST HTTP method with RouteHandler
+// Post registers a route for the POST HTTP method.
 func (a *App) Post(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPost, path, handlers...)
 }
 
-// Put registers a route for the PUT HTTP method with RouteHandler
+// Put registers a route for the PUT HTTP method.
 func (a *App) Put(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPut, path, handlers...)
 }
 
-// Delete registers a route for the DELETE HTTP method with RouteHandler
+// Delete registers a route for the DELETE HTTP method.
 func (a *App) Delete(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodDelete, path, handlers...)
 }
 
-// Patch registers a route for the PATCH HTTP method with RouteHandler
+// Patch registers a route for the PATCH HTTP method.
 func (a *App) Patch(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodPatch, path, handlers...)
 }
 
-// Head registers a route for the HEAD HTTP method with RouteHandler
+// Head registers a route for the HEAD HTTP method.
 func (a *App) Head(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodHead, path, handlers...)
 }
 
-// Options registers a route for the OPTIONS HTTP method with RouteHandler
+// Options registers a route for the OPTIONS HTTP method.
 func (a *App) Options(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodOptions, path, handlers...)
 }
 
-// Connect registers a route for the CONNECT HTTP method with RouteHandler
+// Connect registers a route for the CONNECT HTTP method.
 func (a *App) Connect(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodConnect, path, handlers...)
 }
 
-// Trace registers a route for the TRACE HTTP method with RouteHandler
+// Trace registers a route for the TRACE HTTP method.
 func (a *App) Trace(path string, handlers ...RouteHandler) error {
 	return a.router.Add(MethodTrace, path, handlers...)
 }
 
-// StringHandler creates a RouteHandler that returns the provided string
+// StringHandler creates a RouteHandler that returns the provided string.
 func StringHandler(str string) RouteHandler {
 	return func(c *Context) error {
 		return c.Send(str)
