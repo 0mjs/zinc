@@ -7,8 +7,6 @@
 
 Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer velocity. Designed to compete with the most popular frameworks around today in performance and usability.
 
-<img width="1512" alt="Screenshot 2025-03-17 at 8 52 56 pm" src="https://github.com/user-attachments/assets/e9dded63-a7be-431a-ace4-bdd66352a0d6" />
-
 ## Features
 
 - **Fast**: Optimized routing and minimal middleware overhead
