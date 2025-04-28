@@ -356,8 +356,8 @@ func TestAppStaticHandler(t *testing.T) {
 func TestAppTestConfig(t *testing.T) {
 	// Test default config
 	app1 := New()
-	if app1.config.DefaultAddr != "0.0.0.0:6530" {
-		t.Errorf("Default address = %q, want %q", app1.config.DefaultAddr, "0.0.0.0:6530")
+	if app1.config.DefaultAddr != "0.0.0.0:6538" {
+		t.Errorf("Default address = %q, want %q", app1.config.DefaultAddr, "0.0.0.0:6538")
 	}
 
 	// Test custom config

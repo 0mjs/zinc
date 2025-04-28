@@ -2,6 +2,7 @@ package zinc
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ type App struct {
 	wsHandler      *WebSocketHandler
 	uploader       *FileUpload
 	validator      *Validator
+	db             *sql.DB
 }
 
 type Map map[string]any
@@ -116,7 +118,15 @@ func (a *App) Serve(port ...string) error {
 		// Trigger graceful shutdown
 		fmt.Println("Shutting down server...")
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			fmt.Printf("Error during shutdown: %v\n", err)
+			fmt.Printf("Error during server shutdown: %v\n", err)
+		}
+
+		// Close database connection if it exists
+		if a.db != nil {
+			fmt.Println("Closing database connection...")
+			if err := a.db.Close(); err != nil {
+				fmt.Printf("Error closing database connection: %v\n", err)
+			}
 		}
 
 		// Stop cron scheduler
@@ -226,4 +236,45 @@ func (a *App) SetConfig(config *Config) {
 // Version returns the current version of the Zinc framework.
 func (a *App) Version() string {
 	return Version
+}
+
+// Group creates a new route group with a specified prefix
+func (a *App) Group(prefix string) *Group {
+	return NewGroup(a, prefix)
+}
+
+// ConnectDB establishes a connection to the database and stores the pool.
+// It requires the driver name (e.g., "postgres", "sqlite3") and the DSN.
+// Remember to import the specific database driver in your main package (e.g., _ "github.com/lib/pq").
+func (a *App) ConnectDB(driverName, dataSourceName string) error {
+	// Sanitise and allow sqlite string
+	if driverName == "sqlite" {
+		driverName = "sqlite3"
+	}
+	// Run DB in memory by default, if no source provided
+	if dataSourceName == "" {
+		dataSourceName = ":memory:"
+	}
+
+	db, err := sql.Open(driverName, dataSourceName)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection for driver %s: %w", driverName, err)
+	}
+
+	// Ping the database to verify the connection.
+	if err = db.Ping(); err != nil {
+		db.Close() // Close the connection if ping fails
+		return fmt.Errorf("failed to connect to database (driver: %s): %w", driverName, err)
+	}
+
+	a.db = db
+	// TODO: Add configuration options for connection pool settings (MaxOpenConns, MaxIdleConns, ConnMaxLifetime) via Config struct.
+	fmt.Printf("Successfully connected to database using driver: %s\n", driverName)
+	return nil
+}
+
+// GetDB retrieves the configured database connection pool.
+// Returns nil if no database connection has been established.
+func (a *App) GetDB() *sql.DB {
+	return a.db
 }

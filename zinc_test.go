@@ -487,8 +487,8 @@ func TestMultipleResponses(t *testing.T) {
 func TestAppConfig(t *testing.T) {
 	// Default configuration
 	app1 := New()
-	if app1.config.DefaultAddr != "0.0.0.0:6530" {
-		t.Errorf("want default address %q, got %q", "0.0.0.0:6530", app1.config.DefaultAddr)
+	if app1.config.DefaultAddr != "0.0.0.0:6538" {
+		t.Errorf("want default address %q, got %q", "0.0.0.0:6538", app1.config.DefaultAddr)
 	}
 
 	// Custom configuration
@@ -660,9 +660,9 @@ func TestDefaultAddrEmptyConfig(t *testing.T) {
 
 	app := New(emptyAddrConfig)
 
-	if app.config.DefaultAddr != "0.0.0.0:6530" {
+	if app.config.DefaultAddr != "0.0.0.0:6538" {
 		t.Errorf("want default address %q when DefaultAddr is empty, got %q",
-			"0.0.0.0:6530", app.config.DefaultAddr)
+			"0.0.0.0:6538", app.config.DefaultAddr)
 	}
 
 	// Verify other settings were preserved

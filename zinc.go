@@ -1,10 +1,29 @@
 package zinc
 
 import (
+	"database/sql"
 	"net/http"
 	"reflect"
 	"strings"
 )
+
+// DBRoutedHandler defines a handler function that expects a Context and a DB connection.
+type DBRoutedHandler func(c *Context, db *sql.DB) error
+
+// WithDB wraps a DBRoutedHandler, automatically providing the DB connection
+// from the context. It returns a standard RouteHandler.
+// If the DB connection is not available in the context, it returns a 500 error.
+func WithDB(handler DBRoutedHandler) RouteHandler {
+	return func(c *Context) error {
+		db := c.DB()
+		if db == nil {
+			// TODO: Consider logging this server-side for better debugging.
+			return c.Status(http.StatusInternalServerError).Send("Database connection is not configured or available")
+		}
+		// Call the user's handler with the db connection
+		return handler(c, db)
+	}
+}
 
 /*
 New creates a new Zinc application instance with the specified configuration.

@@ -1,6 +1,7 @@
 package zinc
 
 import (
+	"database/sql"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -786,4 +787,13 @@ func ContextServiceOf[T any](c *Context) (service T, ok bool) {
 
 	var zero T
 	return zero, false
+}
+
+// DB returns the database connection pool associated with the application.
+// It returns nil if no database connection has been configured for the App.
+func (c *Context) DB() *sql.DB {
+	if c.app != nil {
+		return c.app.db // Assumes App struct has a 'db' field of type *sql.DB
+	}
+	return nil
 }
