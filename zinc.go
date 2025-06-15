@@ -17,7 +17,6 @@ func WithDB(handler DBRoutedHandler) RouteHandler {
 	return func(c *Context) error {
 		db := c.DB()
 		if db == nil {
-			// TODO: Consider logging this server-side for better debugging.
 			return c.Status(http.StatusInternalServerError).Send("Database connection is not configured or available")
 		}
 		// Call the user's handler with the db connection
@@ -25,10 +24,8 @@ func WithDB(handler DBRoutedHandler) RouteHandler {
 	}
 }
 
-/*
-New creates a new Zinc application instance with the specified configuration.
-If no configuration is provided, the default configuration is used.
-*/
+// New creates a new Zinc application instance with the specified configuration.
+// If no configuration is provided, the default configuration is used.
 func New(config ...Config) *App {
 	cfg := DefaultConfig
 	if len(config) > 0 {
@@ -57,9 +54,7 @@ func New(config ...Config) *App {
 	}
 }
 
-/*
-ServeHTTP is the default HTTP handler for the Zinc application.
-*/
+// ServeHTTP is the default HTTP handler for the Zinc application.
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	method := r.Method
 	path := r.URL.Path

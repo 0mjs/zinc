@@ -6,8 +6,8 @@ import (
 
 func TestVersion(t *testing.T) {
 	// Test version constant
-	if Version != "0.063" {
-		t.Errorf("Expected Version to be %q, got %q", "0.063", Version)
+	if Version != "0.0.64" {
+		t.Errorf("Expected Version to be %q, got %q", "0.0.64", Version)
 	}
 
 	// Test GetVersion function
