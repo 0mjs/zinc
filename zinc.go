@@ -20,14 +20,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ctx.setHandlers(handlers)
 			if err := ctx.Next(); err != nil {
 				a.handleError(ctx, err)
-				return
 			}
-			if ctx.written {
-				return
-			}
-			if ctx.index < len(ctx.handlers) {
-				return
-			}
+			return
 		}
 	}
 
@@ -44,13 +38,14 @@ func (a *App) preHandlersForPath(path string) []HandlerFunc {
 	if count == 0 {
 		return nil
 	}
-	handlers := make([]HandlerFunc, 0, count)
+	handlers := make([]HandlerFunc, 0, count+1)
 	handlers = append(handlers, a.middleware...)
 	for _, entry := range a.prefixMiddleware {
 		if pathHasPrefix(path, entry.prefix, a.config.CaseSensitive) {
 			handlers = append(handlers, entry.handlers...)
 		}
 	}
+	handlers = append(handlers, appDispatchHandler)
 	return handlers
 }
 
@@ -116,7 +111,17 @@ func (a *App) handleError(ctx *Context, err error) {
 	if err == nil {
 		return
 	}
+	if ctx != nil {
+		ctx.lastErr = err
+	}
 	a.config.ErrorHandler(ctx, err)
+}
+
+func appDispatchHandler(c *Context) error {
+	if c != nil && c.app != nil {
+		c.app.dispatch(c)
+	}
+	return nil
 }
 
 func (a *App) matchMount(path string) *mountedHandler {

@@ -27,6 +27,7 @@ type Context struct {
 	status      int
 	app         *App
 	routeInfo   RouteInfo
+	lastErr     error
 	body        []byte
 	bodyRead    bool
 	bodyErr     error
@@ -70,6 +71,7 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.status = http.StatusOK
 	c.app = nil
 	c.routeInfo = RouteInfo{}
+	c.lastErr = nil
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
@@ -452,6 +454,20 @@ func (c *Context) RequestID() string {
 
 func (c *Context) FullPath() string {
 	return c.routeInfo.Path
+}
+
+func (c *Context) LastError() error {
+	return c.lastErr
+}
+
+func (c *Context) Error(err error) {
+	if err == nil {
+		return
+	}
+	c.lastErr = err
+	if c.app != nil {
+		c.app.handleError(c, err)
+	}
 }
 
 func (c *Context) Route() RouteInfo {

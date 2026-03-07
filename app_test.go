@@ -39,6 +39,29 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 		}
 	})
 
+	t.Run("middleware post-next sees route metadata", func(t *testing.T) {
+		app := New()
+		fullPath := ""
+		app.Use(func(c *Context) error {
+			if err := c.Next(); err != nil {
+				return err
+			}
+			fullPath = c.FullPath()
+			return nil
+		})
+		mustDo(t, app.Get("/post-next", func(c *Context) error {
+			return c.String("ok")
+		}))
+
+		resp := performRequest(t, app, http.MethodGet, "/post-next", nil, nil)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d", resp.Code)
+		}
+		if fullPath != "/post-next" {
+			t.Fatalf("fullPath=%q", fullPath)
+		}
+	})
+
 	t.Run("prefix middleware and route metadata", func(t *testing.T) {
 		app := New()
 		app.UsePrefix("/api", func(c *Context) error {

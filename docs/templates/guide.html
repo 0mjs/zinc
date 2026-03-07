@@ -115,14 +115,7 @@ app.Route("/admin", func(admin *zinc.Group) {
       prefix-specific middleware is registered with <code>UsePrefix</code>.
     </p>
 
-    <pre><code class="language-go">func requestLogger(c *zinc.Context) error {
-    started := time.Now()
-    err := c.Next()
-    log.Printf("%s %s in %s", c.Method(), c.Path(), time.Since(started))
-    return err
-}
-
-app.Use(requestLogger)
+    <pre><code class="language-go">app.Use(middleware.RequestLogger())
 
 app.UsePrefix("/api", func(c *zinc.Context) error {
     c.Set("is-api", true)

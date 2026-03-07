@@ -71,12 +71,7 @@ func main() {
 ## Routing And Middleware
 
 ```go
-func requestLogger(c *zinc.Context) error {
-	log.Printf("%s %s", c.Method(), c.Path())
-	return c.Next()
-}
-
-app.Use(requestLogger)
+app.Use(middleware.RequestLogger())
 app.UsePrefix("/api", authMiddleware)
 
 app.Route("/api", func(api *zinc.Group) {

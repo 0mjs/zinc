@@ -112,14 +112,9 @@ curl http://localhost:8080/users/42</code></pre>
   Name string `json:"name"`
 }
 
-func requestLogger(c *zinc.Context) error {
-  log.Printf("%s %s", c.Method(), c.Path())
-  return c.Next()
-}
-
 func main() {
   app := zinc.New()
-  app.Use(requestLogger)
+  app.Use(middleware.RequestLogger())
 
   api := app.Group("/api")
   api.Post("/users", func(c *zinc.Context) error {
