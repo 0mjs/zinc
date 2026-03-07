@@ -46,11 +46,13 @@ import (
 func main() {
 	app := zinc.New()
 
-	app.Get("/", func(c *zinc.Context) error {
-		return c.String("Hello, Zinc!")
-	})
+	app.Get("/", "Hello, world!") // Shorthand
 
-	app.Get("/hello", "hello from zinc")
+	app.Get("/greet", func(c *zinc.Context) error {
+		return c.JSON(zinc.Map{
+			"greeting": "Hello, world!",
+		})
+	})
 
 	app.Get("/users/:id", func(c *zinc.Context) error {
 		return c.JSON(zinc.Map{
