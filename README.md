@@ -15,6 +15,7 @@ while adding practical routing, middleware, binding, response helpers, and expli
 - Route groups, prefix middleware, and route metadata
 - Binding helpers for path, query, headers, JSON, XML, and forms
 - Response helpers for JSON, XML, HTML, streams, redirects, files, and rendering
+- First-party template renderer helper for `html/template` and `text/template`
 - Static/file serving and stdlib handler interop through `Mount`, `Wrap`, and `WrapFunc`
 - Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
 - Optional real-time endpoints with SSE and Gorilla WebSocket integration
@@ -144,6 +145,21 @@ app := zinc.NewWithConfig(zinc.Config{
 ```
 
 `Config` also lets you plug in a custom `Binder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
+
+```go
+views := template.Must(template.ParseGlob("templates/*.html"))
+
+app := zinc.NewWithConfig(zinc.Config{
+	Renderer: zinc.NewHTMLTemplateRenderer(
+		views,
+		zinc.WithTemplateSuffixes(".html", ".tmpl"),
+	),
+})
+
+app.Get("/dashboard", func(c *zinc.Context) error {
+	return c.Render("dashboard", zinc.Map{"Title": "Overview"})
+})
+```
 
 ## Quality Snapshot
 

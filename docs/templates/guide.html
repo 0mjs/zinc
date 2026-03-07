@@ -243,8 +243,19 @@ app.Get("/empty", func(c *zinc.Context) error {
 
     <p>
       <code>Render</code> requires a <code>Renderer</code> to be configured in <code>Config</code>. When no renderer
-      is configured, Zinc returns an error instead of guessing.
+      is configured, Zinc returns an error instead of guessing. Zinc also ships
+      <code>NewHTMLTemplateRenderer</code> and <code>NewTextTemplateRenderer</code> helpers for
+      standard-library templates.
     </p>
+
+    <pre><code class="language-go">views := template.Must(template.ParseGlob("templates/*.html"))
+
+app := zinc.NewWithConfig(zinc.Config{
+    Renderer: zinc.NewHTMLTemplateRenderer(
+        views,
+        zinc.WithTemplateSuffixes(".html", ".tmpl"),
+    ),
+})</code></pre>
   </section>
 
   <section id="realtime">

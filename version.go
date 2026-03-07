@@ -2,7 +2,7 @@ package zinc
 
 // Version is the current version of Zinc.
 // This should be updated for each release.
-const Version = "0.0.75"
+const Version = "0.0.76"
 
 // GetVersion returns the current version of Zinc.
 func GetVersion() string {
