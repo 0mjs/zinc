@@ -1,12 +1,12 @@
 # zinc
 
-![Zinc](https://img.shields.io/badge/Zinc-%20A%20web%20framework%20for%20Go-silver)
+![Zinc](https://img.shields.io/badge/Zinc-%20Go%20API%20Framework-silver)
 ![Version](https://img.shields.io/badge/version-0.0.7-red)
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Zinc is a focused web framework for Go built on top of `net/http`. It keeps the transport and server model familiar,
-while adding a fast router, a compact request context, binding helpers, response helpers, and explicit lifecycle APIs.
+Zinc is an API framework for Go built on top of `net/http`. It keeps the server and transport model familiar,
+while adding practical routing, middleware, binding, response helpers, and explicit lifecycle APIs.
 
 ## Features
 
@@ -15,9 +15,16 @@ while adding a fast router, a compact request context, binding helpers, response
 - Route groups, prefix middleware, and route metadata
 - Binding helpers for path, query, headers, JSON, XML, and forms
 - Response helpers for JSON, XML, HTML, streams, redirects, files, and rendering
-- Built-in real-time helpers for Server-Sent Events (SSE) and WebSockets
 - Static/file serving and stdlib handler interop through `Mount`, `Wrap`, and `WrapFunc`
 - Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
+- Optional real-time endpoints with SSE and Gorilla WebSocket integration
+
+## Typical Use Cases
+
+- JSON APIs and backend services
+- Internal tools and admin endpoints
+- Public REST APIs with middleware and validation
+- Real-time features (chat, activity feeds, live dashboards) when needed
 
 ## Installation
 
@@ -96,82 +103,29 @@ app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 })
 ```
 
-## Real-Time (SSE + WebSocket)
+## Optional Real-Time Endpoints (SSE + WebSocket)
+
+`WS` uses `github.com/gorilla/websocket`.
 
 ```go
-package main
-
-import (
-	"log"
-	"strconv"
-	"time"
-
-	"github.com/gorilla/websocket"
-
-	"github.com/0mjs/zinc"
-)
-
-func main() {
-	app := zinc.New()
-
-	app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-
-		count := 0
-		for {
-			select {
-			case <-stream.Done():
-				return nil
-			case tick := <-ticker.C:
-				count++
-				if err := stream.Send(zinc.SSEEvent{
-					ID:    strconv.Itoa(count),
-					Event: "tick",
-					Data: zinc.Map{
-						"at": tick.UTC().Format(time.RFC3339),
-					},
-				}); err != nil {
-					return err
-				}
-			}
-		}
+app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
+	return stream.Send(zinc.SSEEvent{
+		Event: "ready",
+		Data:  zinc.Map{"ok": true},
 	})
+})
 
-	app.WS("/ws", func(c *zinc.Context, conn *websocket.Conn) error {
-		for {
-			messageType, payload, err := conn.ReadMessage()
-			if err != nil {
-				return nil
-			}
-			if err := conn.WriteMessage(messageType, payload); err != nil {
-				return err
-			}
+app.WS("/ws", func(c *zinc.Context, conn *websocket.Conn) error {
+	for {
+		msgType, payload, err := conn.ReadMessage()
+		if err != nil {
+			return nil
 		}
-	}, zinc.WebSocketConfig{
-		CheckOrigin: func(c *zinc.Context) bool {
-			return c.GetHeader(zinc.HeaderOrigin) == "http://localhost:3000"
-		},
-	})
-
-	log.Fatal(app.Listen(":8080"))
-}
-```
-
-Browser client examples (plain HTML, React, Next.js, and Vue can all use these browser APIs):
-
-```html
-<script>
-  const events = new EventSource("/events");
-  events.addEventListener("tick", (event) => {
-    const data = JSON.parse(event.data);
-    console.log("sse tick:", data);
-  });
-
-  const ws = new WebSocket("ws://localhost:8080/ws");
-  ws.onopen = () => ws.send("hello");
-  ws.onmessage = (event) => console.log("ws message:", event.data);
-</script>
+		if err := conn.WriteMessage(msgType, payload); err != nil {
+			return err
+		}
+	}
+}, zinc.WebSocketConfig{})
 ```
 
 ## Configuration
