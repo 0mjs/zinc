@@ -1,23 +1,22 @@
 # zinc
 
 ![Zinc](https://img.shields.io/badge/Zinc-%20A%20web%20framework%20for%20Go-silver)
-![Version](https://img.shields.io/badge/version-0.0.58-red)
-![Go Version](https://img.shields.io/badge/Go-1.22+-blue)
+![Version](https://img.shields.io/badge/version-0.0.7-red)
+![Go Version](https://img.shields.io/badge/Go-1.24+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Zinc is a high-performance, minimal API framework for Go that focuses on speed, simplicity, and developer velocity. Designed to compete with the most popular frameworks around today in performance and usability.
+Zinc is a focused web framework for Go built on top of `net/http`. It keeps the transport and server model familiar,
+while adding a fast router, a compact request context, binding helpers, response helpers, and explicit lifecycle APIs.
 
 ## Features
 
-- **Fast**: Optimized routing and minimal middleware overhead
-- **Simple API**: Intuitive and expressive API that follows Go idioms
-- **Powerful Router**: Support for static routes, path parameters, route groups, and middleware
-- **Template Engine**: Built-in HTML templating with custom functions and template caching
-- **WebSocket Support**: Real-time communication with room-based broadcasting
-- **File Uploads**: Easy file upload handling with size limits and type validation
-- **Cron Scheduler**: Built-in cron jobs for scheduled tasks
-- **Memory Efficient**: Utilizes sync.Pool and fixed-size data structures to minimize allocations
-- **Well-Tested**: Comprehensive test suite ensures reliability
+- `App` is an `http.Handler`
+- Express-style routes with `:param` and `*wildcard`
+- Route groups, prefix middleware, and route metadata
+- Binding helpers for path, query, headers, JSON, XML, and forms
+- Response helpers for JSON, XML, HTML, streams, redirects, files, and rendering
+- Static/file serving and stdlib handler interop through `Mount`, `Wrap`, and `WrapFunc`
+- Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
 
 ## Installation
 
@@ -31,162 +30,101 @@ go get github.com/0mjs/zinc
 package main
 
 import (
-    "github.com/0mjs/zinc"
-    "log"
+	"log"
+
+	"github.com/0mjs/zinc"
 )
 
 func main() {
-    app := zinc.New()
-    
-    // Simple route
-    app.Get("/", func(c *zinc.Context) {
-        c.Send("Hello, World!")
-    })
-    
-    // Path parameters
-    app.Get("/users/:id", func(c *zinc.Context) {
-        c.JSON(zinc.Map{
-            "message": "User ID: " + c.Param("id"),
-        })
-    })
-    
-    // Route grouping
-    api := app.Group("/api")
-    api.Get("/users", func(c *zinc.Context) {
-        c.JSON(zinc.Map{
-            "users": []string{"matthew", "mark", "luke", "john"},
-        })
-    })
-    
-    // Middleware
-    app.Use(LoggerMiddleware())
-    
-    log.Fatal(app.Serve())
-}
+	app := zinc.New()
 
-func LoggerMiddleware() zinc.Middleware {
-    return func(c *zinc.Context) {
-        // Log before request handling
-        c.Next() // Pass control to the next middleware or handler
-        // Log after request handling
-    }
+	app.Get("/", func(c *zinc.Context) error {
+		return c.String("Hello, Zinc!")
+	})
+
+	app.Get("/users/:id", func(c *zinc.Context) error {
+		return c.JSON(zinc.Map{
+			"id":        c.Param("id"),
+			"full_path": c.FullPath(),
+		})
+	})
+
+	api := app.Group("/api")
+	api.Get("/health", func(c *zinc.Context) error {
+		return c.String("ok")
+	})
+
+	log.Fatal(app.Listen(":8080"))
 }
 ```
+
+## Routing And Middleware
+
+```go
+func requestLogger(c *zinc.Context) error {
+	log.Printf("%s %s", c.Method(), c.Path())
+	return c.Next()
+}
+
+app.Use(requestLogger)
+app.UsePrefix("/api", authMiddleware)
+
+app.Route("/api", func(api *zinc.Group) {
+	api.Get("/users/:id", showUser)
+	api.Post("/users", createUser)
+})
+```
+
+## Binding And Responses
+
+```go
+type CreateUserInput struct {
+	TeamID int    `path:"teamID"`
+	Page   int    `query:"page"`
+	Name   string `json:"name"`
+	Auth   string `header:"x-auth"`
+}
+
+app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
+	var input CreateUserInput
+	if err := c.Bind(&input); err != nil {
+		return err
+	}
+
+	return c.Status(zinc.StatusCreated).JSON(input)
+})
+```
+
+## Configuration
+
+```go
+app := zinc.NewWithConfig(zinc.Config{
+	ServerHeader:           "zinc/example",
+	CaseSensitive:          true,
+	StrictRouting:          true,
+	AutoHead:               true,
+	AutoOptions:            true,
+	HandleMethodNotAllowed: true,
+	BodyLimit:              8 << 20,
+	ProxyHeader:            zinc.HeaderXForwardedFor,
+	TrustedProxies:         []string{"10.0.0.1"},
+})
+```
+
+`Config` also lets you plug in a custom `Binder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
 
 ## Documentation
 
-For complete documentation, visit:
+- [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
+- [Docs app source](./docs)
+- [Benchmarks](./BENCHMARKS.md)
 
-- [Pkg.go.dev Documentation](https://pkg.go.dev/github.com/0mjs/zinc)
-- [Zinc Docs](https://github.com/0mjs/zinc/docs](https://zinc.0mjs.dev/)
+## Optional Middleware
 
-## Benchmarks
+Zinc ships focused middleware packages outside the core, such as:
 
-Zinc is designed for high performance, with benchmarks showing it to be competitive with or faster than other popular Go frameworks:
-
-- Static routes: ~800ns/op
-- Dynamic routes: ~1.2μs/op
-- Middleware chain: ~2.0μs/op
-
-## Typed Service Dependency Injection
-
-Zinc provides a powerful type-safe service dependency injection system that allows you to register and retrieve services by their concrete types.
-
-### Registering Services
-
-You can register services using either the string-based approach or the new type-based approach:
-
-```go
-// String-based service registration (legacy)
-app.Service("userService", userService)
-
-// Type-based service registration (recommended)
-app.Register(userService)
-```
-
-### Retrieving Services
-
-There are several ways to retrieve services:
-
-1. String-based retrieval (legacy):
-
-```go
-userService := c.Service("userService").(*UserService)
-```
-
-2. Type-based retrieval using generics:
-
-```go
-// From App instance
-userService, ok := zinc.ServiceOf[*UserService](app)
-if !ok {
-    // Handle service not found
-}
-
-// From Context
-userService, ok := zinc.ContextServiceOf[*UserService](c)
-if !ok {
-    // Handle service not found
-}
-```
-
-The type-based approach provides several advantages:
-- Compile-time type safety
-- No need for type assertions
-- No string literals that could contain typos
-- Better IDE support with code completion
-
-### Examples
-
-#### Basic Usage
-
-```go
-// Register a service
-app.Register(userService)
-
-// Use the service in a handler
-app.Get("/users", func(c *zinc.Context) error {
-    service, ok := zinc.ContextServiceOf[*UserService](c)
-    if !ok {
-        return c.Status(zinc.StatusInternalServerError).String("Service not available")
-    }
-    return service.GetUsers(c)
-})
-```
-
-#### Using Services in Middleware
-
-Services can be accessed directly from middleware functions:
-
-```go
-// Middleware that uses typed services
-authMiddleware := func(c *zinc.Context) error {
-    // Access the auth service directly from context
-    authService, ok := zinc.ContextServiceOf[*AuthService](c)
-    if !ok {
-        return c.Status(zinc.StatusInternalServerError).String("Auth service not available")
-    }
-    
-    // Use the service
-    token := c.Request.Header.Get("Authorization")
-    if err := authService.ValidateToken(token); err != nil {
-        return c.Status(zinc.StatusUnauthorized).String("Invalid token")
-    }
-    
-    // Continue with the next handler
-    return c.Next()
-}
-
-// Apply the middleware to routes or groups
-app.Get("/protected", authMiddleware, func(c *zinc.Context) error {
-    return c.String("Protected resource")
-})
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- `github.com/0mjs/zinc/middleware/cors`
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT

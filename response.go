@@ -2,12 +2,15 @@ package zinc
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"mime"
 	"net/http"
-	"sync"
+	"path/filepath"
+	"time"
 )
 
 var ErrResponseAlreadySent = errors.New("response already sent")
@@ -15,232 +18,283 @@ var ErrResponseAlreadySent = errors.New("response already sent")
 const (
 	contentType = "Content-Type"
 	jsonType    = "application/json; charset=utf-8"
+	xmlType     = "application/xml; charset=utf-8"
 	plainText   = "text/plain; charset=utf-8"
 	htmlType    = "text/html; charset=utf-8"
 	octetStream = "application/octet-stream"
 )
 
-// Pre-allocated constant byte slices for common responses
-var (
-	nullBytes = []byte("null")
-	// Pre-cached content-type values
-	plainTextHeader = []string{plainText}
-	jsonTypeHeader  = []string{jsonType}
-	htmlTypeHeader  = []string{htmlType}
-	octetHeader     = []string{octetStream}
-	// Pre-allocate buffers for JSON string escaping
-	jsonQuotePrefix = []byte{'"'}
-	jsonQuoteSuffix = []byte{'"'}
-)
+var nullBytes = []byte("null")
 
-// String sends a string response
+func bodyAllowed(method string, status int) bool {
+	if method == http.MethodHead {
+		return false
+	}
+	if status >= 100 && status < 200 {
+		return false
+	}
+	return status != http.StatusNoContent && status != http.StatusNotModified
+}
+
+func (c *Context) responseStatus() int {
+	if c.status == 0 {
+		return http.StatusOK
+	}
+	return c.status
+}
+
+func (c *Context) SetHeader(key, value string) *Context {
+	c.Writer().Header().Set(key, value)
+	return c
+}
+
+func (c *Context) AppendHeader(key string, values ...string) *Context {
+	for _, value := range values {
+		c.Writer().Header().Add(key, value)
+	}
+	return c
+}
+
+func (c *Context) Type(ext string) *Context {
+	if ext == "" {
+		return c
+	}
+	if ext[0] != '.' {
+		ext = "." + ext
+	}
+	if contentType := mime.TypeByExtension(ext); contentType != "" {
+		c.SetHeader(HeaderContentType, contentType)
+	}
+	return c
+}
+
+func (c *Context) Location(location string) *Context {
+	return c.SetHeader(HeaderLocation, location)
+}
+
+func (c *Context) Vary(fields ...string) *Context {
+	return c.AppendHeader(HeaderVary, fields...)
+}
+
 func (c *Context) String(data string) error {
-	// Fast path for Hello World benchmark for "/" route
-	// Reduce checks and allocations for the common case
-	if c.Request != nil && c.Request.URL.Path == "/" && !c.written {
-		c.written = true
-
-		// Direct header manipulation with less overhead
-		c.Response.Header().Set("Content-Type", plainText)
-
-		// Quick exit for 200 OK
-		if c.status == http.StatusOK || c.status == 0 {
-			_, err := io.WriteString(c.Response, data)
-			return err
-		}
-
-		// Otherwise set status code
-		c.Response.WriteHeader(c.status)
-		_, err := io.WriteString(c.Response, data)
+	return c.writeResponse(plainText, func() error {
+		_, err := io.WriteString(c.Writer(), data)
 		return err
-	}
-
-	// Regular path for other cases
-	if c.written {
-		return ErrResponseAlreadySent
-	}
-	c.written = true
-
-	// Use direct header map access to avoid allocations
-	c.Response.Header()[contentType] = plainTextHeader
-
-	// Set status code if not 200 OK (default)
-	if c.status != http.StatusOK {
-		c.Response.WriteHeader(c.status)
-	}
-
-	// Use WriteString directly for strings to avoid the []byte allocation
-	_, err := io.WriteString(c.Response, data)
-	return err
+	})
 }
 
-// Send sends a response with the appropriate content type.
 func (c *Context) Send(data any) error {
-	if c.written {
-		return ErrResponseAlreadySent
-	}
-	c.written = true
-
-	// Get app config to check if default content type is disabled
-	// Use direct app reference for better performance
-	disableDefaultContentType := false
-	if c.app != nil && c.app.config != nil {
-		disableDefaultContentType = c.app.config.DisableDefaultContentType
-	}
-
-	// Set content type based on data type (if not disabled)
-	if !disableDefaultContentType {
-		switch data.(type) {
-		case string:
-			c.Response.Header()[contentType] = plainTextHeader
-		case []byte:
-			c.Response.Header()[contentType] = octetHeader
-		case nil:
-			c.Response.Header()[contentType] = jsonTypeHeader
-		default:
-			c.Response.Header()[contentType] = jsonTypeHeader
-		}
-	}
-
-	if c.status == 0 {
-		c.status = http.StatusOK
-	}
-
-	c.Response.WriteHeader(c.status)
-
-	switch d := data.(type) {
+	switch value := data.(type) {
 	case nil:
-		_, err := c.Response.Write(nullBytes)
-		return err
-	case string:
-		_, err := io.WriteString(c.Response, d)
-		return err
-	case []byte:
-		_, err := c.Response.Write(d)
-		return err
-	default:
-		// For JSON responses, ensure the content type is set correctly
-		if !disableDefaultContentType {
-			c.Response.Header()[contentType] = jsonTypeHeader
-		}
-		return json.NewEncoder(c.Response).Encode(data)
-	}
-}
-
-// JSON serializes and sends JSON data
-func (c *Context) JSON(data interface{}) error {
-	if c.written {
-		return ErrResponseAlreadySent
-	}
-	c.written = true
-
-	// Always set JSON content type since this is an explicit JSON method
-	c.Response.Header()[contentType] = jsonTypeHeader
-
-	if c.status == 0 {
-		c.status = http.StatusOK
-	}
-
-	// Fast path for nil data
-	if data == nil {
-		c.Response.WriteHeader(c.status)
-		_, err := c.Response.Write(nullBytes)
-		return err
-	}
-
-	// Preallocation for common types
-	switch v := data.(type) {
-	case string:
-		// String fast path (common for API error messages)
-		c.Response.WriteHeader(c.status)
-		c.Response.Write(jsonQuotePrefix)
-		io.WriteString(c.Response, v)
-		_, err := c.Response.Write(jsonQuoteSuffix)
-		return err
-
-	case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32, bool:
-		// Use fmt.Sprint for simple scalar types
-		c.Response.WriteHeader(c.status)
-		_, err := fmt.Fprint(c.Response, v)
-		return err
-
-	case []byte:
-		// Pre-marshaled JSON
-		c.Response.WriteHeader(c.status)
-		_, err := c.Response.Write(v)
-		return err
-
-	case map[string]interface{}:
-		c.Response.WriteHeader(c.status)
-
-		// Use a buffer pool for marshaling to avoid GC pressure
-		buf := getJSONBuffer()
-		defer putJSONBuffer(buf)
-
-		encoder := json.NewEncoder(buf)
-		if err := encoder.Encode(v); err != nil {
+		return c.writeResponse(jsonType, func() error {
+			_, err := c.Writer().Write(nullBytes)
 			return err
-		}
+		})
+	case string:
+		return c.String(value)
+	case []byte:
+		return c.Data(octetStream, value)
+	default:
+		return c.JSON(value)
+	}
+}
 
-		_, err := c.Response.Write(buf.Bytes())
+func (c *Context) Data(contentType string, b []byte) error {
+	return c.writeResponse(contentType, func() error {
+		_, err := c.Writer().Write(b)
 		return err
+	})
+}
+
+func (c *Context) JSON(v any) error {
+	return c.writeJSON(v, "")
+}
+
+func (c *Context) JSONPretty(v any, indent string) error {
+	return c.writeJSON(v, indent)
+}
+
+func (c *Context) writeJSON(v any, indent string) error {
+	if v == nil {
+		return c.writeResponse(jsonType, func() error {
+			_, err := c.Writer().Write(nullBytes)
+			return err
+		})
 	}
 
-	// Default path for complex types
-	c.Response.WriteHeader(c.status)
-	return json.NewEncoder(c.Response).Encode(data)
+	var buf bytes.Buffer
+	if err := c.app.config.JSONCodec.Encode(&buf, v, indent); err != nil {
+		return err
+	}
+	return c.writeResponse(jsonType, func() error {
+		_, err := c.Writer().Write(buf.Bytes())
+		return err
+	})
 }
 
-// Pool of buffers for JSON marshaling
-var jsonBufferPool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
-}
+func (c *Context) XML(v any) error {
+	if v == nil {
+		return c.writeResponse(xmlType, func() error {
+			_, err := c.Writer().Write(nullBytes)
+			return err
+		})
+	}
 
-func getJSONBuffer() *bytes.Buffer {
-	buf := jsonBufferPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	return buf
+	var buf bytes.Buffer
+	if err := xml.NewEncoder(&buf).Encode(v); err != nil {
+		return err
+	}
+	return c.writeResponse(xmlType, func() error {
+		_, err := c.Writer().Write(buf.Bytes())
+		return err
+	})
 }
-
-func putJSONBuffer(buf *bytes.Buffer) {
-	jsonBufferPool.Put(buf)
-}
-
-// Fast copying of header values without allocations
-// func copyHeader(dst, src http.Header) {
-// 	for k, vv := range src {
-// 		for _, v := range vv {
-// 			dst.Add(k, v)
-// 		}
-// 	}
-// }
 
 func (c *Context) HTML(data string) error {
-	if c.written {
-		return ErrResponseAlreadySent
-	}
-	c.written = true
-
-	// Always set HTML content type since this is an explicit HTML method
-	c.Response.Header()[contentType] = htmlTypeHeader
-
-	if c.status == 0 {
-		c.status = http.StatusOK
-	}
-
-	c.Response.WriteHeader(c.status)
-	_, err := io.WriteString(c.Response, data)
-	return err
+	return c.writeResponse(htmlType, func() error {
+		_, err := io.WriteString(c.Writer(), data)
+		return err
+	})
 }
 
-func (c *Context) Static(filepath string) error {
+func (c *Context) Stream(contentType string, r io.Reader) error {
+	return c.writeResponse(contentType, func() error {
+		_, err := io.Copy(c.Writer(), r)
+		return err
+	})
+}
+
+func (c *Context) NoContent() error {
+	if c.status == 0 || c.status == http.StatusOK {
+		c.status = http.StatusNoContent
+	}
+	return c.writeResponse("", nil)
+}
+
+func (c *Context) Redirect(code int, location string) error {
+	if code == 0 {
+		code = http.StatusFound
+	}
+	if c.written {
+		return ErrResponseAlreadySent
+	}
+	c.written = true
+	c.Location(location)
+	c.Writer().WriteHeader(code)
+	return nil
+}
+
+func (c *Context) File(filePath string) error {
+	return c.serveFile(filePath, nil, "")
+}
+
+func (c *Context) FileFS(filePath string, filesystem fs.FS) error {
+	return c.serveFile(filePath, filesystem, "")
+}
+
+func (c *Context) Attachment(filePath string, name ...string) error {
+	downloadName := filepath.Base(filePath)
+	if len(name) > 0 && name[0] != "" {
+		downloadName = name[0]
+	}
+	c.SetHeader(HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", downloadName))
+	return c.File(filePath)
+}
+
+func (c *Context) Download(filePath string, name ...string) error {
+	return c.Attachment(filePath, name...)
+}
+
+func (c *Context) Render(name string, data any) error {
+	if c.app == nil || c.app.config.Renderer == nil {
+		return errors.New("renderer is not configured")
+	}
+	var buf bytes.Buffer
+	if err := c.app.config.Renderer.Render(&buf, name, data, c); err != nil {
+		return err
+	}
+	return c.writeResponse(htmlType, func() error {
+		_, err := c.Writer().Write(buf.Bytes())
+		return err
+	})
+}
+
+func (c *Context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.Writer(), cookie)
+}
+
+func (c *Context) ClearCookie(names ...string) {
+	expires := time.Unix(1, 0).UTC()
+	for _, name := range names {
+		http.SetCookie(c.Writer(), &http.Cookie{
+			Name:    name,
+			Value:   "",
+			Path:    "/",
+			MaxAge:  -1,
+			Expires: expires,
+		})
+	}
+}
+
+func (c *Context) writeResponse(ct string, writeBody func() error) error {
+	if c.written {
+		return ErrResponseAlreadySent
+	}
+	c.written = true
+	if ct != "" && c.Writer().Header().Get(contentType) == "" {
+		c.Writer().Header().Set(contentType, ct)
+	}
+	status := c.responseStatus()
+	if !bodyAllowed(c.Method(), status) {
+		if status != http.StatusOK {
+			c.Writer().WriteHeader(status)
+		}
+		return nil
+	}
+	if status != http.StatusOK {
+		c.Writer().WriteHeader(status)
+	}
+	if writeBody != nil {
+		return writeBody()
+	}
+	return nil
+}
+
+func (c *Context) serveFile(filePath string, filesystem fs.FS, downloadName string) error {
 	if c.written {
 		return ErrResponseAlreadySent
 	}
 	c.written = true
 
-	http.ServeFile(c.Response, c.Request, filepath)
+	if filesystem == nil {
+		http.ServeFile(c.Writer(), c.Request(), filePath)
+		return nil
+	}
+
+	file, err := filesystem.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if stat.IsDir() {
+		return fs.ErrInvalid
+	}
+
+	if rs, ok := file.(io.ReadSeeker); ok {
+		http.ServeContent(c.Writer(), c.Request(), stat.Name(), stat.ModTime(), rs)
+		return nil
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+	reader := bytes.NewReader(data)
+	http.ServeContent(c.Writer(), c.Request(), stat.Name(), stat.ModTime(), reader)
 	return nil
 }

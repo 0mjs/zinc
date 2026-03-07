@@ -2,79 +2,99 @@ package zinc
 
 import (
 	"fmt"
+	"reflect"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
 )
 
-// RouteHandler represents a function that handles a route request.
-type RouteHandler func(c *Context) error
+type RouteHandlerMap map[string]HandlerFunc
 
-// RouteHandlerMap is a map of HTTP methods to route handlers.
-type RouteHandlerMap map[string]RouteHandler
-
-// Middleware represents a function that can be used as middleware.
-type Middleware func(c *Context) error
-
-// RouteMap is a map of HTTP methods to paths to routes.
 type RouteMap map[string]map[string]*Route
 
-// RouteNode represents a node in the route trie.
-type RouteNode struct {
-	children []*RouteNode
-	handler  RouteHandler // Deprecated: use handlers map instead
-	handlers RouteHandlerMap
-	isParam  bool
-	isWild   bool
-	method   string // Deprecated: use handlers map instead
-	part     string
-	path     string
-}
-
-// Route represents a route in the router.
 type Route struct {
-	handler RouteHandler
+	handler HandlerFunc
 	method  string
 	parts   []string
 	path    string
+	info    RouteInfo
 }
 
-// Router handles HTTP routes and dispatches to the appropriate handler.
+type radixNodeKind uint8
+
+const (
+	radixRoot radixNodeKind = iota
+	radixStatic
+	radixParam
+	radixCatchAll
+)
+
+type radixRoute struct {
+	handler    HandlerFunc
+	path       string
+	paramNames [8]string
+	paramCount int
+	info       RouteInfo
+}
+
+type radixNode struct {
+	kind          radixNodeKind
+	prefix        string
+	route         *radixRoute
+	indices       string
+	children      []*radixNode
+	paramChild    *radixNode
+	catchAllChild *radixNode
+}
+
 type Router struct {
 	cache      *RouteCache
 	config     *Config
-	middleware []Middleware
-	router     *RouteNode
 	routes     RouteMap
+	trees      map[string]*radixNode
+	routeInfos []RouteInfo
 }
 
-// routeCacheKey is used as a key for the route cache.
 type routeCacheKey struct {
 	method string
 	path   string
 }
 
-// routeCacheEntry represents a cached route handler and context.
 type routeCacheEntry struct {
-	handler RouteHandler
-	context *Context
+	handler    HandlerFunc
+	routeInfo  RouteInfo
+	pathParams params
+	paramKeys  [8]string
+	paramVals  [8]string
+	paramCount int
 }
 
-// RouteCache provides an LRU cache for routes.
 type RouteCache struct {
 	cache map[routeCacheKey]routeCacheEntry
 	mu    sync.RWMutex
 	size  int
-	keys  []routeCacheKey // Track keys for simple LRU eviction
+	keys  []routeCacheKey
 }
 
-// Pool for string builders to reduce allocations
 var pathBuilderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(strings.Builder)
 	},
 }
 
-// NewRouteCache creates a new route cache with the specified size.
+var routeMethods = []string{
+	MethodGet,
+	MethodHead,
+	MethodPost,
+	MethodPut,
+	MethodPatch,
+	MethodDelete,
+	MethodOptions,
+	MethodConnect,
+	MethodTrace,
+}
+
 func NewRouteCache(size int) *RouteCache {
 	return &RouteCache{
 		cache: make(map[routeCacheKey]routeCacheEntry, size),
@@ -83,294 +103,216 @@ func NewRouteCache(size int) *RouteCache {
 	}
 }
 
-// Add adds a route to the router.
-func (r *Router) Add(method, path string, handlers ...RouteHandler) error {
-	// Ensure we have a handler
+func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	if len(handlers) == 0 {
 		return fmt.Errorf("no handler provided for %s %s", method, path)
 	}
 
-	// Normalize path
 	path = r.normalizePath(path)
-
-	// Store original path for case-sensitive routing
 	originalPath := path
-
-	// Apply case insensitivity if configured
 	lowerPath := path
 	if r.config != nil && !r.config.CaseSensitive {
 		lowerPath = strings.ToLower(path)
 	}
-
-	// Handle strict routing - store both with and without trailing slash if needed
 	pathWithoutSlash := path
 	if len(path) > 1 && path[len(path)-1] == '/' {
 		pathWithoutSlash = path[:len(path)-1]
 	}
-
 	pathWithSlash := path
 	if len(path) > 0 && path[len(path)-1] != '/' {
 		pathWithSlash = path + "/"
 	}
 
-	// Initialize method map if it doesn't exist
-	if r.routes == nil {
-		r.routes = make(map[string]map[string]*Route)
+	paramNames, paramCount, isDynamic, err := collectRouteParams(path)
+	if err != nil {
+		return err
 	}
 
-	// Initialize routes for this method if they don't exist
-	if _, ok := r.routes[method]; !ok {
-		r.routes[method] = make(map[string]*Route)
-	}
-
-	// Parse path into parts
-	parts := getPathParts(path)
-
-	// Get the main handler
-	mainHandler := handlers[len(handlers)-1]
-
-	// Handle middleware chain if there are multiple handlers
+	finalHandler := handlers[len(handlers)-1]
+	precomposed := finalHandler
 	if len(handlers) > 1 {
-		// Convert RouteHandlers to Middleware
-		middleware := make([]Middleware, len(handlers)-1)
-		for i, h := range handlers[:len(handlers)-1] {
-			middleware[i] = Middleware(h)
-		}
-
-		// Create a chain handler that runs middleware then the main handler
-		chainHandler := mainHandler
-		mainHandler = func(c *Context) error {
-			c.setHandlers(append(middleware, func(c *Context) error {
-				return chainHandler(c)
-			}))
+		chain := append([]HandlerFunc(nil), handlers...)
+		precomposed = func(c *Context) error {
+			c.setHandlers(chain)
 			return c.Next()
 		}
 	}
 
-	// Create route object
+	info := RouteInfo{Method: method, Path: path, Handler: handlerName(finalHandler)}
+	r.routeInfos = append(r.routeInfos, info)
+
 	route := &Route{
 		path:    path,
-		handler: mainHandler,
+		handler: precomposed,
 		method:  method,
-		parts:   parts,
+		parts:   getPathParts(path),
+		info:    info,
 	}
 
-	// Add to static routes map
-	if strings.IndexByte(path, ':') < 0 && strings.IndexByte(path, '*') < 0 {
-		// Always add the original path
-		r.routes[method][originalPath] = route
-
-		// If case insensitive, add lowercase version too (if different)
+	if !isDynamic {
+		if r.routes == nil {
+			r.routes = make(map[string]map[string]*Route)
+		}
+		if _, ok := r.routes[method]; !ok {
+			r.routes[method] = make(map[string]*Route)
+		}
+		candidates := []string{originalPath}
 		if r.config != nil && !r.config.CaseSensitive && lowerPath != originalPath {
-			r.routes[method][lowerPath] = route
+			candidates = append(candidates, lowerPath)
 		}
-
-		// If not strict routing, add both with and without trailing slash
-		if r.config != nil && !r.config.StrictRouting {
-			if pathWithoutSlash != originalPath {
-				r.routes[method][pathWithoutSlash] = route
-			}
-			if pathWithSlash != originalPath {
-				r.routes[method][pathWithSlash] = route
-			}
+		if r.config == nil || !r.config.StrictRouting {
+			candidates = append(candidates, pathWithoutSlash, pathWithSlash)
 		}
+		for _, candidate := range uniqueStrings(candidates...) {
+			if candidate == "" {
+				continue
+			}
+			r.routes[method][candidate] = route
+		}
+		return nil
 	}
 
-	// Add to the trie for dynamic route matching
-	if r.cache == nil || strings.IndexByte(path, ':') >= 0 || strings.IndexByte(path, '*') >= 0 {
-		current := r.router
-		if current == nil {
-			current = &RouteNode{
-				method: "", // Root node has no method
-			}
-			r.router = current
-		}
-
-		for i, part := range parts {
-			isParam := false
-			isWild := false
-
-			if len(part) > 0 {
-				switch part[0] {
-				case ParamIdentifier:
-					isParam = true
-					part = part[1:]
-				case WildcardIdentifier:
-					isWild = true
-					part = "*"
-				}
-			}
-
-			child := current.findChild(part, isParam, isWild)
-			if child == nil {
-				// Preallocate handlers map with capacity 1-4 based on likely needs
-				handlerCapacity := 1
-				if method == MethodGet || method == MethodPost {
-					handlerCapacity = 4 // More common to have multiple handlers for these
-				}
-
-				child = &RouteNode{
-					part:     part,
-					isParam:  isParam,
-					isWild:   isWild,
-					method:   "",                                             // Intermediate nodes have no method
-					handlers: make(map[string]RouteHandler, handlerCapacity), // Initialize handlers map
-				}
-				current.children = append(current.children, child)
-			}
-
-			if i == len(parts)-1 {
-				// This is a leaf node - store the handler for this method
-				if child.handlers == nil {
-					// Preallocate with capacity 1-4 based on likely needs
-					handlerCapacity := 1
-					if method == MethodGet || method == MethodPost {
-						handlerCapacity = 4 // More common to have multiple handlers for these
-					}
-					child.handlers = make(map[string]RouteHandler, handlerCapacity)
-				}
-				child.handlers[method] = mainHandler
-				child.path = path
-				child.method = method       // Keep this for backward compatibility
-				child.handler = mainHandler // Keep this for backward compatibility
-			}
-
-			current = child
-		}
+	if r.trees == nil {
+		r.trees = make(map[string]*radixNode, 4)
 	}
-
-	return nil
+	root := r.trees[method]
+	if root == nil {
+		root = &radixNode{kind: radixRoot}
+		r.trees[method] = root
+	}
+	return root.add(path, &radixRoute{
+		handler:    precomposed,
+		path:       path,
+		paramNames: paramNames,
+		paramCount: paramCount,
+		info:       info,
+	})
 }
 
-// Find finds a route handler for the given method and path.
-func (r *Router) Find(method, path string) (RouteHandler, *Context) {
-	// Apply config settings to path if needed
+func (r *Router) Routes() []RouteInfo {
+	out := make([]RouteInfo, len(r.routeInfos))
+	copy(out, r.routeInfos)
+	return out
+}
+
+func (r *Router) Find(method, path string) (HandlerFunc, *Context) {
+	ctx := &Context{}
+	handler := r.findInto(method, path, ctx)
+	if handler == nil {
+		return nil, nil
+	}
+	return handler, ctx
+}
+
+func (r *Router) findInto(method, path string, ctx *Context) HandlerFunc {
 	originalPath := path
-
-	// Handle case sensitivity
+	strictRouting := r.config != nil && r.config.StrictRouting
 	if r.config != nil && !r.config.CaseSensitive {
-		path = strings.ToLower(path)
+		if lower, changed := lowercasePath(path); changed {
+			path = lower
+		}
 	}
-
-	// Handle strict routing - only modify path if strict routing is disabled
-	trailingSlashModified := false
-	if r.config != nil && !r.config.StrictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
-		trailingSlashModified = true
 	}
-
-	// Static route fast path - most common case first
 	if routes, ok := r.routes[method]; ok {
-		// Try with original path first
 		if route, ok := routes[originalPath]; ok {
-			// Create a context with empty params - most common case for APIs
-			ctx := &Context{PathParams: params{}}
-			return route.handler, ctx
+			ctx.setRoute(route.info)
+			return route.handler
 		}
-
-		// If original path didn't match and we modified the path, try with modified path
-		// But only if strict routing is disabled or the modification wasn't due to trailing slash
-		if originalPath != path && (!r.config.StrictRouting || !trailingSlashModified) {
-			if route, ok := routes[path]; ok {
-				// Create a context with empty params - most common case for APIs
-				ctx := &Context{PathParams: params{}}
-				return route.handler, ctx
-			}
+		if route, ok := routes[path]; ok {
+			ctx.setRoute(route.info)
+			return route.handler
 		}
 	}
+	return r.findDynamicInto(method, path, ctx)
+}
 
-	// Cache lookup
-	key := routeCacheKey{method, path}
+func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc {
+	key := routeCacheKey{method: method, path: path}
 	if r.cache != nil {
 		if entry, ok := r.cache.get(key); ok {
-			return entry.handler, entry.context
+			ctx.PathParams = entry.pathParams
+			ctx.paramKeys = entry.paramKeys
+			ctx.paramVals = entry.paramVals
+			ctx.paramCount = entry.paramCount
+			ctx.setRoute(entry.routeInfo)
+			return entry.handler
 		}
 	}
-
-	// Perform dynamic route matching
-	// Create a context only when needed
-	ctx := &Context{PathParams: params{}}
-
-	// In-place dynamic route matching
-	// Fast path for methods with no dynamic routes
-	current := r.router
-	if current == nil {
-		return nil, nil
+	root := r.trees[method]
+	if root == nil {
+		return nil
 	}
-
-	// Quick exit for empty trees
-	if len(current.children) == 0 {
-		return nil, nil
+	var captured [8]string
+	matched := root.lookup(path, &captured, 0)
+	if matched == nil {
+		return nil
 	}
-
-	// Parse path parts only if needed for dynamic matching
-	parts := getPathParts(path)
-
-	// First try fast exact match at root level (most common)
-	for i := 0; i < len(current.children); i++ {
-		child := current.children[i]
-		if !child.isParam && !child.isWild && len(parts) > 0 && child.part == parts[0] {
-			remaining := parts[1:]
-			if match := child.find(remaining, ctx, method); match != nil {
-				// Get the handler for this method
-				var handler RouteHandler
-				if match.handlers != nil {
-					if h, ok := match.handlers[method]; ok {
-						handler = h
-					}
-				}
-				// Fallback to the old handler field
-				if handler == nil && match.handler != nil && (match.method == method || match.method == "") {
-					handler = match.handler
-				}
-
-				if handler != nil {
-					// Cache the result - but only allocate a new context for the cache
-					if r.cache != nil {
-						// Create a copy of the context's path params for caching
-						cacheCtx := &Context{PathParams: ctx.PathParams}
-						r.cache.set(key, routeCacheEntry{handler, cacheCtx})
-					}
-					return handler, ctx
-				}
-			}
+	ctx.applyRouteParams(matched, captured)
+	ctx.setRoute(matched.info)
+	if r.cache != nil {
+		entry := routeCacheEntry{
+			handler:    matched.handler,
+			routeInfo:  matched.info,
+			pathParams: ctx.PathParams,
+			paramKeys:  ctx.paramKeys,
+			paramVals:  ctx.paramVals,
+			paramCount: ctx.paramCount,
 		}
+		r.cache.set(key, entry)
 	}
-
-	// Then check all routes (including params/wildcards)
-	if match := current.find(parts, ctx, method); match != nil {
-		// Get the handler for this method
-		var handler RouteHandler
-		if match.handlers != nil {
-			if h, ok := match.handlers[method]; ok {
-				handler = h
-			}
-		}
-		// Fallback to the old handler field
-		if handler == nil && match.handler != nil && (match.method == method || match.method == "") {
-			handler = match.handler
-		}
-
-		if handler != nil {
-			// Cache the result - but only allocate a new context for the cache
-			if r.cache != nil {
-				// Create a copy of the context's path params for caching
-				cacheCtx := &Context{PathParams: ctx.PathParams}
-				r.cache.set(key, routeCacheEntry{handler, cacheCtx})
-			}
-			return handler, ctx
-		}
-	}
-
-	return nil, nil
+	return matched.handler
 }
 
-// Use adds middleware to the router.
-func (r *Router) Use(middleware ...Middleware) {
-	r.middleware = append(r.middleware, middleware...)
+func (r *Router) allowedMethods(path string, autoHead, autoOptions bool) []string {
+	allowed := make([]string, 0, len(routeMethods)+1)
+	hasGet := false
+	hasOptions := false
+	ctx := &Context{}
+	for _, method := range routeMethods {
+		ctx.truncateParams(0)
+		if r.findInto(method, path, ctx) == nil {
+			continue
+		}
+		allowed = append(allowed, method)
+		if method == MethodGet {
+			hasGet = true
+		}
+		if method == MethodOptions {
+			hasOptions = true
+		}
+	}
+	if autoHead && hasGet && !containsMethod(allowed, MethodHead) {
+		allowed = append(allowed, MethodHead)
+	}
+	if autoOptions && len(allowed) > 0 && !hasOptions {
+		allowed = append(allowed, MethodOptions)
+	}
+	sort.SliceStable(allowed, func(i, j int) bool {
+		return methodRank(allowed[i]) < methodRank(allowed[j])
+	})
+	return allowed
 }
 
-// normalizePath ensures the path starts with a forward slash.
+func containsMethod(methods []string, target string) bool {
+	for _, method := range methods {
+		if method == target {
+			return true
+		}
+	}
+	return false
+}
+
+func methodRank(method string) int {
+	for i, candidate := range routeMethods {
+		if candidate == method {
+			return i
+		}
+	}
+	return len(routeMethods)
+}
+
 func (r *Router) normalizePath(path string) string {
 	if path == "" {
 		return "/"
@@ -378,7 +320,6 @@ func (r *Router) normalizePath(path string) string {
 	if path[0] == '/' {
 		return path
 	}
-
 	builder := pathBuilderPool.Get().(*strings.Builder)
 	builder.Reset()
 	builder.WriteByte('/')
@@ -388,152 +329,258 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
-// find searches for a matching route node for the given path parts.
-func (n *RouteNode) find(parts []string, ctx *Context, method string) *RouteNode {
-	if len(parts) == 0 {
-		// Check if this node has a handler for the requested method
-		if n.handlers != nil {
-			if handler, ok := n.handlers[method]; ok && handler != nil {
-				// Found a handler for this method
-				return n
+func collectRouteParams(path string) ([8]string, int, bool, error) {
+	var names [8]string
+	count := 0
+	dynamic := false
+	for i := 0; i < len(path); i++ {
+		switch path[i] {
+		case ParamIdentifier:
+			dynamic = true
+			start := i + 1
+			if start >= len(path) || path[start] == '/' {
+				return names, count, dynamic, fmt.Errorf("invalid parameter in path %q", path)
 			}
-		}
-		// Fallback to the old method for backward compatibility
-		if n.handler != nil && (n.method == method || n.method == "") {
-			return n
-		}
-		return nil
-	}
-
-	part := parts[0]
-	remaining := parts[1:]
-
-	// Optimized search strategy:
-	// 1. Use length-based child categorization to quickly find candidates
-	childLen := len(n.children)
-
-	// Fast path for single child case
-	if childLen == 1 {
-		child := n.children[0]
-		// Either exact match or param/wildcard
-		if !child.isParam && !child.isWild {
-			if child.part == part {
-				if match := child.find(remaining, ctx, method); match != nil {
-					return match
+			end := start
+			for end < len(path) && path[end] != '/' {
+				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+					return names, count, dynamic, fmt.Errorf("invalid parameter in path %q", path)
 				}
+				end++
 			}
-		} else if child.isParam {
-			ctx.setParam(child.part, part)
-			if match := child.find(remaining, ctx, method); match != nil {
-				return match
+			if count < len(names) {
+				names[count] = path[start:end]
 			}
-		} else if child.isWild {
-			ctx.setParam("*", strings.Join(append([]string{part}, remaining...), "/"))
-			if child.handlers != nil {
-				if handler, ok := child.handlers[method]; ok && handler != nil {
-					return child
+			count++
+			i = end - 1
+		case WildcardIdentifier:
+			dynamic = true
+			start := i + 1
+			if start >= len(path) || path[start] == '/' {
+				return names, count, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
+			}
+			end := start
+			for end < len(path) && path[end] != '/' {
+				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+					return names, count, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
 				}
+				end++
 			}
-			if child.handler != nil && (child.method == method || child.method == "") {
-				return child
+			if end != len(path) {
+				return names, count, dynamic, fmt.Errorf("wildcard must be final in path %q", path)
 			}
-		}
-		return nil
-	}
-
-	// Fast path for 2-3 children (common case)
-	if childLen <= 3 {
-		// First check exact matches (most common case)
-		for i := 0; i < childLen; i++ {
-			child := n.children[i]
-			if !child.isParam && !child.isWild && child.part == part {
-				if match := child.find(remaining, ctx, method); match != nil {
-					return match
-				}
+			if count < len(names) {
+				names[count] = "*"
 			}
-		}
-
-		// Then check params
-		for i := 0; i < childLen; i++ {
-			child := n.children[i]
-			if child.isParam {
-				ctx.setParam(child.part, part)
-				if match := child.find(remaining, ctx, method); match != nil {
-					return match
-				}
-			}
-		}
-
-		// Finally check wildcards
-		for i := 0; i < childLen; i++ {
-			child := n.children[i]
-			if child.isWild {
-				ctx.setParam("*", strings.Join(append([]string{part}, remaining...), "/"))
-				if child.handlers != nil {
-					if handler, ok := child.handlers[method]; ok && handler != nil {
-						return child
-					}
-				}
-				if child.handler != nil && (child.method == method || child.method == "") {
-					return child
-				}
-			}
-		}
-
-		return nil
-	}
-
-	// For larger numbers of children, use the original algorithm
-	// 1. Check exact matches first (most common case)
-	for _, child := range n.children {
-		if !child.isParam && !child.isWild && child.part == part {
-			if match := child.find(remaining, ctx, method); match != nil {
-				return match
-			}
+			count++
+			return names, count, dynamic, nil
 		}
 	}
+	return names, count, dynamic, nil
+}
 
-	// 2. Check parameter matches
-	for _, child := range n.children {
-		if child.isParam {
-			ctx.setParam(child.part, part)
-			if match := child.find(remaining, ctx, method); match != nil {
-				return match
-			}
+func commonPrefixLen(a, b string) int {
+	limit := len(a)
+	if len(b) < limit {
+		limit = len(b)
+	}
+	for i := 0; i < limit; i++ {
+		if a[i] != b[i] {
+			return i
 		}
 	}
+	return limit
+}
 
-	// 3. Check wildcard matches last
-	for _, child := range n.children {
-		if child.isWild {
-			ctx.setParam("*", strings.Join(append([]string{part}, remaining...), "/"))
-			// Check if this wildcard node has a handler for the requested method
-			if child.handlers != nil {
-				if handler, ok := child.handlers[method]; ok && handler != nil {
-					return child
-				}
-			}
-			// Fallback to the old method for backward compatibility
-			if child.handler != nil && (child.method == method || child.method == "") {
-				return child
-			}
+func nextSlash(path string) int {
+	for i := 0; i < len(path); i++ {
+		if path[i] == '/' {
+			return i
 		}
 	}
+	return -1
+}
 
+func trimLeadingSlash(path string) string {
+	if len(path) > 0 && path[0] == '/' {
+		return path[1:]
+	}
+	return path
+}
+
+func (n *radixNode) add(path string, route *radixRoute) error {
+	current := n
+	remaining := path
+	for len(remaining) > 0 {
+		wildIndex := strings.IndexAny(remaining, ":*")
+		if wildIndex < 0 {
+			current = current.addStaticPath(remaining)
+			remaining = ""
+			break
+		}
+		if wildIndex > 0 {
+			current = current.addStaticPath(remaining[:wildIndex])
+			remaining = remaining[wildIndex:]
+		}
+		switch remaining[0] {
+		case ParamIdentifier:
+			end := 1
+			for end < len(remaining) && remaining[end] != '/' {
+				end++
+			}
+			current = current.addParamChild()
+			remaining = remaining[end:]
+		case WildcardIdentifier:
+			end := 1
+			for end < len(remaining) && remaining[end] != '/' {
+				end++
+			}
+			if end != len(remaining) {
+				return fmt.Errorf("wildcard must be final in path %q", route.path)
+			}
+			current = current.addCatchAllChild()
+			remaining = ""
+		default:
+			return fmt.Errorf("invalid route segment in path %q", route.path)
+		}
+	}
+	if current.route != nil {
+		return fmt.Errorf("route already registered for %s", route.path)
+	}
+	current.route = route
 	return nil
 }
 
-// findChild finds a child node with the given part, isParam and isWild properties.
-func (n *RouteNode) findChild(part string, isParam, isWild bool) *RouteNode {
-	for _, child := range n.children {
-		if child.part == part && child.isParam == isParam && child.isWild == isWild {
+func (n *radixNode) addStaticPath(path string) *radixNode {
+	current := n
+	remaining := path
+	for len(remaining) > 0 {
+		idx := current.staticChildIndex(remaining[0])
+		if idx < 0 {
+			child := &radixNode{kind: radixStatic, prefix: remaining}
+			current.addStaticChild(child)
 			return child
 		}
+		child := current.children[idx]
+		common := commonPrefixLen(child.prefix, remaining)
+		if common == len(child.prefix) {
+			current = child
+			remaining = remaining[common:]
+			continue
+		}
+		existing := &radixNode{
+			kind:          radixStatic,
+			prefix:        child.prefix[common:],
+			route:         child.route,
+			indices:       child.indices,
+			children:      child.children,
+			paramChild:    child.paramChild,
+			catchAllChild: child.catchAllChild,
+		}
+		child.prefix = child.prefix[:common]
+		child.route = nil
+		child.indices = ""
+		child.children = nil
+		child.paramChild = nil
+		child.catchAllChild = nil
+		child.addStaticChild(existing)
+		if common == len(remaining) {
+			return child
+		}
+		inserted := &radixNode{kind: radixStatic, prefix: remaining[common:]}
+		child.addStaticChild(inserted)
+		return inserted
+	}
+	return current
+}
+
+func (n *radixNode) addParamChild() *radixNode {
+	if n.paramChild != nil {
+		return n.paramChild
+	}
+	child := &radixNode{kind: radixParam}
+	n.paramChild = child
+	return child
+}
+
+func (n *radixNode) addCatchAllChild() *radixNode {
+	if n.catchAllChild != nil {
+		return n.catchAllChild
+	}
+	child := &radixNode{kind: radixCatchAll}
+	n.catchAllChild = child
+	return child
+}
+
+func (n *radixNode) addStaticChild(child *radixNode) {
+	n.indices += string(child.prefix[0])
+	n.children = append(n.children, child)
+}
+
+func (n *radixNode) staticChildIndex(b byte) int {
+	for i := 0; i < len(n.indices); i++ {
+		if n.indices[i] == b {
+			return i
+		}
+	}
+	return -1
+}
+
+func (n *radixNode) lookup(path string, values *[8]string, captured int) *radixRoute {
+	switch n.kind {
+	case radixStatic:
+		if len(path) < len(n.prefix) || path[:len(n.prefix)] != n.prefix {
+			return nil
+		}
+		path = path[len(n.prefix):]
+	case radixParam:
+		if len(path) == 0 || path[0] == '/' {
+			return nil
+		}
+		end := nextSlash(path)
+		if end < 0 {
+			end = len(path)
+		}
+		if captured < len(values) {
+			values[captured] = path[:end]
+		}
+		captured++
+		path = path[end:]
+	case radixCatchAll:
+		if captured < len(values) {
+			values[captured] = trimLeadingSlash(path)
+		}
+		captured++
+		return n.matchRoute(values, captured)
+	}
+	if len(path) == 0 {
+		return n.matchRoute(values, captured)
+	}
+	if idx := n.staticChildIndex(path[0]); idx >= 0 {
+		if matched := n.children[idx].lookup(path, values, captured); matched != nil {
+			return matched
+		}
+	}
+	if n.paramChild != nil {
+		if matched := n.paramChild.lookup(path, values, captured); matched != nil {
+			return matched
+		}
+	}
+	if n.catchAllChild != nil {
+		if matched := n.catchAllChild.lookup(path, values, captured); matched != nil {
+			return matched
+		}
 	}
 	return nil
 }
 
-// get retrieves a route handler from the cache.
+func (n *radixNode) matchRoute(values *[8]string, captured int) *radixRoute {
+	if n.route == nil || captured != n.route.paramCount {
+		return nil
+	}
+	return n.route
+}
+
 func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 	rc.mu.RLock()
 	entry, ok := rc.cache[key]
@@ -541,79 +588,32 @@ func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 	return entry, ok
 }
 
-// set adds a route handler to the cache.
 func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-
-	// If already exists, just update
 	if _, exists := rc.cache[key]; exists {
 		rc.cache[key] = entry
 		return
 	}
-
-	// If cache is full, evict one entry
-	if len(rc.cache) >= rc.size {
-		// Simple FIFO eviction strategy
-		if len(rc.keys) > 0 {
-			// Evict oldest entry
-			oldKey := rc.keys[0]
-			delete(rc.cache, oldKey)
-			// Remove the key
-			rc.keys = rc.keys[1:]
-		}
+	if len(rc.cache) >= rc.size && len(rc.keys) > 0 {
+		delete(rc.cache, rc.keys[0])
+		rc.keys = rc.keys[1:]
 	}
-
-	// Add new entry
 	rc.cache[key] = entry
 	rc.keys = append(rc.keys, key)
 }
 
-// getPathParts splits a path into its component parts.
 func getPathParts(path string) []string {
-	// Use a local fixed-size array for most common, short paths
 	var fixedParts [8]string
-	// Use a slice to avoid allocations, reusing the same array
 	parts := fixedParts[:0]
-
-	// Fast path for empty and root paths
 	if path == "" || path == "/" {
 		return parts
 	}
-
-	// Fast path for single component path (common case)
-	if path[0] == '/' && !strings.ContainsRune(path[1:], '/') {
-		if len(path) > 1 {
-			parts = append(parts, path[1:])
-		}
-		return parts
-	}
-
-	// Skip the leading slash
 	if path[0] == '/' {
 		path = path[1:]
 	}
-
-	// Use pre-allocations for common path patterns
-	pathLen := len(path)
-
-	// Fast path for 1-2 slashes (most common case)
-	slashCount := 0
-	for i := range path {
-		if path[i] == '/' {
-			slashCount++
-		}
-	}
-
-	// Preallocate exact capacity
-	if cap(parts) < slashCount+1 {
-		// Rare case for extremely deep paths
-		parts = make([]string, 0, slashCount+1)
-	}
-
-	// Fast split without regexp
 	start := 0
-	for i := 0; i < pathLen; i++ {
+	for i := 0; i < len(path); i++ {
 		if path[i] == '/' {
 			if i > start {
 				parts = append(parts, path[start:i])
@@ -621,65 +621,108 @@ func getPathParts(path string) []string {
 			start = i + 1
 		}
 	}
-
-	// Add final part if path doesn't end with slash
-	if start < pathLen {
+	if start < len(path) {
 		parts = append(parts, path[start:])
 	}
-
 	return parts
 }
 
-// HTTP method handlers for App
-
-// Get registers a route for the GET HTTP method.
-func (a *App) Get(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodGet, path, handlers...)
+func uniqueStrings(values ...string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
-// Post registers a route for the POST HTTP method.
-func (a *App) Post(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodPost, path, handlers...)
+func lowercasePath(path string) (string, bool) {
+	for i := 0; i < len(path); i++ {
+		c := path[i]
+		if c >= 'A' && c <= 'Z' {
+			return strings.ToLower(path), true
+		}
+		if c >= 0x80 {
+			lower := strings.ToLower(path)
+			return lower, lower != path
+		}
+	}
+	return path, false
 }
 
-// Put registers a route for the PUT HTTP method.
-func (a *App) Put(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodPut, path, handlers...)
+func handlerName(handler HandlerFunc) string {
+	if handler == nil {
+		return ""
+	}
+	value := reflect.ValueOf(handler)
+	if !value.IsValid() || value.IsNil() {
+		return ""
+	}
+	fn := runtime.FuncForPC(value.Pointer())
+	if fn == nil {
+		return ""
+	}
+	return fn.Name()
 }
 
-// Delete registers a route for the DELETE HTTP method.
-func (a *App) Delete(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodDelete, path, handlers...)
+func (a *App) Add(method, path string, handlers ...HandlerFunc) error {
+	return a.router.Add(method, path, handlers...)
 }
 
-// Patch registers a route for the PATCH HTTP method.
-func (a *App) Patch(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodPatch, path, handlers...)
+func (a *App) Get(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodGet, path, handlers...)
+}
+func (a *App) Post(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodPost, path, handlers...)
+}
+func (a *App) Put(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodPut, path, handlers...)
+}
+func (a *App) Delete(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodDelete, path, handlers...)
+}
+func (a *App) Patch(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodPatch, path, handlers...)
+}
+func (a *App) Head(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodHead, path, handlers...)
+}
+func (a *App) Options(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodOptions, path, handlers...)
+}
+func (a *App) Connect(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodConnect, path, handlers...)
+}
+func (a *App) Trace(path string, handlers ...HandlerFunc) error {
+	return a.Add(MethodTrace, path, handlers...)
 }
 
-// Head registers a route for the HEAD HTTP method.
-func (a *App) Head(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodHead, path, handlers...)
+func (a *App) Match(methods []string, path string, handlers ...HandlerFunc) error {
+	for _, method := range methods {
+		if err := a.Add(method, path, handlers...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// Options registers a route for the OPTIONS HTTP method.
-func (a *App) Options(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodOptions, path, handlers...)
+func (a *App) All(path string, handlers ...HandlerFunc) error {
+	return a.Match(routeMethods, path, handlers...)
 }
 
-// Connect registers a route for the CONNECT HTTP method.
-func (a *App) Connect(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodConnect, path, handlers...)
+func (a *App) Any(path string, handlers ...HandlerFunc) error {
+	return a.All(path, handlers...)
 }
 
-// Trace registers a route for the TRACE HTTP method.
-func (a *App) Trace(path string, handlers ...RouteHandler) error {
-	return a.router.Add(MethodTrace, path, handlers...)
-}
-
-// StringHandler creates a RouteHandler that returns the provided string.
-func StringHandler(str string) RouteHandler {
+func StringHandler(str string) HandlerFunc {
 	return func(c *Context) error {
-		return c.Send(str)
+		return c.String(str)
 	}
 }

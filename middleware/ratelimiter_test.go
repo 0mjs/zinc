@@ -96,3 +96,18 @@ func TestIPRateLimiter(t *testing.T) {
 		t.Errorf("Expected status code %d but got %d for different IP", http.StatusOK, resp.Code)
 	}
 }
+
+func TestDefaultRateLimiter(t *testing.T) {
+	app := zinc.New()
+	app.Use(DefaultRateLimiter())
+	app.Get("/default", func(c *zinc.Context) error {
+		return c.Send("OK")
+	})
+
+	req := httptest.NewRequest("GET", "/default", nil)
+	resp := httptest.NewRecorder()
+	app.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("Expected status code %d but got %d", http.StatusOK, resp.Code)
+	}
+}

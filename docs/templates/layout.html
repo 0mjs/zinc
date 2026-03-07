@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs | Zinc</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/nord.min.css">
+</head>
+
+<body>
+  <div class="container">
+    <aside class="sidenav">
+      <h1 class="logo" data-text="zinc">zinc</h1>
+      <nav class="nav-links">
+        <a href="/" class="nav-link nav-intro">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Introduction
+        </a>
+        <a href="/getting-started" class="nav-link nav-getting-started">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round"></path>
+          </svg>
+          Getting Started
+        </a>
+        <a href="/guide" class="nav-link nav-guide">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Guide
+        </a>
+        <a href="/concepts" class="nav-link nav-concepts">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-right: 10px">
+            <path
+              d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Concepts
+        </a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      {{.Content}}
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script>
+    hljs.highlightAll();
+
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.nav-link').forEach(link => {
+      if (link.getAttribute('href') === currentPath) {
+        link.classList.add('active');
+      }
+    });
+
+    document.querySelectorAll('pre code').forEach((block) => {
+      const isOsCodeBlock = block.closest('.os-code-block');
+
+      const button = document.createElement('button');
+      button.className = 'copy-button';
+      button.style.position = 'absolute';
+      button.style.right = '10px';
+      button.style.top = '10px';
+      button.style.display = 'flex';
+      button.style.alignItems = 'center';
+      button.style.justifyContent = 'center';
+
+      if (isOsCodeBlock) {
+        button.style.bottom = '10px';
+        button.style.top = 'auto';
+      }
+
+      button.innerHTML = `
+          <svg class="copy-icon" viewBox="0 0 24 24" width="18" height="18">
+            <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+          </svg>`;
+
+      const pre = block.parentNode;
+      pre.style.position = 'relative';
+      pre.insertBefore(button, block);
+
+      button.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(block.textContent);
+        button.classList.add('clipboard-copied');
+        setTimeout(() => button.classList.remove('clipboard-copied'), 2000);
+      });
+    });
+  </script>
+</body>
+
+</html>
+
+{{define "content"}}
+{{.Content}}
+{{end}}

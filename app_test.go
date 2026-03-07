@@ -1,446 +1,312 @@
 package zinc
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net"
 	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestAppRouting(t *testing.T) {
-	app := New()
-
-	// Register some routes
-	app.Get("/", func(c *Context) error {
-		return c.Send("root")
-	})
-
-	app.Post("/users", func(c *Context) error {
-		return c.Send("create user")
-	})
-
-	app.Put("/users/:id", func(c *Context) error {
-		return c.Send("update user " + c.Param("id"))
-	})
-
-	app.Delete("/users/:id", func(c *Context) error {
-		return c.Send("delete user " + c.Param("id"))
-	})
-
-	app.Patch("/users/:id", func(c *Context) error {
-		return c.Send("patch user " + c.Param("id"))
-	})
-
-	app.Head("/users", func(c *Context) error {
-		// HEAD response typically has no body
-		return nil
-	})
-
-	app.Options("/users", func(c *Context) error {
-		return c.Send("options for users")
-	})
-
-	// Test each route
-	tests := []struct {
-		method     string
-		path       string
-		wantStatus int
-		wantBody   string
-	}{
-		{http.MethodGet, "/", 200, "root"},
-		{http.MethodPost, "/users", 200, "create user"},
-		{http.MethodPut, "/users/123", 200, "update user 123"},
-		{http.MethodDelete, "/users/123", 200, "delete user 123"},
-		{http.MethodPatch, "/users/123", 200, "patch user 123"},
-		{http.MethodHead, "/users", 200, ""},
-		{http.MethodOptions, "/users", 200, "options for users"},
-		{http.MethodGet, "/not-found", 404, "404 page not found\n"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			w := httptest.NewRecorder()
-
-			app.ServeHTTP(w, req)
-
-			if w.Code != tt.wantStatus {
-				t.Errorf("Status code = %d, want %d", w.Code, tt.wantStatus)
-			}
-
-			if w.Body.String() != tt.wantBody {
-				t.Errorf("Response body = %q, want %q", w.Body.String(), tt.wantBody)
-			}
+func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
+	t.Run("middleware cache and params", func(t *testing.T) {
+		app := New()
+		calls := 0
+		app.Use(func(c *Context) error {
+			calls++
+			return c.Next()
 		})
-	}
-}
+		mustDo(t, app.Get("/users/:id", func(c *Context) error {
+			return c.String(c.Param("id"))
+		}))
 
-func TestAppMiddleware(t *testing.T) {
-	app := New()
-
-	// Add global middleware
-	app.Use(func(c *Context) error {
-		c.Set("global", "middleware")
-		return c.Next()
-	})
-
-	// Add route with middleware
-	app.Get("/middleware", func(c *Context) error {
-		c.Set("first", "middleware")
-		return c.Next()
-	}, func(c *Context) error {
-		c.Set("second", "middleware")
-		return c.Next()
-	}, func(c *Context) error {
-		global := c.Get("global")
-		first := c.Get("first")
-		second := c.Get("second")
-		return c.Send(global.(string) + " " + first.(string) + " " + second.(string))
-	})
-
-	// Test middleware execution
-	req := httptest.NewRequest(http.MethodGet, "/middleware", nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	wantBody := "middleware middleware middleware"
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
-	}
-}
-
-func TestAppGroup(t *testing.T) {
-	app := New()
-
-	// Create route groups
-	api := app.Group("/api")
-	api.Get("/status", func(c *Context) error {
-		return c.Send("API Status")
-	})
-
-	v1 := api.Group("/v1")
-	v1.Get("/users", func(c *Context) error {
-		return c.Send("API v1 Users")
-	})
-
-	v2 := api.Group("/v2")
-	v2.Get("/users", func(c *Context) error {
-		return c.Send("API v2 Users")
-	})
-
-	// Test grouped routes
-	tests := []struct {
-		path     string
-		wantBody string
-	}{
-		{"/api/status", "API Status"},
-		{"/api/v1/users", "API v1 Users"},
-		{"/api/v2/users", "API v2 Users"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			w := httptest.NewRecorder()
-
-			app.ServeHTTP(w, req)
-
-			if w.Code != 200 {
-				t.Errorf("Status code = %d, want %d", w.Code, 200)
+		for i := 0; i < 3; i++ {
+			resp := performRequest(t, app, http.MethodGet, "/users/42", nil, nil)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d", resp.Code)
 			}
-
-			if w.Body.String() != tt.wantBody {
-				t.Errorf("Response body = %q, want %q", w.Body.String(), tt.wantBody)
+			if body := resp.Body.String(); body != "42" {
+				t.Fatalf("body=%q", body)
 			}
+		}
+		if calls != 3 {
+			t.Fatalf("middleware calls=%d want 3", calls)
+		}
+	})
+
+	t.Run("prefix middleware and route metadata", func(t *testing.T) {
+		app := New()
+		app.UsePrefix("/api", func(c *Context) error {
+			c.Set("prefix", true)
+			return c.Next()
 		})
-	}
-}
+		app.Route("/api", func(api *Group) {
+			api.Use(func(c *Context) error {
+				c.Set("group", "users")
+				return c.Next()
+			})
+			mustDo(t, api.Get("/users/:id", func(c *Context) error {
+				prefix, _ := c.Get("prefix")
+				group, _ := c.Get("group")
+				return c.JSON(Map{
+					"prefix":    prefix,
+					"group":     group,
+					"full_path": c.FullPath(),
+					"method":    c.Route().Method,
+					"path":      c.Route().Path,
+					"id":        c.Param("id"),
+				})
+			}))
+		})
 
-func TestAppGroupMiddleware(t *testing.T) {
-	app := New()
-
-	// Create route group with middleware
-	api := app.Group("/api")
-	api.Use(func(c *Context) error {
-		c.Set("group", "middleware")
-		return c.Next()
-	})
-
-	api.Get("/test", func(c *Context) error {
-		groupMw := c.Get("group")
-		return c.Send(groupMw.(string))
-	})
-
-	// Test group middleware
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	wantBody := "middleware"
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
-	}
-}
-
-func TestAppServices(t *testing.T) {
-	app := New()
-
-	// Create a test service
-	type TestService struct {
-		GetValue func() string
-	}
-
-	service := &TestService{
-		GetValue: func() string {
-			return "service value"
-		},
-	}
-
-	// Register the service
-	app.Injectable(service)
-
-	// Add a route that uses the service
-	app.Get("/service", func(c *Context) error {
-		service := c.Service(service).(*TestService)
-		return c.Send(service.GetValue())
-	})
-
-	// Test accessing the service
-	req := httptest.NewRequest(http.MethodGet, "/service", nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	wantBody := "service value"
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
-	}
-}
-
-func TestAppTypedServices(t *testing.T) {
-	app := New()
-
-	// Create a test service
-	type UserService struct {
-		users []string
-	}
-
-	service := &UserService{
-		users: []string{"user1", "user2"},
-	}
-
-	// Register the service using type-based registration
-	app.Injectable(service)
-
-	// Add a route that uses the typed service
-	app.Get("/typed-service", func(c *Context) error {
-		// Get service using the generic helper function
-		userService, ok := ServiceOf[*UserService](app)
-		if !ok {
-			return c.Status(StatusInternalServerError).String("Service not found")
+		resp := performRequest(t, app, http.MethodGet, "/api/users/99", nil, nil)
+		body := resp.Body.String()
+		for _, fragment := range []string{"\"prefix\":true", "\"group\":\"users\"", "\"full_path\":\"/api/users/:id\"", "\"method\":\"GET\"", "\"id\":\"99\""} {
+			if !strings.Contains(body, fragment) {
+				t.Fatalf("body missing %q: %s", fragment, body)
+			}
 		}
-		return c.JSON(userService.users)
 	})
 
-	// Test accessing the service
-	req := httptest.NewRequest(http.MethodGet, "/typed-service", nil)
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	t.Run("middleware stop semantics", func(t *testing.T) {
+		app := New()
+		called := false
+		app.Use(func(c *Context) error {
+			return nil
+		})
+		mustDo(t, app.Get("/blocked", func(c *Context) error {
+			called = true
+			return c.String("nope")
+		}))
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	wantBody := `["user1","user2"]`
-	gotBody := strings.TrimSpace(w.Body.String())
-	if gotBody != wantBody {
-		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
-	}
-}
-
-// Test using context-based service retrieval
-func TestContextTypedServices(t *testing.T) {
-	app := New()
-
-	// Create a test service
-	type ProductService struct {
-		products []string
-	}
-
-	service := &ProductService{
-		products: []string{"product1", "product2"},
-	}
-
-	// Register the service using type-based registration
-	app.Injectable(service)
-
-	// Add a route that uses the typed service from context
-	app.Get("/context-service", func(c *Context) error {
-		// Get service using the context helper function
-		productService, ok := ContextServiceOf[*ProductService](c)
-		if !ok {
-			return c.Status(StatusInternalServerError).String("Service not found")
+		resp := performRequest(t, app, http.MethodGet, "/blocked", nil, nil)
+		if called {
+			t.Fatal("handler should not have been called")
 		}
-		return c.JSON(productService.products)
-	})
-
-	// Add another route to test service retrieval in middleware chain
-	app.Get("/middleware-service", func(c *Context) error {
-		c.Set("test_key", "testing the middleware chain")
-		return c.Next()
-	}, func(c *Context) error {
-		// Get service using the context helper function
-		productService, ok := ContextServiceOf[*ProductService](c)
-		if !ok {
-			return c.Status(StatusInternalServerError).String("Service not found in middleware")
+		if resp.Code != http.StatusOK || resp.Body.Len() != 0 {
+			t.Fatalf("unexpected response: code=%d body=%q", resp.Code, resp.Body.String())
 		}
-		return c.JSON(productService.products)
 	})
 
-	// Test accessing the service
-	req := httptest.NewRequest(http.MethodGet, "/context-service", nil)
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	t.Run("not found and method not allowed", func(t *testing.T) {
+		app := New()
+		mustDo(t, app.Get("/items", func(c *Context) error { return c.String("ok") }))
+		app.NotFound(func(c *Context) error { return c.String("missing") })
+		app.MethodNotAllowed(func(c *Context) error { return c.String("wrong method") })
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Response code = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	wantBody := `["product1","product2"]`
-	gotBody := strings.TrimSpace(w.Body.String())
-	if gotBody != wantBody {
-		t.Errorf("Response body = %q, want %q", gotBody, wantBody)
-	}
-
-	// Test accessing the service in middleware chain
-	req = httptest.NewRequest(http.MethodGet, "/middleware-service", nil)
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Middleware response code = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	gotBody = strings.TrimSpace(w.Body.String())
-	if gotBody != wantBody {
-		t.Errorf("Middleware response body = %q, want %q", gotBody, wantBody)
-	}
-}
-
-func TestAppStaticHandler(t *testing.T) {
-	app := New()
-
-	// String route handler
-	app.Get("/static-string", func(c *Context) error {
-		return c.Send("Hello from static string")
-	})
-
-	// Test static string handler
-	req := httptest.NewRequest(http.MethodGet, "/static-string", nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	wantBody := "Hello from static string"
-	if w.Body.String() != wantBody {
-		t.Errorf("Response body = %q, want %q", w.Body.String(), wantBody)
-	}
-}
-
-func TestAppTestConfig(t *testing.T) {
-	// Test default config
-	app1 := New()
-	if app1.config.DefaultAddr != "0.0.0.0:6538" {
-		t.Errorf("Default address = %q, want %q", app1.config.DefaultAddr, "0.0.0.0:6538")
-	}
-
-	// Test custom config
-	customConfig := &Config{
-		DefaultAddr: "127.0.0.1:3000",
-	}
-
-	app2 := New()
-	app2.config = customConfig
-
-	if app2.config.DefaultAddr != "127.0.0.1:3000" {
-		t.Errorf("Custom address = %q, want %q", app2.config.DefaultAddr, "127.0.0.1:3000")
-	}
-}
-
-func TestAppFastPath(t *testing.T) {
-	app := New()
-
-	// Add a simple static route for fast path testing
-	app.Get("/fast", func(c *Context) error {
-		return c.Send("Hello World!")
-	})
-
-	// Make multiple requests to the same route to trigger fast path
-	for i := 0; i < 3; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/fast", nil)
-		w := httptest.NewRecorder()
-
-		app.ServeHTTP(w, req)
-
-		if w.Code != 200 {
-			t.Errorf("Iteration %d: Status code = %d, want %d", i, w.Code, 200)
+		notFound := performRequest(t, app, http.MethodGet, "/missing", nil, nil)
+		if notFound.Code != http.StatusNotFound || notFound.Body.String() != "missing" {
+			t.Fatalf("not found response = %d %q", notFound.Code, notFound.Body.String())
 		}
 
-		if w.Body.String() != "Hello World!" {
-			t.Errorf("Iteration %d: Response body = %q, want %q", i, w.Body.String(), "Hello World!")
+		methodNA := performRequest(t, app, http.MethodPost, "/items", nil, nil)
+		if methodNA.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status=%d", methodNA.Code)
 		}
-	}
+		allow := methodNA.Header().Get(HeaderAllow)
+		for _, method := range []string{MethodGet, MethodHead, MethodOptions} {
+			if !strings.Contains(allow, method) {
+				t.Fatalf("allow header missing %s: %q", method, allow)
+			}
+		}
+		if methodNA.Body.String() != "wrong method" {
+			t.Fatalf("body=%q", methodNA.Body.String())
+		}
+	})
+
+	t.Run("auto head and auto options", func(t *testing.T) {
+		app := New()
+		mustDo(t, app.Get("/health", func(c *Context) error {
+			return c.String("ok")
+		}))
+
+		head := performRequest(t, app, http.MethodHead, "/health", nil, nil)
+		if head.Code != http.StatusOK || head.Body.Len() != 0 {
+			t.Fatalf("head response = %d %q", head.Code, head.Body.String())
+		}
+
+		options := performRequest(t, app, http.MethodOptions, "/health", nil, nil)
+		if options.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", options.Code)
+		}
+		if allow := options.Header().Get(HeaderAllow); !strings.Contains(allow, MethodGet) {
+			t.Fatalf("allow=%q", allow)
+		}
+	})
+
+	t.Run("mount strips prefix", func(t *testing.T) {
+		app := New()
+		mux := http.NewServeMux()
+		mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, r.URL.Path)
+		})
+		app.Mount("/sub", mux)
+
+		resp := performRequest(t, app, http.MethodGet, "/sub/hello", nil, nil)
+		if resp.Body.String() != "/hello" {
+			t.Fatalf("body=%q", resp.Body.String())
+		}
+
+		routes := app.Routes()
+		foundMount := false
+		for _, route := range routes {
+			if route.Method == methodUse && route.Path == "/sub" {
+				foundMount = true
+			}
+		}
+		if !foundMount {
+			t.Fatal("mount route not present in Routes()")
+		}
+	})
 }
 
-func benchmarkApp(b *testing.B, path string) {
+func TestAppConfigLifecycleAndErrors(t *testing.T) {
+	t.Run("new with config and handler", func(t *testing.T) {
+		app := NewWithConfig(Config{ServerHeader: "zinc-test", CaseSensitive: true})
+		if got := app.Handler(); got != app {
+			t.Fatal("Handler should return app")
+		}
+		if app.config.ServerHeader != "zinc-test" {
+			t.Fatalf("server header=%q", app.config.ServerHeader)
+		}
+		if !app.config.CaseSensitive {
+			t.Fatal("CaseSensitive should be true")
+		}
+	})
+
+	t.Run("case sensitive and strict routing", func(t *testing.T) {
+		app := NewWithConfig(Config{CaseSensitive: true, StrictRouting: true})
+		mustDo(t, app.Get("/Hello", func(c *Context) error { return c.String("ok") }))
+
+		lower := performRequest(t, app, http.MethodGet, "/hello", nil, nil)
+		if lower.Code != http.StatusNotFound {
+			t.Fatalf("status=%d", lower.Code)
+		}
+
+		slash := performRequest(t, app, http.MethodGet, "/Hello/", nil, nil)
+		if slash.Code != http.StatusNotFound {
+			t.Fatalf("status=%d", slash.Code)
+		}
+	})
+
+	t.Run("custom error handler", func(t *testing.T) {
+		app := NewWithConfig(Config{ErrorHandler: func(c *Context, err error) {
+			_ = c.Status(http.StatusTeapot).String("handled")
+		}})
+		mustDo(t, app.Get("/boom", func(c *Context) error {
+			return errors.New("boom")
+		}))
+
+		resp := performRequest(t, app, http.MethodGet, "/boom", nil, nil)
+		if resp.Code != http.StatusTeapot || resp.Body.String() != "handled" {
+			t.Fatalf("response=%d %q", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("server header", func(t *testing.T) {
+		app := NewWithConfig(Config{ServerHeader: "zinc/edge"})
+		mustDo(t, app.Get("/", func(c *Context) error { return c.String("ok") }))
+		resp := performRequest(t, app, http.MethodGet, "/", nil, nil)
+		if got := resp.Header().Get(HeaderServer); got != "zinc/edge" {
+			t.Fatalf("server header=%q", got)
+		}
+	})
+
+	t.Run("serve and shutdown", func(t *testing.T) {
+		app := New()
+		mustDo(t, app.Get("/ping", func(c *Context) error { return c.String("pong") }))
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		mustDo(t, err)
+		defer ln.Close()
+
+		errCh := make(chan error, 1)
+		go func() { errCh <- app.Serve(ln) }()
+
+		url := "http://" + ln.Addr().String() + "/ping"
+		var resp *http.Response
+		for i := 0; i < 20; i++ {
+			resp, err = http.Get(url)
+			if err == nil {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		mustDo(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		mustDo(t, err)
+		if string(body) != "pong" {
+			t.Fatalf("body=%q", string(body))
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		mustDo(t, app.Shutdown(ctx))
+		select {
+		case err := <-errCh:
+			mustDo(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("server did not shut down")
+		}
+	})
+
+	t.Run("invalid lifecycle inputs", func(t *testing.T) {
+		app := New()
+		if err := app.Serve(nil); err == nil {
+			t.Fatal("Serve(nil) should fail")
+		}
+		if err := app.Listen("bad-addr"); err == nil {
+			t.Fatal("Listen should fail for invalid address")
+		}
+		if err := app.ListenTLS("bad-addr", "missing.crt", "missing.key"); err == nil {
+			t.Fatal("ListenTLS should fail for invalid address")
+		}
+		if err := app.Shutdown(context.Background()); err != nil {
+			t.Fatalf("Shutdown without server: %v", err)
+		}
+	})
+}
+
+func TestWrapAndWrapFunc(t *testing.T) {
 	app := New()
+	mustDo(t, app.Get("/h", Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "handler")
+	}))))
+	mustDo(t, app.Get("/f", WrapFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "func")
+	})))
 
-	// Add routes
-	app.Get("/", func(c *Context) error {
-		return c.Send("root")
-	})
-
-	app.Get("/users", func(c *Context) error {
-		return c.Send("users")
-	})
-
-	app.Get("/users/:id", func(c *Context) error {
-		return c.Send("user " + c.Param("id"))
-	})
-
-	app.Get("/users/:id/posts", func(c *Context) error {
-		return c.Send("user " + c.Param("id") + " posts")
-	})
-
-	// Run the benchmark
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		app.ServeHTTP(w, req)
+	resp1 := performRequest(t, app, http.MethodGet, "/h", nil, nil)
+	if resp1.Body.String() != "handler" {
+		t.Fatalf("body=%q", resp1.Body.String())
+	}
+	resp2 := performRequest(t, app, http.MethodGet, "/f", nil, nil)
+	if resp2.Body.String() != "func" {
+		t.Fatalf("body=%q", resp2.Body.String())
 	}
 }
 
-func BenchmarkAppRootRoute(b *testing.B) {
-	benchmarkApp(b, "/")
-}
+func TestStaticAndFileRoutes(t *testing.T) {
+	dir := t.TempDir()
+	mustDo(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("world"), 0o644))
 
-func BenchmarkAppStaticRoute(b *testing.B) {
-	benchmarkApp(b, "/users")
-}
+	app := New()
+	mustDo(t, app.Static("/assets", dir))
+	mustDo(t, app.File("/single", filepath.Join(dir, "hello.txt")))
 
-func BenchmarkAppParameterRoute(b *testing.B) {
-	benchmarkApp(b, "/users/123")
-}
+	assets := performRequest(t, app, http.MethodGet, "/assets/hello.txt", nil, nil)
+	if assets.Body.String() != "world" {
+		t.Fatalf("body=%q", assets.Body.String())
+	}
 
-func BenchmarkAppNestedRoute(b *testing.B) {
-	benchmarkApp(b, "/users/123/posts")
+	single := performRequest(t, app, http.MethodGet, "/single", nil, nil)
+	if single.Body.String() != "world" {
+		t.Fatalf("body=%q", single.Body.String())
+	}
 }

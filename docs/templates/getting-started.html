@@ -1,0 +1,198 @@
+<article>
+  <h1>Getting Started</h1>
+
+  <div class="github-icon">
+    <a href="https://github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <svg height="24" width="24" viewBox="0 0 16 16" fill="#fff">
+        <path
+          d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+        </path>
+      </svg>
+    </a>
+  </div>
+
+  <div class="github-icon">
+    <a href="https://pkg.go.dev/github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <img src="../static/gopher.png" alt="Go Gopher" width="20" height="24">
+    </a>
+  </div>
+
+  <p class="mt-1">
+    Getting started with Zinc should feel close to writing plain <code class="inline-code-green">net/http</code>,
+    just with a tighter routing and request/response API.
+  </p>
+
+  <section>
+    <h3>Prerequisites</h3>
+    <ul class="prerequisites">
+      <li><a class="external-link glacier" href="https://go.dev/dl/">Go 1.24+</a></li>
+      <li>A terminal and a text editor or IDE</li>
+      <li>Comfort with standard Go error handling and modules</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Install Zinc</h3>
+    <p>
+      Create a new module and add Zinc:
+    </p>
+    <div class="code-block os-code-block">
+      <div class="os-toggle">
+        <button class="os-btn active" data-os="mac">Linux & macOS</button>
+        <button class="os-btn" data-os="windows">Windows</button>
+      </div>
+      <pre><code class="mac-commands">mkdir zinc-app && cd zinc-app && \
+go mod init example.com/zinc-app && \
+touch main.go && \
+go get github.com/0mjs/zinc</code><code class="windows-commands" style="display: none">mkdir zinc-app && cd zinc-app && ^
+go mod init example.com/zinc-app && ^
+New-Item -Path . -Name "main.go" -ItemType "file" && ^
+go get github.com/0mjs/zinc</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h3>Write Your First App</h3>
+    <p>
+      Zinc handlers return <code class="inline-code-green">error</code>. The simplest startup path is
+      <code class="inline-code-pink">app.Listen(":8080")</code>.
+    </p>
+    <br>
+    <code class="inline-code-green">main.go</code>
+    <div class="code-block">
+      <pre><code class="language-go">package main
+
+import (
+  "log"
+
+  "github.com/0mjs/zinc"
+)
+
+func main() {
+  app := zinc.New()
+
+  app.Get("/", func(c *zinc.Context) error {
+    return c.String("Hello, Zinc!")
+  })
+
+  app.Get("/users/:id", func(c *zinc.Context) error {
+    return c.JSON(zinc.Map{
+      "id":   c.Param("id"),
+      "path": c.FullPath(),
+    })
+  })
+
+  log.Fatal(app.Listen(":8080"))
+}</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h3>Run It</h3>
+    <div class="code-block">
+      <pre><code class="language-bash">go run .</code></pre>
+    </div>
+
+    <p>
+      Then try the routes:
+    </p>
+    <div class="code-block">
+      <pre><code class="language-bash">curl http://localhost:8080/
+curl http://localhost:8080/users/42</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h3>Add Middleware And Binding</h3>
+    <p>
+      Once the basic app is running, the next step is usually grouped routes plus request binding:
+    </p>
+    <div class="code-block">
+      <pre><code class="language-go">type CreateUserInput struct {
+  Name string `json:"name"`
+}
+
+func requestLogger(c *zinc.Context) error {
+  log.Printf("%s %s", c.Method(), c.Path())
+  return c.Next()
+}
+
+func main() {
+  app := zinc.New()
+  app.Use(requestLogger)
+
+  api := app.Group("/api")
+  api.Post("/users", func(c *zinc.Context) error {
+    var input CreateUserInput
+    if err := c.Bind(&input); err != nil {
+      return err
+    }
+
+    return c.Status(zinc.StatusCreated).JSON(zinc.Map{
+      "name": input.Name,
+    })
+  })
+}</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h3>Next Steps</h3>
+    <ul class="prerequisites">
+      <li><a class="external-link glacier" href="/guide">Guide</a> covers routing, middleware, binding, responses,
+        files, and configuration in depth</li>
+      <li><a class="external-link glacier" href="/concepts">Concepts</a> explains how Zinc handles routing, request
+        state, proxy trust, and response semantics</li>
+      <li><a class="external-link glacier" href="https://pkg.go.dev/github.com/0mjs/zinc">pkg.go.dev</a> is the full
+        API reference</li>
+    </ul>
+  </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const osButtons = document.querySelectorAll('.os-btn');
+      const macCommands = document.querySelector('.mac-commands');
+      const windowsCommands = document.querySelector('.windows-commands');
+
+      osButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          osButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+
+          if (button.dataset.os === 'mac') {
+            macCommands.style.display = 'block';
+            windowsCommands.style.display = 'none';
+          } else {
+            macCommands.style.display = 'none';
+            windowsCommands.style.display = 'block';
+          }
+        });
+      });
+    });
+  </script>
+</article>
+
+<style>
+  section {
+    margin: 2rem 0;
+  }
+
+  h3 {
+    color: var(--zinc-light);
+    margin: 1.5rem 0 1rem 0;
+    font-size: 1.3rem;
+  }
+
+  h4 {
+    color: var(--text);
+    margin: 1.5rem 0 0.5rem 0;
+    font-size: 1.1rem;
+  }
+
+  .install-section {
+    background: linear-gradient(135deg, rgba(167, 169, 173, 0.1), rgba(82, 87, 92, 0.1));
+    padding: 2rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+  }
+</style>

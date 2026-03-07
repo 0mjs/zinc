@@ -1,0 +1,118 @@
+<article>
+  <h1>Introduction</h1>
+
+  <div class="github-icon">
+    <a href="https://github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <svg height="24" width="24" viewBox="0 0 16 16" fill="#fff">
+        <path
+          d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+        </path>
+      </svg>
+    </a>
+  </div>
+
+  <div class="github-icon">
+    <a href="https://pkg.go.dev/github.com/0mjs/zinc" target="_blank" rel="noopener noreferrer">
+      <img src="../static/gopher.png" alt="Go Gopher" width="20" height="24">
+    </a>
+  </div>
+
+  <p class="mt-1">
+    <a class="external-link bouquet" href="https://pkg.go.dev/github.com/0mjs/zinc">Zinc</a> is a focused web
+    framework on top of <code class="inline-code-green">net/http</code>. The current core is intentionally small:
+    routing, middleware, request binding, response helpers, files, and explicit server lifecycle.
+  </p>
+  <br>
+  <p>
+    That keeps Zinc close to the standard library. Your app is still an
+    <code class="inline-code-green">http.Handler</code>, handlers still return
+    <code class="inline-code-green">error</code>, and optional behavior like rendering, validation, or custom JSON
+    encoding is configured through <code class="inline-code-pink">Config</code> instead of hidden framework-only
+    machinery.
+  </p>
+
+  <section>
+    <h3>What Zinc Gives You</h3>
+    <ul class="prerequisites">
+      <li>Express-style route patterns like <code class="inline-code-green">/users/:id</code> and
+        <code class="inline-code-green">/files/*path</code></li>
+      <li>One handler shape for routes and middleware:
+        <code class="inline-code-green">func(*zinc.Context) error</code></li>
+      <li>Route groups, prefix middleware, automatic <code class="inline-code-green">HEAD</code> /
+        <code class="inline-code-green">OPTIONS</code>, and route metadata through
+        <code class="inline-code-green">c.FullPath()</code> and <code class="inline-code-green">c.Route()</code></li>
+      <li>Binding helpers for path, query, header, JSON, XML, and form data</li>
+      <li>Response helpers for JSON, XML, HTML, streams, redirects, files, attachments, and rendering</li>
+      <li>Explicit startup and shutdown via <code class="inline-code-green">Listen</code>,
+        <code class="inline-code-green">Serve</code>, and <code class="inline-code-green">Shutdown</code></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>The Shape Of A Zinc App</h3>
+    <div class="code-block">
+      <pre><code class="language-go">package main
+
+import (
+  "log"
+
+  "github.com/0mjs/zinc"
+)
+
+func main() {
+  app := zinc.New()
+
+  app.Get("/health", func(c *zinc.Context) error {
+    return c.String("ok")
+  })
+
+  api := app.Group("/api")
+  api.Get("/users/:id", func(c *zinc.Context) error {
+    return c.JSON(zinc.Map{
+      "id":        c.Param("id"),
+      "full_path": c.FullPath(),
+      "method":    c.Route().Method,
+    })
+  })
+
+  log.Fatal(app.Listen(":8080"))
+}</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h3>Small Core, Clear Extension Points</h3>
+    <p>
+      Zinc does not try to be every subsystem in your application. If you want validation, rendering, custom JSON
+      encoding, or bespoke error handling, wire those through
+      <code class="inline-code-pink">NewWithConfig</code>. If you want focused middleware, use separate packages like
+      <a class="external-link glacier" href="https://pkg.go.dev/github.com/0mjs/zinc/middleware/cors">middleware/cors</a>
+      or mount standard <code class="inline-code-green">net/http</code> handlers directly.
+    </p>
+  </section>
+</article>
+
+<style>
+  section {
+    margin: 2rem 0;
+  }
+
+  h3 {
+    color: var(--zinc-light);
+    margin: 1.5rem 0 1rem 0;
+    font-size: 1.3rem;
+  }
+
+  h4 {
+    color: var(--text);
+    margin: 1.5rem 0 0.5rem 0;
+    font-size: 1.1rem;
+  }
+
+  .install-section {
+    background: linear-gradient(135deg, rgba(167, 169, 173, 0.1), rgba(82, 87, 92, 0.1));
+    padding: 2rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+  }
+</style>

@@ -1,144 +1,143 @@
 package zinc
 
 import (
+	"io/fs"
+	"net/http"
 	"path"
 	"strings"
 )
 
-// Group represents a group of routes with a common prefix
-// and potentially shared middleware
 type Group struct {
 	app        *App
 	prefix     string
-	middleware []Middleware
+	middleware []HandlerFunc
 }
 
-// NewGroup creates a new route group
-func NewGroup(app *App, prefix string) *Group {
-	// Ensure prefix starts with /
-	if prefix != "" && !strings.HasPrefix(prefix, "/") {
-		prefix = "/" + prefix
+func NewGroup(app *App, prefix string, handlers ...HandlerFunc) *Group {
+	prefix = normalizeRegisteredPrefix(prefix)
+	if prefix == "/" {
+		prefix = ""
 	}
-
 	return &Group{
 		app:        app,
 		prefix:     prefix,
-		middleware: make([]Middleware, 0),
+		middleware: append([]HandlerFunc(nil), handlers...),
 	}
 }
 
-// Use adds middleware to the group
-func (g *Group) Use(middleware ...Middleware) *Group {
-	g.middleware = append(g.middleware, middleware...)
+func (g *Group) Use(handlers ...HandlerFunc) *Group {
+	g.middleware = append(g.middleware, handlers...)
 	return g
 }
 
-// Group creates a new sub-group with an additional prefix
-func (g *Group) Group(prefix string) *Group {
-	// Ensure prefix starts with /
-	if prefix != "" && !strings.HasPrefix(prefix, "/") {
-		prefix = "/" + prefix
-	}
-
-	fullPrefix := path.Join(g.prefix, prefix)
-
-	return &Group{
-		app:        g.app,
-		prefix:     fullPrefix,
-		middleware: append([]Middleware{}, g.middleware...),
-	}
+func (g *Group) Group(prefix string, handlers ...HandlerFunc) *Group {
+	fullPrefix := joinPaths(g.prefix, prefix)
+	sub := NewGroup(g.app, fullPrefix)
+	sub.middleware = append(sub.middleware, g.middleware...)
+	sub.middleware = append(sub.middleware, handlers...)
+	return sub
 }
 
-// Get registers a route for the GET HTTP method
-func (g *Group) Get(path string, handlers ...RouteHandler) error {
+func (g *Group) Route(prefix string, fn func(*Group), handlers ...HandlerFunc) *Group {
+	sub := g.Group(prefix, handlers...)
+	if fn != nil {
+		fn(sub)
+	}
+	return sub
+}
+
+func (g *Group) Mount(prefix string, h http.Handler) {
+	g.app.Mount(joinPaths(g.prefix, prefix), h)
+}
+
+func (g *Group) Add(method, routePath string, handlers ...HandlerFunc) error {
+	fullPath := joinPaths(g.prefix, routePath)
+	allHandlers := make([]HandlerFunc, 0, len(g.middleware)+len(handlers))
+	allHandlers = append(allHandlers, g.middleware...)
+	allHandlers = append(allHandlers, handlers...)
+	return g.app.Add(method, fullPath, allHandlers...)
+}
+
+func (g *Group) Get(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodGet, path, handlers...)
 }
-
-// Post registers a route for the POST HTTP method
-func (g *Group) Post(path string, handlers ...RouteHandler) error {
+func (g *Group) Post(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodPost, path, handlers...)
 }
-
-// Put registers a route for the PUT HTTP method
-func (g *Group) Put(path string, handlers ...RouteHandler) error {
+func (g *Group) Put(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodPut, path, handlers...)
 }
-
-// Delete registers a route for the DELETE HTTP method
-func (g *Group) Delete(path string, handlers ...RouteHandler) error {
+func (g *Group) Delete(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodDelete, path, handlers...)
 }
-
-// Patch registers a route for the PATCH HTTP method
-func (g *Group) Patch(path string, handlers ...RouteHandler) error {
+func (g *Group) Patch(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodPatch, path, handlers...)
 }
-
-// Head registers a route for the HEAD HTTP method
-func (g *Group) Head(path string, handlers ...RouteHandler) error {
+func (g *Group) Head(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodHead, path, handlers...)
 }
-
-// Options registers a route for the OPTIONS HTTP method
-func (g *Group) Options(path string, handlers ...RouteHandler) error {
+func (g *Group) Options(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodOptions, path, handlers...)
 }
-
-// Connect registers a route for the CONNECT HTTP method
-func (g *Group) Connect(path string, handlers ...RouteHandler) error {
+func (g *Group) Connect(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodConnect, path, handlers...)
 }
-
-// Trace registers a route for the TRACE HTTP method
-func (g *Group) Trace(path string, handlers ...RouteHandler) error {
+func (g *Group) Trace(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodTrace, path, handlers...)
 }
 
-// Add adds a route to the group with the given method and path
-func (g *Group) Add(method, path string, handlers ...RouteHandler) error {
-	// Ensure path starts with /
-	if path != "" && !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	// Combine group prefix with route path
-	fullPath := joinPaths(g.prefix, path)
-
-	// Combine group middleware with route handlers
-	allHandlers := make([]RouteHandler, len(g.middleware)+len(handlers))
-
-	// Copy middleware as route handlers
-	for i, mw := range g.middleware {
-		middleware := mw // Create a local copy to avoid closure issues
-		allHandlers[i] = func(c *Context) error {
-			return middleware(c)
+func (g *Group) Match(methods []string, routePath string, handlers ...HandlerFunc) error {
+	for _, method := range methods {
+		if err := g.Add(method, routePath, handlers...); err != nil {
+			return err
 		}
 	}
-
-	// Copy route handlers
-	copy(allHandlers[len(g.middleware):], handlers)
-
-	// Add route to app
-	return g.app.router.Add(method, fullPath, allHandlers...)
+	return nil
 }
 
-// Helper function to join two path segments correctly
+func (g *Group) All(path string, handlers ...HandlerFunc) error {
+	return g.Match(routeMethods, path, handlers...)
+}
+
+func (g *Group) Any(path string, handlers ...HandlerFunc) error {
+	return g.All(path, handlers...)
+}
+
+func (g *Group) Static(prefix, root string, opts ...StaticOption) error {
+	return g.app.Static(joinPaths(g.prefix, prefix), root, opts...)
+}
+
+func (g *Group) StaticFS(prefix string, filesystem fs.FS, opts ...StaticOption) error {
+	return g.app.StaticFS(joinPaths(g.prefix, prefix), filesystem, opts...)
+}
+
+func (g *Group) File(routePath, file string) error {
+	return g.app.File(joinPaths(g.prefix, routePath), file)
+}
+
+func (g *Group) FileFS(routePath, file string, filesystem fs.FS) error {
+	return g.app.FileFS(joinPaths(g.prefix, routePath), file, filesystem)
+}
+
 func joinPaths(a, b string) string {
-	if a == "" {
-		return b
-	}
 	if b == "" {
+		if a == "" {
+			return "/"
+		}
 		return a
 	}
-
-	aSlash := strings.HasSuffix(a, "/")
-	bSlash := strings.HasPrefix(b, "/")
-
-	if aSlash && bSlash {
-		return a + b[1:]
-	} else if !aSlash && !bSlash {
-		return a + "/" + b
+	if !strings.HasPrefix(b, "/") {
+		b = "/" + b
 	}
-
-	return a + b
+	if a == "" || a == "/" {
+		return path.Clean(b)
+	}
+	joined := path.Join(a, b)
+	if joined == "." {
+		return "/"
+	}
+	if !strings.HasPrefix(joined, "/") {
+		joined = "/" + joined
+	}
+	return joined
 }

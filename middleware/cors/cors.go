@@ -162,12 +162,12 @@ func NewWithConfig(config Config) zinc.Middleware {
 		}
 
 		// Set vary header for caching
-		c.Response.Header().Add("Vary", "Origin")
-		c.Response.Header().Add("Vary", "Access-Control-Request-Method")
-		c.Response.Header().Add("Vary", "Access-Control-Request-Headers")
+		c.Writer().Header().Add("Vary", "Origin")
+		c.Writer().Header().Add("Vary", "Access-Control-Request-Method")
+		c.Writer().Header().Add("Vary", "Access-Control-Request-Headers")
 
 		// Get origin from request
-		origin := c.Request.Header.Get("Origin")
+		origin := c.Request().Header.Get("Origin")
 		if origin == "" {
 			// Not a CORS request, continue with next handler
 			return c.Next()
@@ -192,29 +192,29 @@ func NewWithConfig(config Config) zinc.Middleware {
 		}
 
 		// Set allow origin header
-		c.Response.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		c.Writer().Header().Set("Access-Control-Allow-Origin", allowOrigin)
 
 		// Set allow credentials header if enabled
 		if config.AllowCredentials {
-			c.Response.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer().Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
 		// Handle preflight requests
-		if c.Method == http.MethodOptions {
-			requestMethod := c.Request.Header.Get("Access-Control-Request-Method")
+		if c.Method() == http.MethodOptions {
+			requestMethod := c.Request().Header.Get("Access-Control-Request-Method")
 			if requestMethod != "" {
 				// Set allowed methods
-				c.Response.Header().Set("Access-Control-Allow-Methods", allowMethodsStr)
+				c.Writer().Header().Set("Access-Control-Allow-Methods", allowMethodsStr)
 
 				// Set allowed headers
-				requestHeaders := c.Request.Header.Get("Access-Control-Request-Headers")
+				requestHeaders := c.Request().Header.Get("Access-Control-Request-Headers")
 				if requestHeaders != "" {
-					c.Response.Header().Set("Access-Control-Allow-Headers", allowHeadersStr)
+					c.Writer().Header().Set("Access-Control-Allow-Headers", allowHeadersStr)
 				}
 
 				// Set max age if configured - always set it for preflight requests
 				if config.MaxAge > 0 {
-					c.Response.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+					c.Writer().Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
 				}
 
 				// Return OK for preflight requests
@@ -224,7 +224,7 @@ func NewWithConfig(config Config) zinc.Middleware {
 
 		// For actual requests, set exposed headers if configured
 		if len(config.ExposeHeaders) > 0 {
-			c.Response.Header().Set("Access-Control-Expose-Headers", exposeHeadersStr)
+			c.Writer().Header().Set("Access-Control-Expose-Headers", exposeHeadersStr)
 		}
 
 		// Continue with next handler
