@@ -35,6 +35,11 @@ func defaultErrorHandler(c *Context, err error) {
 		return
 	}
 
+	if httpErr, ok := err.(*HTTPError); ok {
+		_ = c.Status(httpErr.Code).String(httpErr.Error())
+		return
+	}
+
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		_ = c.Status(httpErr.Code).String(httpErr.Error())

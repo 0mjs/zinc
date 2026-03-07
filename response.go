@@ -26,6 +26,13 @@ const (
 
 var nullBytes = []byte("null")
 
+var (
+	plainTextHeader = []string{plainText}
+	jsonHeader      = []string{jsonType}
+	xmlHeader       = []string{xmlType}
+	htmlHeader      = []string{htmlType}
+)
+
 func bodyAllowed(method string, status int) bool {
 	if method == http.MethodHead {
 		return false
@@ -77,10 +84,12 @@ func (c *Context) Vary(fields ...string) *Context {
 }
 
 func (c *Context) String(data string) error {
-	return c.writeResponse(plainText, func() error {
-		_, err := io.WriteString(c.Writer(), data)
+	writer, writeBody, err := c.prepareResponse(plainText)
+	if err != nil || !writeBody {
 		return err
-	})
+	}
+	_, err = io.WriteString(writer, data)
+	return err
 }
 
 func (c *Context) Send(data any) error {
@@ -100,10 +109,12 @@ func (c *Context) Send(data any) error {
 }
 
 func (c *Context) Data(contentType string, b []byte) error {
-	return c.writeResponse(contentType, func() error {
-		_, err := c.Writer().Write(b)
+	writer, writeBody, err := c.prepareResponse(contentType)
+	if err != nil || !writeBody {
 		return err
-	})
+	}
+	_, err = writer.Write(b)
+	return err
 }
 
 func (c *Context) JSON(v any) error {
@@ -115,21 +126,20 @@ func (c *Context) JSONPretty(v any, indent string) error {
 }
 
 func (c *Context) writeJSON(v any, indent string) error {
-	if v == nil {
-		return c.writeResponse(jsonType, func() error {
-			_, err := c.Writer().Write(nullBytes)
-			return err
-		})
+	writer, writeBody, err := c.prepareResponse(jsonType)
+	if err != nil || !writeBody {
+		return err
 	}
 
-	var buf bytes.Buffer
-	if err := c.app.config.JSONCodec.Encode(&buf, v, indent); err != nil {
+	if v == nil {
+		_, err = writer.Write(nullBytes)
 		return err
 	}
-	return c.writeResponse(jsonType, func() error {
-		_, err := c.Writer().Write(buf.Bytes())
+
+	if err := c.app.config.JSONCodec.Encode(writer, v, indent); err != nil {
 		return err
-	})
+	}
+	return nil
 }
 
 func (c *Context) XML(v any) error {
@@ -168,7 +178,8 @@ func (c *Context) NoContent() error {
 	if c.status == 0 || c.status == http.StatusOK {
 		c.status = http.StatusNoContent
 	}
-	return c.writeResponse("", nil)
+	_, _, err := c.prepareResponse("")
+	return err
 }
 
 func (c *Context) Redirect(code int, location string) error {
@@ -258,6 +269,49 @@ func (c *Context) writeResponse(ct string, writeBody func() error) error {
 		return writeBody()
 	}
 	return nil
+}
+
+func (c *Context) prepareResponse(ct string) (http.ResponseWriter, bool, error) {
+	if c.written {
+		return nil, false, ErrResponseAlreadySent
+	}
+	c.written = true
+
+	writer := c.Writer()
+	if ct != "" {
+		header := writer.Header()
+		if len(header[contentType]) == 0 {
+			switch ct {
+			case plainText:
+				header[contentType] = plainTextHeader
+			case jsonType:
+				header[contentType] = jsonHeader
+			case xmlType:
+				header[contentType] = xmlHeader
+			case htmlType:
+				header[contentType] = htmlHeader
+			default:
+				header.Set(contentType, ct)
+			}
+		}
+	}
+
+	status := c.responseStatus()
+	method := ""
+	if c.request != nil {
+		method = c.request.Method
+	}
+	if !bodyAllowed(method, status) {
+		if status != http.StatusOK {
+			writer.WriteHeader(status)
+		}
+		return writer, false, nil
+	}
+
+	if status != http.StatusOK {
+		writer.WriteHeader(status)
+	}
+	return writer, true, nil
 }
 
 func (c *Context) serveFile(filePath string, filesystem fs.FS, downloadName string) error {

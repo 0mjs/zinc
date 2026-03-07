@@ -24,38 +24,38 @@ Ranked by average placement across all 8 benchmarks.
 
 | Rank | Framework | Wins | Top 3 Finishes | Avg Place | Performance Profile |
 |---|---|---:|---:|---:|---|
-| 1 | `🍸 Gin` | 4 | 8 | 1.50 | Best overall average placement in this framework set |
-| 2 | `🪙 Zinc` | 4 | 8 | 1.63 | Tied for most wins; strongest middleware and JSON results |
-| 3 | `📣 Echo` | 0 | 8 | 2.88 | Consistent third-place baseline with one cold-param runner-up |
+| 1 | `🍸 Gin` | 5 | 8 | 1.38 | Best overall average placement, especially param and middleware paths |
+| 2 | `🪙 Zinc` | 3 | 8 | 1.63 | Wins static/hello/JSON and remains consistently close to Gin |
+| 3 | `📣 Echo` | 0 | 8 | 3.00 | Consistent third-place baseline |
 | 4 | `🌿 Chi` | 0 | 0 | 4.00 | Flexible router, not a performance target |
 
 ## Ultimate Matrix
 
 | Framework | `HelloWorld` | `StaticRoute` | `RouterParam` | `RouterParamCold` | `LargeRouteSetParam` | `LargeRouteSetParamMixed` | `JSONResponse` | `MiddlewareChain` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `🍸 Gin` | 🥈 91.5 | 🥈 93.5 | 🥇 103.1 | 🥇 107.0 | 🥇 108.4 | 🥇 130.6 | 🥈 385.4 | 🥈 403.6 |
-| `🪙 Zinc` | 🥇 80.0 | 🥇 93.3 | 🥈 133.9 | 🥉 141.7 | 🥈 140.4 | 🥈 150.2 | 🥇 356.9 | 🥇 224.5 |
-| `📣 Echo` | 🥉 124.7 | 🥉 122.1 | 🥉 137.9 | 🥈 140.9 | 🥉 153.7 | 🥉 167.7 | 🥉 414.2 | 🥉 606.2 |
-| `🌿 Chi` | 189.6 | 188.1 | 361.7 | 249.9 | 451.2 | 303.4 | 510.1 | 950.1 |
+| `🍸 Gin` | 🥈 83.9 | 🥈 85.6 | 🥇 91.7 | 🥇 97.7 | 🥇 103.4 | 🥇 124.2 | 🥈 377.4 | 🥇 373.9 |
+| `🪙 Zinc` | 🥇 80.6 | 🥇 82.4 | 🥈 115.6 | 🥈 123.8 | 🥈 124.2 | 🥈 127.7 | 🥇 336.9 | 🥈 385.6 |
+| `📣 Echo` | 🥉 119.1 | 🥉 121.6 | 🥉 134.0 | 🥉 129.5 | 🥉 149.1 | 🥉 160.1 | 🥉 414.2 | 🥉 512.8 |
+| `🌿 Chi` | 177.2 | 174.7 | 315.8 | 217.0 | 380.3 | 289.8 | 492.7 | 848.4 |
 
 ## Benchmark Winners
 
 | Benchmark | Winner | Runner-up | Third |
 |---|---|---|---|
-| `HelloWorld` | `🪙 Zinc` `80.0` | `🍸 Gin` `91.5` | `📣 Echo` `124.7` |
-| `StaticRoute` | `🪙 Zinc` `93.3` | `🍸 Gin` `93.5` | `📣 Echo` `122.1` |
-| `RouterParam` | `🍸 Gin` `103.1` | `🪙 Zinc` `133.9` | `📣 Echo` `137.9` |
-| `RouterParamCold` | `🍸 Gin` `107.0` | `📣 Echo` `140.9` | `🪙 Zinc` `141.7` |
-| `LargeRouteSetParam` | `🍸 Gin` `108.4` | `🪙 Zinc` `140.4` | `📣 Echo` `153.7` |
-| `LargeRouteSetParamMixed` | `🍸 Gin` `130.6` | `🪙 Zinc` `150.2` | `📣 Echo` `167.7` |
-| `JSONResponse` | `🪙 Zinc` `356.9` | `🍸 Gin` `385.4` | `📣 Echo` `414.2` |
-| `MiddlewareChain` | `🪙 Zinc` `224.5` | `🍸 Gin` `403.6` | `📣 Echo` `606.2` |
+| `HelloWorld` | `🪙 Zinc` `80.6` | `🍸 Gin` `83.9` | `📣 Echo` `119.1` |
+| `StaticRoute` | `🪙 Zinc` `82.4` | `🍸 Gin` `85.6` | `📣 Echo` `121.6` |
+| `RouterParam` | `🍸 Gin` `91.7` | `🪙 Zinc` `115.6` | `📣 Echo` `134.0` |
+| `RouterParamCold` | `🍸 Gin` `97.7` | `🪙 Zinc` `123.8` | `📣 Echo` `129.5` |
+| `LargeRouteSetParam` | `🍸 Gin` `103.4` | `🪙 Zinc` `124.2` | `📣 Echo` `149.1` |
+| `LargeRouteSetParamMixed` | `🍸 Gin` `124.2` | `🪙 Zinc` `127.7` | `📣 Echo` `160.1` |
+| `JSONResponse` | `🪙 Zinc` `336.9` | `🍸 Gin` `377.4` | `📣 Echo` `414.2` |
+| `MiddlewareChain` | `🍸 Gin` `373.9` | `🪙 Zinc` `385.6` | `📣 Echo` `512.8` |
 
 ## Takeaways
 
-- `🍸 Gin` and `🪙 Zinc` split wins `4-4` across this benchmark set.
-- `🍸 Gin` leads the param-routing benchmarks on average.
-- `🪙 Zinc` leads `HelloWorld`, `StaticRoute`, `JSONResponse`, and `MiddlewareChain`.
+- `🍸 Gin` and `🪙 Zinc` remain close, with wins now split `5-3` for Gin.
+- `🍸 Gin` leads param-routing and middleware in this run.
+- `🪙 Zinc` leads `HelloWorld`, `StaticRoute`, and `JSONResponse`.
 - `📣 Echo` stays competitive but trails `🍸 Gin` and `🪙 Zinc` on most paths.
 - `🌿 Chi` remains valuable for flexibility, but not for raw speed.
 

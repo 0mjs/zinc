@@ -11,8 +11,16 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := NewContext(w, r)
-	defer ctx.release()
 	ctx.app = a
+
+	if len(a.middlewareChain) > 0 && len(a.prefixMiddleware) == 0 {
+		ctx.setHandlers(a.middlewareChain)
+		if err := ctx.Next(); err != nil {
+			a.handleError(ctx, err)
+		}
+		ctx.release()
+		return
+	}
 
 	if len(a.middleware) > 0 || len(a.prefixMiddleware) > 0 {
 		handlers := a.preHandlersForPath(r.URL.Path)
@@ -21,11 +29,13 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := ctx.Next(); err != nil {
 				a.handleError(ctx, err)
 			}
+			ctx.release()
 			return
 		}
 	}
 
 	a.dispatch(ctx)
+	ctx.release()
 }
 
 func (a *App) preHandlersForPath(path string) []HandlerFunc {
@@ -69,7 +79,13 @@ func (a *App) dispatch(ctx *Context) {
 		return
 	}
 
-	allowed := a.router.allowedMethods(path, a.config.AutoHead, a.config.AutoOptions)
+	var allowed []string
+	needsAllowScan := (method == MethodOptions && a.config.AutoOptions) || a.config.HandleMethodNotAllowed
+	if needsAllowScan {
+		if a.router.hasDynamicRoutes() || a.router.staticPathKnown(path) {
+			allowed = a.router.allowedMethods(path, a.config.AutoHead, a.config.AutoOptions)
+		}
+	}
 	if method == MethodOptions && a.config.AutoOptions && len(allowed) > 0 {
 		ctx.SetHeader(HeaderAllow, strings.Join(allowed, ", "))
 		_ = ctx.Status(StatusNoContent).NoContent()

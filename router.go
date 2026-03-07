@@ -16,7 +16,6 @@ type RouteMap map[string]map[string]*Route
 type Route struct {
 	handler HandlerFunc
 	method  string
-	parts   []string
 	path    string
 	info    RouteInfo
 }
@@ -53,6 +52,7 @@ type Router struct {
 	config     *Config
 	routes     RouteMap
 	trees      map[string]*radixNode
+	pathMethods map[string]uint16
 	routeInfos []RouteInfo
 }
 
@@ -62,12 +62,8 @@ type routeCacheKey struct {
 }
 
 type routeCacheEntry struct {
-	handler    HandlerFunc
-	routeInfo  RouteInfo
-	pathParams params
-	paramKeys  [8]string
-	paramVals  [8]string
-	paramCount int
+	route  *radixRoute
+	values [8]string
 }
 
 type RouteCache struct {
@@ -82,6 +78,8 @@ var pathBuilderPool = sync.Pool{
 		return new(strings.Builder)
 	},
 }
+
+var handlerNameCache sync.Map
 
 var routeMethods = []string{
 	MethodGet,
@@ -145,7 +143,6 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		path:    path,
 		handler: precomposed,
 		method:  method,
-		parts:   getPathParts(path),
 		info:    info,
 	}
 
@@ -156,18 +153,22 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		if _, ok := r.routes[method]; !ok {
 			r.routes[method] = make(map[string]*Route)
 		}
-		candidates := []string{originalPath}
+		methodRoutes := r.routes[method]
+		addCandidate := func(candidate string) {
+			if candidate == "" {
+				return
+			}
+			methodRoutes[candidate] = route
+			r.trackStaticPathMethod(candidate, method)
+		}
+
+		addCandidate(originalPath)
 		if r.config != nil && !r.config.CaseSensitive && lowerPath != originalPath {
-			candidates = append(candidates, lowerPath)
+			addCandidate(lowerPath)
 		}
 		if r.config == nil || !r.config.StrictRouting {
-			candidates = append(candidates, pathWithoutSlash, pathWithSlash)
-		}
-		for _, candidate := range uniqueStrings(candidates...) {
-			if candidate == "" {
-				continue
-			}
-			r.routes[method][candidate] = route
+			addCandidate(pathWithoutSlash)
+			addCandidate(pathWithSlash)
 		}
 		return nil
 	}
@@ -232,12 +233,12 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 	key := routeCacheKey{method: method, path: path}
 	if r.cache != nil {
 		if entry, ok := r.cache.get(key); ok {
-			ctx.PathParams = entry.pathParams
-			ctx.paramKeys = entry.paramKeys
-			ctx.paramVals = entry.paramVals
-			ctx.paramCount = entry.paramCount
-			ctx.setRoute(entry.routeInfo)
-			return entry.handler
+			if entry.route == nil {
+				return nil
+			}
+			ctx.applyRouteParams(entry.route, entry.values)
+			ctx.setRoute(entry.route.info)
+			return entry.route.handler
 		}
 	}
 	root := r.trees[method]
@@ -253,12 +254,8 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 	ctx.setRoute(matched.info)
 	if r.cache != nil {
 		entry := routeCacheEntry{
-			handler:    matched.handler,
-			routeInfo:  matched.info,
-			pathParams: ctx.PathParams,
-			paramKeys:  ctx.paramKeys,
-			paramVals:  ctx.paramVals,
-			paramCount: ctx.paramCount,
+			route:  matched,
+			values: captured,
 		}
 		r.cache.set(key, entry)
 	}
@@ -311,6 +308,62 @@ func methodRank(method string) int {
 		}
 	}
 	return len(routeMethods)
+}
+
+func methodBit(method string) uint16 {
+	for i, candidate := range routeMethods {
+		if candidate == method {
+			return 1 << i
+		}
+	}
+	return 0
+}
+
+func (r *Router) trackStaticPathMethod(path, method string) {
+	bit := methodBit(method)
+	if bit == 0 {
+		return
+	}
+	if r.pathMethods == nil {
+		r.pathMethods = make(map[string]uint16, 32)
+	}
+	r.pathMethods[path] |= bit
+}
+
+func (r *Router) hasDynamicRoutes() bool {
+	return len(r.trees) > 0
+}
+
+func (r *Router) staticPathKnown(path string) bool {
+	if len(r.pathMethods) == 0 {
+		return false
+	}
+
+	originalPath := path
+	strictRouting := r.config != nil && r.config.StrictRouting
+	if r.config != nil && !r.config.CaseSensitive {
+		if lower, changed := lowercasePath(path); changed {
+			path = lower
+		}
+	}
+	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+	}
+
+	if _, ok := r.pathMethods[originalPath]; ok {
+		return true
+	}
+	if _, ok := r.pathMethods[path]; ok {
+		return true
+	}
+
+	if !strictRouting && path != "/" {
+		if _, ok := r.pathMethods[path+"/"]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *Router) normalizePath(path string) string {
@@ -603,46 +656,6 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	rc.keys = append(rc.keys, key)
 }
 
-func getPathParts(path string) []string {
-	var fixedParts [8]string
-	parts := fixedParts[:0]
-	if path == "" || path == "/" {
-		return parts
-	}
-	if path[0] == '/' {
-		path = path[1:]
-	}
-	start := 0
-	for i := 0; i < len(path); i++ {
-		if path[i] == '/' {
-			if i > start {
-				parts = append(parts, path[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(path) {
-		parts = append(parts, path[start:])
-	}
-	return parts
-}
-
-func uniqueStrings(values ...string) []string {
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
-}
-
 func lowercasePath(path string) (string, bool) {
 	for i := 0; i < len(path); i++ {
 		c := path[i]
@@ -665,11 +678,17 @@ func handlerName(handler HandlerFunc) string {
 	if !value.IsValid() || value.IsNil() {
 		return ""
 	}
-	fn := runtime.FuncForPC(value.Pointer())
+	pc := value.Pointer()
+	if cached, ok := handlerNameCache.Load(pc); ok {
+		return cached.(string)
+	}
+	fn := runtime.FuncForPC(pc)
 	if fn == nil {
 		return ""
 	}
-	return fn.Name()
+	name := fn.Name()
+	handlerNameCache.Store(pc, name)
+	return name
 }
 
 func normalizeGetHandlers(handlers ...any) ([]HandlerFunc, error) {

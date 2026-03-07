@@ -40,6 +40,7 @@ type App struct {
 	config           Config
 	router           *Router
 	middleware       []HandlerFunc
+	middlewareChain  []HandlerFunc
 	prefixMiddleware []prefixMiddleware
 	mounts           []mountedHandler
 	notFound         HandlerFunc
@@ -173,11 +174,23 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 func (a *App) Use(handlers ...HandlerFunc) {
 	a.middleware = append(a.middleware, handlers...)
+	a.rebuildMiddlewareChain()
 }
 
 func (a *App) UsePrefix(prefix string, handlers ...HandlerFunc) {
 	prefix = normalizeRegisteredPrefix(prefix)
 	a.prefixMiddleware = append(a.prefixMiddleware, prefixMiddleware{prefix: prefix, handlers: append([]HandlerFunc(nil), handlers...)})
+}
+
+func (a *App) rebuildMiddlewareChain() {
+	if len(a.middleware) == 0 {
+		a.middlewareChain = nil
+		return
+	}
+	chain := make([]HandlerFunc, len(a.middleware)+1)
+	copy(chain, a.middleware)
+	chain[len(chain)-1] = appDispatchHandler
+	a.middlewareChain = chain
 }
 
 func (a *App) Group(prefix string, handlers ...HandlerFunc) *Group {

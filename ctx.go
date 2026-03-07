@@ -75,14 +75,16 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
-	c.paramCount = 0
-	for i := range c.PathParams {
+	for i := 0; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
 		c.paramKeys[i] = ""
 		c.paramVals[i] = ""
 	}
-	for key := range c.store {
-		delete(c.store, key)
+	c.paramCount = 0
+	if len(c.store) > 0 {
+		for key := range c.store {
+			delete(c.store, key)
+		}
 	}
 }
 
@@ -497,12 +499,13 @@ func (c *Context) applyRouteParams(route *radixRoute, values [8]string) {
 	if count > len(c.PathParams) {
 		count = len(c.PathParams)
 	}
+	previousCount := c.paramCount
 	for i := 0; i < count; i++ {
 		c.PathParams[i] = param{key: route.paramNames[i], value: values[i]}
 		c.paramKeys[i] = route.paramNames[i]
 		c.paramVals[i] = values[i]
 	}
-	for i := count; i < len(c.PathParams); i++ {
+	for i := count; i < previousCount; i++ {
 		c.PathParams[i] = emptyParam
 		c.paramKeys[i] = ""
 		c.paramVals[i] = ""
@@ -514,10 +517,10 @@ func (c *Context) truncateParams(count int) {
 	if count < 0 {
 		count = 0
 	}
-	if count > len(c.PathParams) {
-		count = len(c.PathParams)
+	if count > c.paramCount {
+		count = c.paramCount
 	}
-	for i := count; i < len(c.PathParams); i++ {
+	for i := count; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
 		c.paramKeys[i] = ""
 		c.paramVals[i] = ""
