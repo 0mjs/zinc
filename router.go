@@ -721,6 +721,27 @@ func (a *App) Any(path string, handlers ...HandlerFunc) error {
 	return a.All(path, handlers...)
 }
 
+// SSE registers a GET route that serves server-sent events.
+func (a *App) SSE(path string, handler SSEHandler) error {
+	if handler == nil {
+		return ErrSSEHandlerNil
+	}
+	return a.Get(path, func(c *Context) error {
+		return c.SSE(handler)
+	})
+}
+
+// WS registers a GET route that upgrades to websocket.
+func (a *App) WS(path string, handler WebSocketHandler, config ...WebSocketConfig) error {
+	if handler == nil {
+		return ErrWebSocketHandlerNil
+	}
+	cfg := firstWebSocketConfig(config)
+	return a.Get(path, func(c *Context) error {
+		return c.WebSocket(handler, cfg)
+	})
+}
+
 func StringHandler(str string) HandlerFunc {
 	return func(c *Context) error {
 		return c.String(str)

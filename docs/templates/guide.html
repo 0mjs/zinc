@@ -254,6 +254,64 @@ app.Get("/empty", func(c *zinc.Context) error {
     </p>
   </section>
 
+  <section id="realtime">
+    <h2>Real-Time: SSE And WebSockets</h2>
+    <p>
+      Zinc keeps real-time support compact: use <code>SSE</code> for one-way server push and <code>WS</code> for
+      bidirectional sockets. Both are first-class route helpers and can also be used from grouped routes.
+    </p>
+
+    <pre><code class="language-go">app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
+    ticker := time.NewTicker(time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case &lt;-stream.Done():
+            return nil
+        case tick := &lt;-ticker.C:
+            if err := stream.Send(zinc.SSEEvent{
+                Event: "tick",
+                Data: zinc.Map{"at": tick.UTC().Format(time.RFC3339)},
+            }); err != nil {
+                return err
+            }
+        }
+    }
+})
+
+app.WS("/ws", func(c *zinc.Context, conn *websocket.Conn) error {
+    for {
+        messageType, payload, err := conn.ReadMessage()
+        if err != nil {
+            return nil
+        }
+        if err := conn.WriteMessage(messageType, payload); err != nil {
+            return err
+        }
+    }
+}, zinc.WebSocketConfig{
+    CheckOrigin: func(c *zinc.Context) bool {
+        return c.GetHeader(zinc.HeaderOrigin) == "http://localhost:3000"
+    },
+})</code></pre>
+
+    <p>
+      Plain browser clients work directly, and frameworks like React, Next.js, and Vue use the same browser APIs:
+    </p>
+
+    <pre><code class="language-html">&lt;script&gt;
+  const events = new EventSource("/events");
+  events.addEventListener("tick", (event) =&gt; {
+    console.log("sse", JSON.parse(event.data));
+  });
+
+  const ws = new WebSocket("ws://localhost:8080/ws");
+  ws.onopen = () =&gt; ws.send("hello");
+  ws.onmessage = (event) =&gt; console.log("ws", event.data);
+&lt;/script&gt;</code></pre>
+  </section>
+
   <section id="files">
     <h2>Files, Static Assets, And Mounted Handlers</h2>
     <p>

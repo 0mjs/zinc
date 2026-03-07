@@ -1,10 +1,5 @@
 .air.toml
 .DS_Store
-.cursorrules
-
-SPEC.md
-BENCHMARKS.md
-
 tmp/*
 restricted/*
 vendor/*

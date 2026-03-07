@@ -103,6 +103,27 @@ func (g *Group) Any(path string, handlers ...HandlerFunc) error {
 	return g.All(path, handlers...)
 }
 
+// SSE registers a group GET route that serves server-sent events.
+func (g *Group) SSE(path string, handler SSEHandler) error {
+	if handler == nil {
+		return ErrSSEHandlerNil
+	}
+	return g.Get(path, func(c *Context) error {
+		return c.SSE(handler)
+	})
+}
+
+// WS registers a group GET route that upgrades to websocket.
+func (g *Group) WS(path string, handler WebSocketHandler, config ...WebSocketConfig) error {
+	if handler == nil {
+		return ErrWebSocketHandlerNil
+	}
+	cfg := firstWebSocketConfig(config)
+	return g.Get(path, func(c *Context) error {
+		return c.WebSocket(handler, cfg)
+	})
+}
+
 func (g *Group) Static(prefix, root string, opts ...StaticOption) error {
 	return g.app.Static(joinPaths(g.prefix, prefix), root, opts...)
 }
