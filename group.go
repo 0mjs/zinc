@@ -58,8 +58,12 @@ func (g *Group) Add(method, routePath string, handlers ...HandlerFunc) error {
 	return g.app.Add(method, fullPath, allHandlers...)
 }
 
-func (g *Group) Get(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodGet, path, handlers...)
+func (g *Group) Get(path string, handlers ...any) error {
+	normalized, err := normalizeGetHandlers(handlers...)
+	if err != nil {
+		return err
+	}
+	return g.Add(MethodGet, path, normalized...)
 }
 func (g *Group) Post(path string, handlers ...HandlerFunc) error {
 	return g.Add(MethodPost, path, handlers...)

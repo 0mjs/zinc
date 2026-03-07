@@ -672,12 +672,44 @@ func handlerName(handler HandlerFunc) string {
 	return fn.Name()
 }
 
+func normalizeGetHandlers(handlers ...any) ([]HandlerFunc, error) {
+	if len(handlers) == 0 {
+		return nil, nil
+	}
+	out := make([]HandlerFunc, 0, len(handlers))
+	for idx, handler := range handlers {
+		switch h := handler.(type) {
+		case HandlerFunc:
+			if h == nil {
+				return nil, fmt.Errorf("handler at index %d is nil", idx)
+			}
+			out = append(out, h)
+		case func(*Context) error:
+			if h == nil {
+				return nil, fmt.Errorf("handler at index %d is nil", idx)
+			}
+			out = append(out, HandlerFunc(h))
+		case string:
+			out = append(out, StringHandler(h))
+		case nil:
+			return nil, fmt.Errorf("handler at index %d is nil", idx)
+		default:
+			return nil, fmt.Errorf("unsupported GET handler type %T at index %d", handler, idx)
+		}
+	}
+	return out, nil
+}
+
 func (a *App) Add(method, path string, handlers ...HandlerFunc) error {
 	return a.router.Add(method, path, handlers...)
 }
 
-func (a *App) Get(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodGet, path, handlers...)
+func (a *App) Get(path string, handlers ...any) error {
+	normalized, err := normalizeGetHandlers(handlers...)
+	if err != nil {
+		return err
+	}
+	return a.Add(MethodGet, path, normalized...)
 }
 func (a *App) Post(path string, handlers ...HandlerFunc) error {
 	return a.Add(MethodPost, path, handlers...)

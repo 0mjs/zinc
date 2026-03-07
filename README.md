@@ -50,6 +50,8 @@ func main() {
 		return c.String("Hello, Zinc!")
 	})
 
+	app.Get("/hello", "hello from zinc")
+
 	app.Get("/users/:id", func(c *zinc.Context) error {
 		return c.JSON(zinc.Map{
 			"id":        c.Param("id"),

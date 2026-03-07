@@ -280,7 +280,7 @@ func (a *App) Route(prefix string, fn func(*Group), handlers ...HandlerFunc) *Gr
 func (a *App) Mount(prefix string, h http.Handler)
 
 func (a *App) Add(method, path string, handlers ...HandlerFunc) error
-func (a *App) Get(path string, handlers ...HandlerFunc) error
+func (a *App) Get(path string, handlers ...any) error // accepts handler funcs or string shorthand
 func (a *App) Post(path string, handlers ...HandlerFunc) error
 func (a *App) Put(path string, handlers ...HandlerFunc) error
 func (a *App) Delete(path string, handlers ...HandlerFunc) error

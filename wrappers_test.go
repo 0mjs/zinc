@@ -51,6 +51,44 @@ func TestMethodWrapperCoverage(t *testing.T) {
 	}
 }
 
+func TestGetShorthandStringHandler(t *testing.T) {
+	app := New()
+	mustDo(t, app.Get("/", "Hello, world!"))
+
+	resp := performRequest(t, app, MethodGet, "/", nil, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d", resp.Code)
+	}
+	if body := resp.Body.String(); body != "Hello, world!" {
+		t.Fatalf("body=%q", body)
+	}
+}
+
+func TestGroupGetShorthandStringHandler(t *testing.T) {
+	app := New()
+	group := app.Group("/api")
+	mustDo(t, group.Get("/hello", "from group"))
+
+	resp := performRequest(t, app, MethodGet, "/api/hello", nil, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d", resp.Code)
+	}
+	if body := resp.Body.String(); body != "from group" {
+		t.Fatalf("body=%q", body)
+	}
+}
+
+func TestGetShorthandInvalidHandlerType(t *testing.T) {
+	app := New()
+	err := app.Get("/bad", 123)
+	if err == nil {
+		t.Fatal("expected error for invalid GET handler type")
+	}
+	if !strings.Contains(err.Error(), "unsupported GET handler type int") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGroupWrapperCoverage(t *testing.T) {
 	app := New()
 	group := app.Group("/g")
