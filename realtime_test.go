@@ -1,7 +1,9 @@
 package zinc
 
 import (
+	stdctx "context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -246,4 +248,167 @@ func TestWebSocketHelpers(t *testing.T) {
 
 func wsURL(serverURL, path string) string {
 	return "ws" + strings.TrimPrefix(serverURL, "http") + path
+}
+
+func TestSSEStreamContextDoneAndRetry(t *testing.T) {
+	var nilStream *SSEStream
+	if nilStream.Context() == nil {
+		t.Fatal("nil stream context should fall back to background")
+	}
+	select {
+	case <-nilStream.Done():
+		t.Fatal("nil stream done channel should not be closed")
+	default:
+	}
+	mustDo(t, nilStream.Retry(5*time.Millisecond))
+
+	app := New()
+	mustDo(t, app.SSE("/events", func(c *Context, stream *SSEStream) error {
+		if stream.Context() == nil {
+			t.Fatal("stream context must not be nil")
+		}
+		// Ensure Done delegates to the request context channel.
+		if stream.Done() != c.Context().Done() {
+			t.Fatal("stream done channel does not match request context")
+		}
+		return stream.Retry(750 * time.Millisecond)
+	}))
+
+	resp := performRequest(t, app, http.MethodGet, "/events", nil, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d", resp.Code)
+	}
+	if !strings.Contains(resp.Body.String(), "retry: 750\n") {
+		t.Fatalf("body=%q", resp.Body.String())
+	}
+}
+
+func TestSSEStreamContextFallbackForMissingContext(t *testing.T) {
+	stream := &SSEStream{}
+	if stream.Context() == nil {
+		t.Fatal("context should not be nil")
+	}
+	if stream.Context() != stdctx.Background() {
+		t.Fatal("expected background context fallback")
+	}
+}
+
+func TestSSEAdditionalBranches(t *testing.T) {
+	t.Run("SSE with non-OK and no-body statuses", func(t *testing.T) {
+		app := New()
+		calledCreated := false
+		mustDo(t, app.Get("/created", func(c *Context) error {
+			c.Status(http.StatusCreated)
+			return c.SSE(func(_ *Context, stream *SSEStream) error {
+				calledCreated = true
+				return stream.Data("ok")
+			})
+		}))
+		calledNoContent := false
+		mustDo(t, app.Get("/nocontent", func(c *Context) error {
+			c.Status(http.StatusNoContent)
+			return c.SSE(func(_ *Context, stream *SSEStream) error {
+				calledNoContent = true
+				return stream.Data("should-not-write")
+			})
+		}))
+
+		created := performRequest(t, app, http.MethodGet, "/created", nil, nil)
+		if created.Code != http.StatusCreated || !calledCreated {
+			t.Fatalf("created response=%d called=%v", created.Code, calledCreated)
+		}
+		if !strings.Contains(created.Body.String(), "data: ok\n") {
+			t.Fatalf("body=%q", created.Body.String())
+		}
+
+		noContent := performRequest(t, app, http.MethodGet, "/nocontent", nil, nil)
+		if noContent.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", noContent.Code)
+		}
+		if noContent.Body.Len() != 0 {
+			t.Fatalf("body=%q", noContent.Body.String())
+		}
+		if calledNoContent {
+			t.Fatal("handler should not run for 204 SSE response")
+		}
+	})
+
+	t.Run("stream send encode and write errors", func(t *testing.T) {
+		writer := &strings.Builder{}
+		flusher := &flushRecorder{}
+		stream := &SSEStream{
+			ctx:     &Context{app: New()},
+			writer:  writer,
+			flusher: flusher,
+			codec:   defaultJSONCodec{},
+		}
+
+		mustDo(t, stream.Send(SSEEvent{Data: []byte("raw-bytes"), Retry: time.Nanosecond}))
+		body := writer.String()
+		if !strings.Contains(body, "retry: 1\n") || !strings.Contains(body, "data: raw-bytes\n") {
+			t.Fatalf("body=%q", body)
+		}
+		if flusher.calls == 0 {
+			t.Fatal("expected flush call")
+		}
+
+		errStream := &SSEStream{
+			ctx:     &Context{app: New()},
+			writer:  errWriteCloser{err: errors.New("write failed")},
+			flusher: &flushRecorder{},
+			codec:   defaultJSONCodec{},
+		}
+		if err := errStream.Send(SSEEvent{Data: "x"}); err == nil || !strings.Contains(err.Error(), "write failed") {
+			t.Fatalf("err=%v", err)
+		}
+
+		codecErrStream := &SSEStream{
+			ctx:     &Context{app: New()},
+			writer:  &strings.Builder{},
+			flusher: &flushRecorder{},
+			codec:   codecError{err: errors.New("encode failed")},
+		}
+		if err := codecErrStream.Send(SSEEvent{Data: Map{"x": 1}}); err == nil || !strings.Contains(err.Error(), "encode failed") {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("jsonCodec fallback", func(t *testing.T) {
+		var nilCtx *Context
+		if err := nilCtx.jsonCodec().Encode(io.Discard, Map{"ok": true}, ""); err != nil {
+			t.Fatalf("err=%v", err)
+		}
+		plainCtx := &Context{}
+		if err := plainCtx.jsonCodec().Encode(io.Discard, Map{"ok": true}, ""); err != nil {
+			t.Fatalf("err=%v", err)
+		}
+	})
+}
+
+type flushRecorder struct {
+	calls int
+}
+
+func (f *flushRecorder) Flush() {
+	f.calls++
+}
+
+type errWriteCloser struct {
+	err error
+}
+
+func (w errWriteCloser) Write([]byte) (int, error) {
+	return 0, w.err
+}
+
+type codecError struct {
+	err error
+}
+
+func (c codecError) Encode(io.Writer, any, string) error {
+	return c.err
+}
+
+func (c codecError) Decode(io.Reader, any) error {
+	return c.err
 }

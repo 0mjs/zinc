@@ -111,3 +111,66 @@ func TestDefaultRateLimiter(t *testing.T) {
 		t.Fatalf("Expected status code %d but got %d", http.StatusOK, resp.Code)
 	}
 }
+
+func TestDefaultRateLimiterLimitReachedHandler(t *testing.T) {
+	app := zinc.New()
+	app.Use(RateLimiter())
+	app.Get("/default", func(c *zinc.Context) error {
+		return c.Send("OK")
+	})
+
+	var limited *httptest.ResponseRecorder
+	for i := 0; i < 20; i++ {
+		req := httptest.NewRequest("GET", "/default", nil)
+		resp := httptest.NewRecorder()
+		app.ServeHTTP(resp, req)
+		if resp.Code == http.StatusTooManyRequests {
+			limited = resp
+			break
+		}
+	}
+	if limited == nil {
+		t.Fatal("expected at least one request to hit default rate limit")
+	}
+	if body := limited.Body.String(); body != "Rate limit exceeded" {
+		t.Fatalf("body=%q", body)
+	}
+}
+
+func TestRateLimiterCustomKeyGenerator(t *testing.T) {
+	app := zinc.New()
+	app.Use(RateLimiter(RateLimiterConfig{
+		Rate:     1,
+		Capacity: 1,
+		KeyGenerator: func(c *zinc.Context) string {
+			return c.GetHeader("X-Key")
+		},
+	}))
+	app.Get("/keyed", func(c *zinc.Context) error {
+		return c.Send("OK")
+	})
+
+	reqA1 := httptest.NewRequest("GET", "/keyed", nil)
+	reqA1.Header.Set("X-Key", "A")
+	resA1 := httptest.NewRecorder()
+	app.ServeHTTP(resA1, reqA1)
+	if resA1.Code != http.StatusOK {
+		t.Fatalf("status=%d", resA1.Code)
+	}
+
+	reqA2 := httptest.NewRequest("GET", "/keyed", nil)
+	reqA2.Header.Set("X-Key", "A")
+	resA2 := httptest.NewRecorder()
+	app.ServeHTTP(resA2, reqA2)
+	if resA2.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d", resA2.Code)
+	}
+
+	reqB := httptest.NewRequest("GET", "/keyed", nil)
+	reqB.Header.Set("X-Key", "B")
+	resB := httptest.NewRecorder()
+	app.ServeHTTP(resB, reqB)
+	if resB.Code != http.StatusOK {
+		t.Fatalf("status=%d", resB.Code)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 type rendererStub struct{}
@@ -159,4 +161,304 @@ func TestDirectResponseErrors(t *testing.T) {
 	if err := ctx.String("twice"); !errors.Is(err, ErrResponseAlreadySent) {
 		t.Fatalf("err=%v", err)
 	}
+}
+
+func TestResponseInternalHelpers(t *testing.T) {
+	if bodyAllowed(http.MethodGet, http.StatusContinue) {
+		t.Fatal("1xx status must not allow response body")
+	}
+	if bodyAllowed(http.MethodHead, http.StatusOK) {
+		t.Fatal("HEAD must not allow response body")
+	}
+	if bodyAllowed(http.MethodGet, http.StatusNoContent) {
+		t.Fatal("204 must not allow response body")
+	}
+	if !bodyAllowed(http.MethodGet, http.StatusOK) {
+		t.Fatal("200 GET should allow response body")
+	}
+
+	var c Context
+	if got := c.responseStatus(); got != http.StatusOK {
+		t.Fatalf("status=%d", got)
+	}
+	c.status = http.StatusAccepted
+	if got := c.responseStatus(); got != http.StatusAccepted {
+		t.Fatalf("status=%d", got)
+	}
+
+	ctx, rec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctx.release()
+	ctx.Type("")
+	if got := rec.Header().Get(HeaderContentType); got != "" {
+		t.Fatalf("content type=%q", got)
+	}
+}
+
+func TestWriteJSONNilAndXMLNil(t *testing.T) {
+	jsonCtx, jsonRec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer jsonCtx.release()
+	mustDo(t, jsonCtx.writeJSON(nil, ""))
+	if jsonRec.Body.String() != "null" {
+		t.Fatalf("json body=%q", jsonRec.Body.String())
+	}
+
+	xmlCtx, xmlRec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer xmlCtx.release()
+	mustDo(t, xmlCtx.XML(nil))
+	if xmlRec.Body.String() != "null" {
+		t.Fatalf("xml body=%q", xmlRec.Body.String())
+	}
+}
+
+func TestRedirectAndRenderErrorBranches(t *testing.T) {
+	ctx, rec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctx.release()
+	mustDo(t, ctx.Redirect(0, "/next"))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if rec.Header().Get(HeaderLocation) != "/next" {
+		t.Fatalf("location=%q", rec.Header().Get(HeaderLocation))
+	}
+	if err := ctx.Redirect(http.StatusTemporaryRedirect, "/again"); !errors.Is(err, ErrResponseAlreadySent) {
+		t.Fatalf("err=%v", err)
+	}
+
+	noAppCtx := &Context{}
+	if err := noAppCtx.Render("home", nil); err == nil || !strings.Contains(err.Error(), "renderer is not configured") {
+		t.Fatalf("err=%v", err)
+	}
+
+	noRendererCtx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer noRendererCtx.release()
+	noRendererCtx.app = New()
+	if err := noRendererCtx.Render("home", nil); err == nil || !strings.Contains(err.Error(), "renderer is not configured") {
+		t.Fatalf("err=%v", err)
+	}
+
+	renderErrCtx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer renderErrCtx.release()
+	renderErrCtx.app = NewWithConfig(Config{
+		Renderer: rendererErrorStub{err: errors.New("render failed")},
+	})
+	if err := renderErrCtx.Render("home", nil); err == nil || !strings.Contains(err.Error(), "render failed") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestWriteResponseAndPrepareResponseBranches(t *testing.T) {
+	ctx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctx.release()
+	ctx.written = true
+	if err := ctx.writeResponse("", nil); !errors.Is(err, ErrResponseAlreadySent) {
+		t.Fatalf("err=%v", err)
+	}
+
+	noBodyCtx, noBodyRec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer noBodyCtx.release()
+	noBodyCtx.Status(http.StatusNoContent)
+	called := false
+	mustDo(t, noBodyCtx.writeResponse("text/plain", func() error {
+		called = true
+		return nil
+	}))
+	if called {
+		t.Fatal("writeBody should not run for 204 responses")
+	}
+	if noBodyRec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", noBodyRec.Code)
+	}
+
+	headCtx, headRec := newRecorderContext(t, httptest.NewRequest(http.MethodHead, "/", nil))
+	defer headCtx.release()
+	mustDo(t, headCtx.writeResponse("text/plain", func() error {
+		t.Fatal("writeBody should not run for HEAD")
+		return nil
+	}))
+	if headRec.Body.Len() != 0 {
+		t.Fatalf("head body=%q", headRec.Body.String())
+	}
+
+	prepareErrCtx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer prepareErrCtx.release()
+	prepareErrCtx.written = true
+	if _, _, err := prepareErrCtx.prepareResponse(jsonType); !errors.Is(err, ErrResponseAlreadySent) {
+		t.Fatalf("err=%v", err)
+	}
+
+	prepareHeaderCtx, prepareHeaderRec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer prepareHeaderCtx.release()
+	prepareHeaderRec.Header().Set(contentType, "application/custom")
+	_, writeBody, err := prepareHeaderCtx.prepareResponse(jsonType)
+	mustDo(t, err)
+	if !writeBody {
+		t.Fatal("writeBody should be true for 200 GET")
+	}
+	if got := prepareHeaderRec.Header().Get(contentType); got != "application/custom" {
+		t.Fatalf("content type=%q", got)
+	}
+}
+
+func TestServeFileErrorAndFallbackBranches(t *testing.T) {
+	ctxWritten, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxWritten.release()
+	ctxWritten.written = true
+	if err := ctxWritten.serveFile("anything", fstest.MapFS{}, ""); !errors.Is(err, ErrResponseAlreadySent) {
+		t.Fatalf("err=%v", err)
+	}
+
+	ctxOpenErr, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxOpenErr.release()
+	if err := ctxOpenErr.serveFile("missing.txt", fstest.MapFS{}, ""); err == nil {
+		t.Fatal("expected open error")
+	}
+
+	ctxStatErr, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxStatErr.release()
+	err := ctxStatErr.serveFile("x", openFS{open: func(string) (fs.File, error) {
+		return &statErrFile{}, nil
+	}}, "")
+	if err == nil || !strings.Contains(err.Error(), "stat failed") {
+		t.Fatalf("err=%v", err)
+	}
+
+	ctxDir, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxDir.release()
+	err = ctxDir.serveFile("x", openFS{open: func(string) (fs.File, error) {
+		return &memoryFile{
+			info: fileInfoStub{name: "x", dir: true},
+		}, nil
+	}}, "")
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("err=%v", err)
+	}
+
+	ctxReadErr, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxReadErr.release()
+	err = ctxReadErr.serveFile("x", openFS{open: func(string) (fs.File, error) {
+		return &readErrFile{
+			info: fileInfoStub{name: "x.txt"},
+			err:  errors.New("read failed"),
+		}, nil
+	}}, "")
+	if err == nil || !strings.Contains(err.Error(), "read failed") {
+		t.Fatalf("err=%v", err)
+	}
+
+	ctxFallback, recFallback := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctxFallback.release()
+	mustDo(t, ctxFallback.serveFile("x", openFS{open: func(string) (fs.File, error) {
+		return &memoryFile{
+			data: []byte("fallback-content"),
+			info: fileInfoStub{name: "x.txt"},
+		}, nil
+	}}, ""))
+	if body := recFallback.Body.String(); body != "fallback-content" {
+		t.Fatalf("body=%q", body)
+	}
+}
+
+type rendererErrorStub struct {
+	err error
+}
+
+func (r rendererErrorStub) Render(io.Writer, string, any, *Context) error {
+	return r.err
+}
+
+type openFS struct {
+	open func(name string) (fs.File, error)
+}
+
+func (o openFS) Open(name string) (fs.File, error) {
+	return o.open(name)
+}
+
+type statErrFile struct{}
+
+func (f *statErrFile) Stat() (fs.FileInfo, error) {
+	return nil, errors.New("stat failed")
+}
+
+func (f *statErrFile) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (f *statErrFile) Close() error {
+	return nil
+}
+
+type readErrFile struct {
+	info fs.FileInfo
+	err  error
+}
+
+func (f *readErrFile) Stat() (fs.FileInfo, error) {
+	return f.info, nil
+}
+
+func (f *readErrFile) Read([]byte) (int, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
+	return 0, io.EOF
+}
+
+func (f *readErrFile) Close() error {
+	return nil
+}
+
+type memoryFile struct {
+	data []byte
+	pos  int
+	info fs.FileInfo
+}
+
+func (f *memoryFile) Stat() (fs.FileInfo, error) {
+	return f.info, nil
+}
+
+func (f *memoryFile) Read(p []byte) (int, error) {
+	if f.pos >= len(f.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, f.data[f.pos:])
+	f.pos += n
+	return n, nil
+}
+
+func (f *memoryFile) Close() error {
+	return nil
+}
+
+type fileInfoStub struct {
+	name string
+	dir  bool
+}
+
+func (fi fileInfoStub) Name() string {
+	return fi.name
+}
+
+func (fi fileInfoStub) Size() int64 {
+	return 0
+}
+
+func (fi fileInfoStub) Mode() fs.FileMode {
+	if fi.dir {
+		return fs.ModeDir | 0o755
+	}
+	return 0
+}
+
+func (fi fileInfoStub) ModTime() time.Time {
+	return time.Unix(0, 0)
+}
+
+func (fi fileInfoStub) IsDir() bool {
+	return fi.dir
+}
+
+func (fi fileInfoStub) Sys() any {
+	return nil
 }

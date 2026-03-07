@@ -233,3 +233,51 @@ func TestFileAndStaticWrapperCoverage(t *testing.T) {
 		t.Fatalf("filefs body=%q", fileFSResp.Body.String())
 	}
 }
+
+func TestGroupEdgeCoverage(t *testing.T) {
+	app := New()
+	root := NewGroup(app, "/")
+	if root.prefix != "" {
+		t.Fatalf("root prefix=%q", root.prefix)
+	}
+
+	routeCalled := false
+	sub := root.Route("/edge", func(g *Group) {
+		routeCalled = true
+		mustDo(t, g.Get("/ok", "ok"))
+	})
+	if !routeCalled || sub == nil {
+		t.Fatal("route callback should run and return subgroup")
+	}
+	resp := performRequest(t, app, MethodGet, "/edge/ok", nil, nil)
+	if resp.Body.String() != "ok" {
+		t.Fatalf("body=%q", resp.Body.String())
+	}
+
+	if err := root.Get("/bad", 123); err == nil {
+		t.Fatal("expected invalid group GET shorthand error")
+	}
+	if err := root.Match([]string{MethodGet}, "/missing-handler"); err == nil {
+		t.Fatal("expected Match error when handlers are missing")
+	}
+}
+
+func TestJoinPathsEdgeCases(t *testing.T) {
+	cases := []struct {
+		a    string
+		b    string
+		want string
+	}{
+		{"", "", "/"},
+		{"/api", "", "/api"},
+		{"", "users", "/users"},
+		{"/", "users", "/users"},
+		{"api", "../x", "/x"}, // path.Join may drop the leading slash; helper should restore it.
+		{"api", "..", "/"},
+	}
+	for _, tc := range cases {
+		if got := joinPaths(tc.a, tc.b); got != tc.want {
+			t.Fatalf("joinPaths(%q, %q)=%q want %q", tc.a, tc.b, got, tc.want)
+		}
+	}
+}

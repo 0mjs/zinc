@@ -145,11 +145,51 @@ app := zinc.NewWithConfig(zinc.Config{
 
 `Config` also lets you plug in a custom `Binder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
 
+## Quality Snapshot
+
+Latest local coverage run (`go test -count=1 ./... -coverprofile=coverage.out`):
+
+```text
+Overall                              [###################.] 96.00%
+Core (github.com/0mjs/zinc)          [###################.] 95.5%
+Middleware (github.com/0mjs/zinc/middleware) [####################] 98.9%
+CORS (github.com/0mjs/zinc/middleware/cors)  [####################] 98.4%
+```
+
+## Benchmark Snapshot (vs Gin, Echo, Chi)
+
+Source: [`BENCKMARKS.md`](./BENCKMARKS.md) (`ns/op`, lower is better, Apple M1 Pro snapshot).
+
+Headline results:
+
+- Zinc wins `3/8` benchmarks (`HelloWorld`, `StaticRoute`, `JSONResponse`).
+- Gin wins `5/8` benchmarks; Zinc is runner-up in all five.
+- Zinc is faster than Echo and Chi in all 8 listed benchmarks.
+
+Wins chart:
+
+```text
+Gin   [#####...] 5
+Zinc  [###.....] 3
+Echo  [........] 0
+Chi   [........] 0
+```
+
+Selected benchmark table:
+
+| Benchmark | Zinc | Gin | Echo | Chi | Zinc vs Gin |
+|---|---:|---:|---:|---:|---:|
+| `HelloWorld` | `80.6` | `83.9` | `119.1` | `177.2` | `1.04x faster` |
+| `StaticRoute` | `82.4` | `85.6` | `121.6` | `174.7` | `1.04x faster` |
+| `RouterParam` | `115.6` | `91.7` | `134.0` | `315.8` | `1.26x slower` |
+| `JSONResponse` | `336.9` | `377.4` | `414.2` | `492.7` | `1.12x faster` |
+| `MiddlewareChain` | `385.6` | `373.9` | `512.8` | `848.4` | `1.03x slower` |
+
 ## Documentation
 
 - [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
 - [Docs app source](./docs)
-- [Benchmarks](./BENCHMARKS.md)
+- [Benchmarks](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md)
 
 ## Optional Middleware
 

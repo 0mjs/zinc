@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/0mjs/zinc"
 )
@@ -187,4 +188,23 @@ func TestCORS(t *testing.T) {
 			t.Errorf("Response body = %v, want %v", res.Body.String(), "OK")
 		}
 	})
+}
+
+func TestOptionHelpersMutateConfig(t *testing.T) {
+	cfg := DefaultConfig()
+
+	WithAllowMethods(http.MethodPatch, http.MethodOptions)(&cfg)
+	if len(cfg.AllowMethods) != 2 || cfg.AllowMethods[0] != http.MethodPatch || cfg.AllowMethods[1] != http.MethodOptions {
+		t.Fatalf("allow methods=%v", cfg.AllowMethods)
+	}
+
+	WithAllowHeaders("X-Trace", "X-Auth")(&cfg)
+	if len(cfg.AllowHeaders) != 2 || cfg.AllowHeaders[0] != "X-Trace" || cfg.AllowHeaders[1] != "X-Auth" {
+		t.Fatalf("allow headers=%v", cfg.AllowHeaders)
+	}
+
+	WithMaxAge(90 * time.Second)(&cfg)
+	if cfg.MaxAge != 90 {
+		t.Fatalf("max age=%d", cfg.MaxAge)
+	}
 }

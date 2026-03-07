@@ -24,6 +24,24 @@ func TestMiscHelpersCoverage(t *testing.T) {
 	if got := storedPrefix("/API", false); got != "/api" {
 		t.Fatalf("stored prefix=%q", got)
 	}
+	if got := storedPrefix("/API", true); got != "/API" {
+		t.Fatalf("stored prefix=%q", got)
+	}
+	if got := normalizeRegisteredPrefix("//"); got != "/" {
+		t.Fatalf("prefix=%q", got)
+	}
+	if !pathHasPrefix("/anything", "/", true) {
+		t.Fatal("root prefix should always match")
+	}
+	if !pathHasPrefix("/api", "/api", true) {
+		t.Fatal("exact path prefix should match")
+	}
+	if !pathHasPrefix("/api/users", "/api/", true) {
+		t.Fatal("trailing slash prefix should match")
+	}
+	if pathHasPrefix("/apix", "/api", false) {
+		t.Fatal("segment boundary should be required")
+	}
 
 	if clone := cloneURL(nil); clone == nil {
 		t.Fatal("cloneURL(nil) should return empty URL")
