@@ -1,3 +1,4 @@
+_docs/*
 .air.toml
 .DS_Store
 tmp/*

@@ -25,18 +25,6 @@ func performRequest(t *testing.T, app *App, method, target string, body io.Reade
 	return resp
 }
 
-func performRequestWithRemoteAddr(t *testing.T, app *App, method, target, remoteAddr string, body io.Reader, headers map[string]string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(method, target, body)
-	req.RemoteAddr = remoteAddr
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-	resp := httptest.NewRecorder()
-	app.ServeHTTP(resp, req)
-	return resp
-}
-
 func newRecorderContext(t *testing.T, req *http.Request) (*Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	resp := httptest.NewRecorder()

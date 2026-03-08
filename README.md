@@ -212,6 +212,20 @@ Selected benchmark table:
 Zinc ships focused middleware packages outside the core, such as:
 
 - `github.com/0mjs/zinc/middleware/cors`
+- `github.com/0mjs/zinc/middleware/jwt`
+
+```go
+import (
+	zincjwt "github.com/0mjs/zinc/middleware/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
+)
+
+app.Use(zincjwt.New(zincjwt.Config{
+	KeyFunc: func(*zinc.Context, *jwt.Token) (any, error) {
+		return []byte("secret"), nil
+	},
+}))
+```
 
 ## License
 

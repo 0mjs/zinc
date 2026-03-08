@@ -259,16 +259,16 @@ func TestBindDataPopulatesSupportedFieldKinds(t *testing.T) {
 	}
 
 	input := map[string][]string{
-		"name":       []string{"zinc"},
-		"enabled":    []string{"true"},
-		"count":      []string{"7"},
-		"total":      []string{"12"},
-		"ratio":      []string{"2.5"},
-		"labels":     []string{"a", "b"},
-		"ids":        []string{"1", "2"},
-		"optional":   []string{"opt"},
-		"defaultval": []string{"default"},
-		"ignored":    []string{"should-not-apply"},
+		"name":       {"zinc"},
+		"enabled":    {"true"},
+		"count":      {"7"},
+		"total":      {"12"},
+		"ratio":      {"2.5"},
+		"labels":     {"a", "b"},
+		"ids":        {"1", "2"},
+		"optional":   {"opt"},
+		"defaultval": {"default"},
+		"ignored":    {"should-not-apply"},
 	}
 
 	var got payload
@@ -303,7 +303,7 @@ func TestBindDataHeaderLookupIsCaseInsensitive(t *testing.T) {
 	var got struct {
 		Token string `header:"X-Token"`
 	}
-	if err := bindData(&got, map[string][]string{"x-token": []string{"abc"}}, "header"); err != nil {
+	if err := bindData(&got, map[string][]string{"x-token": {"abc"}}, "header"); err != nil {
 		t.Fatalf("bindData err=%v", err)
 	}
 	if got.Token != "abc" {
@@ -333,7 +333,7 @@ func TestBindDataWrapsFieldConversionErrors(t *testing.T) {
 	var got struct {
 		Count int `query:"count"`
 	}
-	err := bindData(&got, map[string][]string{"count": []string{"not-a-number"}}, "query")
+	err := bindData(&got, map[string][]string{"count": {"not-a-number"}}, "query")
 	if err == nil || !strings.Contains(err.Error(), "bind Count") {
 		t.Fatalf("err=%v", err)
 	}
@@ -341,7 +341,7 @@ func TestBindDataWrapsFieldConversionErrors(t *testing.T) {
 	var unsupported struct {
 		Flags []bool `query:"flags"`
 	}
-	err = bindData(&unsupported, map[string][]string{"flags": []string{"true"}}, "query")
+	err = bindData(&unsupported, map[string][]string{"flags": {"true"}}, "query")
 	if err == nil || !strings.Contains(err.Error(), "unsupported slice element type") {
 		t.Fatalf("err=%v", err)
 	}
