@@ -24,6 +24,20 @@ type RouteInfo struct {
 	Handler string
 }
 
+type routeMeta struct {
+	method  string
+	path    string
+	handler HandlerFunc
+}
+
+func (m routeMeta) export() RouteInfo {
+	return RouteInfo{
+		Method:  m.method,
+		Path:    m.path,
+		Handler: handlerName(m.handler),
+	}
+}
+
 type prefixMiddleware struct {
 	prefix   string
 	handlers []HandlerFunc
@@ -33,7 +47,7 @@ type mountedHandler struct {
 	prefix     string
 	prefixPath string
 	handler    http.Handler
-	info       RouteInfo
+	info       routeMeta
 }
 
 type App struct {
@@ -211,11 +225,7 @@ func (a *App) Mount(prefix string, h http.Handler) {
 		prefix:     storedPrefix(prefix, a.config.CaseSensitive),
 		prefixPath: prefix,
 		handler:    h,
-		info: RouteInfo{
-			Method:  methodUse,
-			Path:    prefix,
-			Handler: handlerName(Wrap(h)),
-		},
+		info:       routeMeta{method: methodUse, path: prefix, handler: Wrap(h)},
 	}
 	a.mounts = append(a.mounts, entry)
 	sort.SliceStable(a.mounts, func(i, j int) bool {
@@ -239,7 +249,7 @@ func (a *App) Routes() []RouteInfo {
 	out := make([]RouteInfo, 0, len(routes)+len(a.mounts))
 	out = append(out, routes...)
 	for _, mount := range a.mounts {
-		out = append(out, mount.info)
+		out = append(out, mount.info.export())
 	}
 	return out
 }

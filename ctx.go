@@ -26,24 +26,27 @@ type Context struct {
 	store       map[any]any
 	status      int
 	app         *App
-	routeInfo   RouteInfo
+	routeInfo   routeMeta
 	lastErr     error
 	body        []byte
 	bodyRead    bool
 	bodyErr     error
-	paramKeys   [8]string
-	paramVals   [8]string
+	paramPath   string
 	paramCount  int
 }
 
 type param struct {
 	key   string
 	value string
+	start int32
+	end   int32
 }
 
 type params [8]param
 
 var emptyParam param
+
+const directParamStart int32 = -1
 
 var contextPool = sync.Pool{
 	New: func() any {
@@ -70,15 +73,14 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.index = -1
 	c.status = http.StatusOK
 	c.app = nil
-	c.routeInfo = RouteInfo{}
+	c.routeInfo = routeMeta{}
 	c.lastErr = nil
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
+	c.paramPath = ""
 	for i := 0; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
-		c.paramKeys[i] = ""
-		c.paramVals[i] = ""
 	}
 	c.paramCount = 0
 	if len(c.store) > 0 {
@@ -99,6 +101,7 @@ func (c *Context) release() {
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
+	c.paramPath = ""
 	contextPool.Put(c)
 }
 
@@ -205,8 +208,8 @@ func (c *Context) Status(code int) *Context {
 
 func (c *Context) Param(name string) string {
 	for i := 0; i < c.paramCount; i++ {
-		if c.paramKeys[i] == name {
-			return c.paramVals[i]
+		if c.PathParams[i].key == name {
+			return c.pathParamValueAt(i)
 		}
 	}
 	return ""
@@ -455,7 +458,7 @@ func (c *Context) RequestID() string {
 }
 
 func (c *Context) FullPath() string {
-	return c.routeInfo.Path
+	return c.routeInfo.path
 }
 
 func (c *Context) LastError() error {
@@ -473,20 +476,18 @@ func (c *Context) Error(err error) {
 }
 
 func (c *Context) Route() RouteInfo {
-	return c.routeInfo
+	return c.routeInfo.export()
 }
 
-func (c *Context) setRoute(info RouteInfo) {
+func (c *Context) setRoute(info routeMeta) {
 	c.routeInfo = info
 }
 
 func (c *Context) setParam(key, value string) {
 	for i := range c.PathParams {
 		if c.PathParams[i].key == "" {
-			c.PathParams[i] = param{key: key, value: value}
-			if c.paramCount < len(c.paramKeys) {
-				c.paramKeys[c.paramCount] = key
-				c.paramVals[c.paramCount] = value
+			c.PathParams[i] = param{key: key, value: value, start: directParamStart}
+			if c.paramCount < len(c.PathParams) {
 				c.paramCount++
 			}
 			return
@@ -494,21 +495,27 @@ func (c *Context) setParam(key, value string) {
 	}
 }
 
-func (c *Context) applyRouteParams(route *radixRoute, values [8]string) {
+func (c *Context) applyRouteParams(path string, route *radixRoute, values [8]paramRange) {
 	count := route.paramCount
 	if count > len(c.PathParams) {
 		count = len(c.PathParams)
 	}
+	if c.request != nil && c.request.URL != nil && c.request.URL.Path == path {
+		c.paramPath = ""
+	} else {
+		c.paramPath = path
+	}
 	previousCount := c.paramCount
 	for i := 0; i < count; i++ {
-		c.PathParams[i] = param{key: route.paramNames[i], value: values[i]}
-		c.paramKeys[i] = route.paramNames[i]
-		c.paramVals[i] = values[i]
+		valueRange := values[i]
+		c.PathParams[i] = param{
+			key:   route.paramNames[i],
+			start: int32(valueRange.start),
+			end:   int32(valueRange.end),
+		}
 	}
 	for i := count; i < previousCount; i++ {
 		c.PathParams[i] = emptyParam
-		c.paramKeys[i] = ""
-		c.paramVals[i] = ""
 	}
 	c.paramCount = count
 }
@@ -522,10 +529,25 @@ func (c *Context) truncateParams(count int) {
 	}
 	for i := count; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
-		c.paramKeys[i] = ""
-		c.paramVals[i] = ""
 	}
 	c.paramCount = count
+}
+
+func (c *Context) pathParamValueAt(i int) string {
+	p := c.PathParams[i]
+	if p.start == directParamStart {
+		return p.value
+	}
+	path := c.paramPath
+	if path == "" && c.request != nil && c.request.URL != nil {
+		path = c.request.URL.Path
+	}
+	start := int(p.start)
+	end := int(p.end)
+	if start < 0 || end < start || end > len(path) {
+		return ""
+	}
+	return path[start:end]
 }
 
 func (c *Context) trustProxy() bool {

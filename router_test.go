@@ -180,17 +180,17 @@ func TestRadixNodeBranches(t *testing.T) {
 	}
 
 	static := &radixNode{kind: radixStatic, prefix: "abc"}
-	if matched := static.lookup("ab", &[8]string{}, 0); matched != nil {
+	if matched := static.lookup("ab", 0, &[8]paramRange{}, 0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}
 
 	param := &radixNode{kind: radixParam}
-	if matched := param.lookup("/x", &[8]string{}, 0); matched != nil {
+	if matched := param.lookup("/x", 0, &[8]paramRange{}, 0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}
 
 	mismatch := &radixNode{route: &radixRoute{path: "/users/:id", paramCount: 1}}
-	if matched := mismatch.matchRoute(&[8]string{}, 0); matched != nil {
+	if matched := mismatch.matchRoute(0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}
 }

@@ -875,7 +875,10 @@ func TestContextParamMutationHelpers(t *testing.T) {
 		paramCount: 2,
 		paramNames: [8]string{"x", "y"},
 	}
-	ctx.applyRouteParams(route, [8]string{"10", "20"})
+	ctx.applyRouteParams("/users/10/posts/20", route, [8]paramRange{
+		{start: 7, end: 9},
+		{start: 16, end: 18},
+	})
 	if ctx.paramCount != 2 {
 		t.Fatalf("param count=%d", ctx.paramCount)
 	}

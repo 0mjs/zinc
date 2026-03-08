@@ -65,13 +65,13 @@ func (a *App) dispatch(ctx *Context) error {
 	method := ctx.Method()
 	path := ctx.Path()
 
-	handler := a.router.findInto(method, path, ctx)
-	if handler == nil && method == MethodHead && a.config.AutoHead {
+	handled, err := a.router.dispatchInto(method, path, ctx)
+	if !handled && method == MethodHead && a.config.AutoHead {
 		ctx.truncateParams(0)
-		handler = a.router.findInto(MethodGet, path, ctx)
+		handled, err = a.router.dispatchInto(MethodGet, path, ctx)
 	}
-	if handler != nil {
-		return handler(ctx)
+	if handled {
+		return err
 	}
 
 	if mount := a.matchMount(path); mount != nil {

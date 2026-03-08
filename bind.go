@@ -42,7 +42,7 @@ type defaultBinder struct {
 func (b defaultBinder) Bind(c *Context, v any) error {
 	pathValues := make(map[string][]string, c.paramCount)
 	for i := 0; i < c.paramCount; i++ {
-		pathValues[c.paramKeys[i]] = []string{c.paramVals[i]}
+		pathValues[c.PathParams[i].key] = []string{c.pathParamValueAt(i)}
 	}
 	if err := bindData(v, pathValues, "path"); err != nil {
 		return err
@@ -143,7 +143,7 @@ func (b defaultBinder) BindHeader(c *Context, v any) error {
 func (b defaultBinder) BindPath(c *Context, v any) error {
 	values := make(map[string][]string, c.paramCount)
 	for i := 0; i < c.paramCount; i++ {
-		values[c.paramKeys[i]] = []string{c.paramVals[i]}
+		values[c.PathParams[i].key] = []string{c.pathParamValueAt(i)}
 	}
 	if err := bindData(v, values, "path"); err != nil {
 		return err
