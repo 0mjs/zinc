@@ -1,9 +1,11 @@
 # zinc
 
 ![Zinc](https://img.shields.io/badge/Zinc-%20Go%20API%20Framework-silver)
-![Version](https://img.shields.io/badge/version-0.0.7-red)
+![Version](https://img.shields.io/badge/version-0.0.78-red)
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![Coverage](https://img.shields.io/badge/coverage-94.39%25-brightgreen)](#quality-snapshot)
+[![Go%20Report%20Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
 
 Zinc is an API framework for Go built on top of `net/http`. It keeps the server and transport model familiar,
 while adding practical routing, middleware, binding, response helpers, and explicit lifecycle APIs.
@@ -166,10 +168,11 @@ app.Get("/dashboard", func(c *zinc.Context) error {
 Latest local coverage run (`go test -count=1 ./... -coverprofile=coverage.out`):
 
 ```text
-Overall                              [###################.] 96.00%
-Core (github.com/0mjs/zinc)          [###################.] 95.5%
+Overall                                      [###################.] 94.39%
+Core (github.com/0mjs/zinc)                  [###################.] 95.3%
 Middleware (github.com/0mjs/zinc/middleware) [####################] 98.9%
 CORS (github.com/0mjs/zinc/middleware/cors)  [####################] 98.4%
+JWT (github.com/0mjs/zinc/middleware/jwt)    [################....] 79.6%
 ```
 
 ## Benchmark Snapshot (vs Gin, Echo, Chi)
