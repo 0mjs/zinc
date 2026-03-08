@@ -173,40 +173,53 @@ Core (github.com/0mjs/zinc)                  [###################.] 95.1%
 Middleware (github.com/0mjs/zinc/middleware) [#################...] 83.9%
 ```
 
-## Benchmark Snapshot (vs Gin, Echo, Chi)
+## Benchmark Snapshot
 
-Source: [`BENCKMARKS.md`](./BENCKMARKS.md) (`ns/op`, lower is better, Apple M1 Pro snapshot).
+Benchmark suites now live in [`./benchmarks`](./benchmarks), so Zinc's main module does not need Gin, Echo, Chi, or HttpRouter as direct dependencies.
 
-Headline results:
+Latest local snapshot (`Apple M1 Pro`, `darwin/arm64`, lower is better for `ns/op`):
 
-- Zinc wins `3/8` benchmarks (`HelloWorld`, `StaticRoute`, `JSONResponse`).
-- Gin wins `5/8` benchmarks; Zinc is runner-up in all five.
-- Zinc is faster than Echo and Chi in all 8 listed benchmarks.
+- Zinc wins `9/11` request-path rows in the broader in-process suite against `Gin`, `Echo`, and `Chi`.
+- Zinc is still `0 allocs/op` on the main routing hot paths.
+- Static dispatch is a real strength: Zinc leads the scenario static sweeps and large static route-set benchmarks.
+- Route registration memory is no longer a major outlier: Zinc is now in the same class as Gin instead of multiple times larger.
+- Focused loopback RPS is competitive, but Zinc is not consistently first there.
 
-Wins chart:
+High-signal examples:
 
-```text
-Gin   [#####...] 5
-Zinc  [###.....] 3
-Echo  [........] 0
-Chi   [........] 0
-```
+| Benchmark | Zinc | Gin | Echo | Chi | Read |
+|---|---:|---:|---:|---:|---|
+| `Static157 All` | `71.8 ns` | `133.7 ns` | `173.9 ns` | `274.1 ns` | Zinc win |
+| `GitHubAPI203 All` | `162.1 ns` | `156.6 ns` | `202.8 ns` | `365.1 ns` | Near Gin, ahead of Echo/Chi |
+| `HelloWorld` | `67.1 ns` | `93.4 ns` | `131.0 ns` | `172.9 ns` | Zinc win |
+| `RouterParam` | `87.5 ns` | `97.9 ns` | `131.4 ns` | `331.5 ns` | Zinc win |
+| `LargeRouteSetStatic` | `66.1 ns` | `100.8 ns` | `146.8 ns` | `208.9 ns` | Zinc win |
+| `LargeRouteSetParam` | `108.1 ns` | `107.2 ns` | `154.1 ns` | `381.4 ns` | Effectively tied with Gin |
 
-Selected benchmark table:
+Build-time highlights:
 
-| Benchmark | Zinc | Gin | Echo | Chi | Zinc vs Gin |
-|---|---:|---:|---:|---:|---:|
-| `HelloWorld` | `80.6` | `83.9` | `119.1` | `177.2` | `1.04x faster` |
-| `StaticRoute` | `82.4` | `85.6` | `121.6` | `174.7` | `1.04x faster` |
-| `RouterParam` | `115.6` | `91.7` | `134.0` | `315.8` | `1.26x slower` |
-| `JSONResponse` | `336.9` | `377.4` | `414.2` | `492.7` | `1.12x faster` |
-| `MiddlewareChain` | `385.6` | `373.9` | `512.8` | `848.4` | `1.03x slower` |
+| Registration Benchmark | Zinc | Gin | Echo | Chi |
+|---|---:|---:|---:|---:|
+| `RouteRegistrationStatic` | `68.4 µs / 62.5 KB` | `76.7 µs / 54.3 KB` | `401.4 µs / 185.9 KB` | `113.3 µs / 123.6 KB` |
+| `RouteRegistrationParam` | `49.0 µs / 67.8 KB` | `134.6 µs / 47.9 KB` | `157.5 µs / 155.7 KB` | `73.0 µs / 92.1 KB` |
+
+Focused loopback RPS average (`count=3`):
+
+| Framework | Req/s |
+|---|---:|
+| `Chi` | `88.9k` |
+| `Gin` | `88.5k` |
+| `Zinc` | `82.6k` |
+| `Echo` | `80.5k` |
+
+The short version: Zinc already has a strong benchmark story on real request dispatch, especially for static and mixed route sets. The remaining obvious runtime gap is dedicated param-heavy paths against Gin, not broad request-path throughput.
 
 ## Documentation
 
 - [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
 - [Docs app source](./docs)
-- [Benchmarks](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md)
+- [Benchmark module](./benchmarks)
+- [Benchmark summary](_docs/BENCHMARK_SUMMARY.md)
 
 ## Optional Middleware
 
