@@ -1,4 +1,4 @@
-package zinc
+package benchmarks
 
 import (
 	"context"
@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/0mjs/zinc"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/julienschmidt/httprouter"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func TestMain(m *testing.M) {
@@ -191,7 +192,7 @@ func chiMiddleware(key middlewareContextKey) func(http.Handler) http.Handler {
 
 func echoMiddleware(key string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			c.Set(key, true)
 			return next(c)
 		}
@@ -274,7 +275,7 @@ func buildChiHelloHandler() http.Handler {
 
 func buildEchoHelloHandler() http.Handler {
 	e := echo.New()
-	e.GET("/", func(c echo.Context) error {
+	e.GET("/", func(c *echo.Context) error {
 		return c.String(http.StatusOK, benchmarkHelloResponse)
 	})
 	return e
@@ -322,7 +323,7 @@ func buildChiStaticHandler() http.Handler {
 
 func buildEchoStaticHandler() http.Handler {
 	e := echo.New()
-	e.GET("/hello", func(c echo.Context) error {
+	e.GET("/hello", func(c *echo.Context) error {
 		return c.String(http.StatusOK, benchmarkHelloResponse)
 	})
 	return e
@@ -373,7 +374,7 @@ func buildChiParamHandler() http.Handler {
 
 func buildEchoParamHandler() http.Handler {
 	e := echo.New()
-	e.GET("/hello/:name", func(c echo.Context) error {
+	e.GET("/hello/:name", func(c *echo.Context) error {
 		benchmarkSinkString = c.Param("name")
 		return c.String(http.StatusOK, benchmarkHelloResponse)
 	})
@@ -426,7 +427,7 @@ func buildChiJSONHandler() http.Handler {
 
 func buildEchoJSONHandler() http.Handler {
 	e := echo.New()
-	e.GET("/json", func(c echo.Context) error {
+	e.GET("/json", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, benchmarkJSONData)
 	})
 	return e
@@ -480,7 +481,7 @@ func buildChiQueryHandler() http.Handler {
 
 func buildEchoQueryHandler() http.Handler {
 	e := echo.New()
-	e.GET("/query", func(c echo.Context) error {
+	e.GET("/query", func(c *echo.Context) error {
 		benchmarkSinkBool = c.QueryParam("name") != "" && c.QueryParam("age") != "" && c.QueryParam("city") != ""
 		return c.String(http.StatusOK, benchmarkOKResponse)
 	})
@@ -576,7 +577,7 @@ func buildEchoMiddlewareHandler() http.Handler {
 		echoMiddleware("mw4"),
 		echoMiddleware("mw5"),
 	)
-	e.GET("/middleware", func(c echo.Context) error {
+	e.GET("/middleware", func(c *echo.Context) error {
 		benchmarkSinkBool = c.Get("mw1") != nil &&
 			c.Get("mw2") != nil &&
 			c.Get("mw3") != nil &&
@@ -655,7 +656,7 @@ func buildChiNotFoundHandler() http.Handler {
 
 func buildEchoNotFoundHandler() http.Handler {
 	e := echo.New()
-	e.GET("/found", func(c echo.Context) error {
+	e.GET("/found", func(c *echo.Context) error {
 		return c.String(http.StatusOK, benchmarkOKResponse)
 	})
 	return e
@@ -714,7 +715,7 @@ func buildEchoLargeStaticHandler() http.Handler {
 	e := echo.New()
 	for i := 0; i < largeStaticRouteCount; i++ {
 		path := largeStaticPath(i)
-		e.GET(path, func(c echo.Context) error {
+		e.GET(path, func(c *echo.Context) error {
 			return c.String(http.StatusOK, benchmarkOKResponse)
 		})
 	}
@@ -783,7 +784,7 @@ func buildEchoLargeParamHandler() http.Handler {
 	e := echo.New()
 	for i := 0; i < largeParamRouteCount; i++ {
 		path := largeParamPatternColon(i)
-		e.GET(path, func(c echo.Context) error {
+		e.GET(path, func(c *echo.Context) error {
 			benchmarkSinkString = c.Param("id")
 			return c.String(http.StatusOK, benchmarkOKResponse)
 		})
@@ -841,7 +842,7 @@ func buildChiRPSHandler() http.Handler {
 
 func buildEchoRPSHandler() http.Handler {
 	e := echo.New()
-	e.GET("/rps", func(c echo.Context) error {
+	e.GET("/rps", func(c *echo.Context) error {
 		return c.String(http.StatusOK, benchmarkOKResponse)
 	})
 	return e
@@ -1098,10 +1099,13 @@ func measureRPS(b *testing.B, url string, concurrency int, duration time.Duratio
 
 func TestRunBenchmarks(t *testing.T) {
 	t.Skip(`
-To run the comparison suite:
+From benchmarks/:
     go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
 
-To run the end-to-end throughput benchmark:
+To run the comparison suite from the repo root:
+    cd benchmarks && go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
+
+To run the end-to-end throughput benchmark from benchmarks/:
     go test -run=^$ -bench BenchmarkRequestsPerSecond
 
 Notes:

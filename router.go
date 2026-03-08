@@ -14,10 +14,8 @@ type RouteHandlerMap map[string]HandlerFunc
 type RouteMap map[string]map[string]*Route
 
 type Route struct {
-	handler HandlerFunc
-	method  string
-	path    string
-	info    routeMeta
+	handler   HandlerFunc
+	infoIndex uint32
 }
 
 type radixNodeKind uint8
@@ -30,11 +28,11 @@ const (
 )
 
 type radixRoute struct {
-	handler    HandlerFunc
-	path       string
-	paramNames [8]string
-	paramCount int
-	info       routeMeta
+	handler          HandlerFunc
+	extraParamNames  []string
+	inlineParamNames [2]string
+	infoIndex        uint32
+	paramCount       uint8
 }
 
 type radixNode struct {
@@ -52,9 +50,7 @@ type Router struct {
 	cache             *RouteCache
 	config            *Config
 	routes            RouteMap
-	staticFold        map[string]map[uint64][]staticFoldEntry
 	trees             map[string]*radixNode
-	pathMethods       map[string]uint16
 	routeInfos        []routeMeta
 	dynamicRouteCount int
 }
@@ -72,11 +68,6 @@ type routeCacheEntry struct {
 type paramRange struct {
 	start uint32
 	end   uint32
-}
-
-type staticFoldEntry struct {
-	path  string
-	route *Route
 }
 
 type RouteCache struct {
@@ -110,9 +101,7 @@ const routeCacheMinDynamicRoutes = 64
 
 func NewRouteCache(size int) *RouteCache {
 	return &RouteCache{
-		cache: make(map[routeCacheKey]routeCacheEntry, size),
-		size:  size,
-		keys:  make([]routeCacheKey, 0, size),
+		size: size,
 	}
 }
 
@@ -122,20 +111,6 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	}
 
 	path = r.normalizePath(path)
-	originalPath := path
-	lowerPath := path
-	if r.config != nil && !r.config.CaseSensitive {
-		lowerPath = strings.ToLower(path)
-	}
-	pathWithoutSlash := path
-	if len(path) > 1 && path[len(path)-1] == '/' {
-		pathWithoutSlash = path[:len(path)-1]
-	}
-	pathWithSlash := path
-	if len(path) > 0 && path[len(path)-1] != '/' {
-		pathWithSlash = path + "/"
-	}
-
 	paramNames, paramCount, isDynamic, err := collectRouteParams(path)
 	if err != nil {
 		return err
@@ -151,15 +126,8 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		}
 	}
 
-	info := routeMeta{method: method, path: path, handler: finalHandler}
-	r.routeInfos = append(r.routeInfos, info)
-
-	route := &Route{
-		path:    path,
-		handler: precomposed,
-		method:  method,
-		info:    info,
-	}
+	infoIndex := uint32(len(r.routeInfos))
+	info := newRouteMeta(method, path, finalHandler)
 
 	if !isDynamic {
 		if r.routes == nil {
@@ -168,24 +136,51 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		if _, ok := r.routes[method]; !ok {
 			r.routes[method] = make(map[string]*Route)
 		}
+		route := &Route{
+			handler:   precomposed,
+			infoIndex: infoIndex,
+		}
 		methodRoutes := r.routes[method]
-		addCandidate := func(candidate string) {
+		strictRouting := r.config != nil && r.config.StrictRouting
+		lowerPath := path
+		lowerChanged := false
+		if r.config != nil && !r.config.CaseSensitive {
+			if lower, changed := lowercasePath(path); changed {
+				lowerPath = lower
+				lowerChanged = true
+			}
+		}
+
+		var routeCandidates [4]string
+		routeCandidateCount := 0
+		addRouteCandidate := func(candidate string) {
 			if candidate == "" {
 				return
 			}
-			methodRoutes[candidate] = route
-			r.trackStaticFoldCandidate(method, candidate, route)
-			r.trackStaticPathMethod(candidate, method)
+			for i := 0; i < routeCandidateCount; i++ {
+				if routeCandidates[i] == candidate {
+					return
+				}
+			}
+			routeCandidates[routeCandidateCount] = candidate
+			routeCandidateCount++
 		}
 
-		addCandidate(originalPath)
-		if r.config != nil && !r.config.CaseSensitive && lowerPath != originalPath {
-			addCandidate(lowerPath)
+		addRouteCandidate(path)
+		if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+			addRouteCandidate(path[:len(path)-1])
 		}
-		if r.config == nil || !r.config.StrictRouting {
-			addCandidate(pathWithoutSlash)
-			addCandidate(pathWithSlash)
+		if lowerChanged {
+			addRouteCandidate(lowerPath)
+			if !strictRouting && len(lowerPath) > 1 && lowerPath[len(lowerPath)-1] == '/' {
+				addRouteCandidate(lowerPath[:len(lowerPath)-1])
+			}
 		}
+		for i := 0; i < routeCandidateCount; i++ {
+			methodRoutes[routeCandidates[i]] = route
+		}
+
+		r.routeInfos = append(r.routeInfos, info)
 		return nil
 	}
 
@@ -197,15 +192,10 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		root = &radixNode{kind: radixRoot}
 		r.trees[method] = root
 	}
-	if err := root.add(path, &radixRoute{
-		handler:    precomposed,
-		path:       path,
-		paramNames: paramNames,
-		paramCount: paramCount,
-		info:       info,
-	}); err != nil {
+	if err := root.add(path, newRadixRoute(precomposed, infoIndex, paramNames, paramCount)); err != nil {
 		return err
 	}
+	r.routeInfos = append(r.routeInfos, info)
 	r.dynamicRouteCount++
 	return nil
 }
@@ -227,45 +217,30 @@ func (r *Router) Find(method, path string) (HandlerFunc, *Context) {
 	return handler, ctx
 }
 
+func (r *Router) routeMetaAt(index uint32) routeMeta {
+	return r.routeInfos[index]
+}
+
 func (r *Router) findInto(method, path string, ctx *Context) HandlerFunc {
 	originalPath := path
 	strictRouting := r.config != nil && r.config.StrictRouting
+	caseSensitive := r.config != nil && r.config.CaseSensitive
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
 	if routes, ok := r.routes[method]; ok {
-		if route, ok := routes[originalPath]; ok {
-			ctx.setRoute(route.info)
-			return route.handler
-		}
-		if route, ok := routes[path]; ok {
-			ctx.setRoute(route.info)
+		if route := lookupStaticRouteIn(routes, originalPath, path, caseSensitive); route != nil {
+			ctx.setRoute(r.routeMetaAt(route.infoIndex))
 			return route.handler
 		}
 	}
-	if r.config == nil || r.config.CaseSensitive {
+	if caseSensitive {
 		return r.findDynamicInto(method, path, ctx)
-	}
-	if route := r.findStaticFoldRoute(method, originalPath); route != nil {
-		ctx.setRoute(route.info)
-		return route.handler
-	}
-	if path != originalPath {
-		if route := r.findStaticFoldRoute(method, path); route != nil {
-			ctx.setRoute(route.info)
-			return route.handler
-		}
 	}
 	if handler := r.findDynamicInto(method, path, ctx); handler != nil {
 		return handler
 	}
 	if lower, changed := lowercasePath(path); changed {
-		if routes, ok := r.routes[method]; ok {
-			if route, ok := routes[lower]; ok {
-				ctx.setRoute(route.info)
-				return route.handler
-			}
-		}
 		return r.findDynamicInto(method, lower, ctx)
 	}
 	return nil
@@ -274,42 +249,23 @@ func (r *Router) findInto(method, path string, ctx *Context) HandlerFunc {
 func (r *Router) dispatchInto(method, path string, ctx *Context) (bool, error) {
 	originalPath := path
 	strictRouting := r.config != nil && r.config.StrictRouting
+	caseSensitive := r.config != nil && r.config.CaseSensitive
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
 	if routes, ok := r.routes[method]; ok {
-		if route, ok := routes[originalPath]; ok {
-			ctx.setRoute(route.info)
-			return true, route.handler(ctx)
-		}
-		if route, ok := routes[path]; ok {
-			ctx.setRoute(route.info)
+		if route := lookupStaticRouteIn(routes, originalPath, path, caseSensitive); route != nil {
+			ctx.setRouteIndex(route.infoIndex)
 			return true, route.handler(ctx)
 		}
 	}
-	if r.config == nil || r.config.CaseSensitive {
+	if caseSensitive {
 		return r.dispatchDynamicInto(method, path, ctx)
-	}
-	if route := r.findStaticFoldRoute(method, originalPath); route != nil {
-		ctx.setRoute(route.info)
-		return true, route.handler(ctx)
-	}
-	if path != originalPath {
-		if route := r.findStaticFoldRoute(method, path); route != nil {
-			ctx.setRoute(route.info)
-			return true, route.handler(ctx)
-		}
 	}
 	if handled, err := r.dispatchDynamicInto(method, path, ctx); handled {
 		return true, err
 	}
 	if lower, changed := lowercasePath(path); changed {
-		if routes, ok := r.routes[method]; ok {
-			if route, ok := routes[lower]; ok {
-				ctx.setRoute(route.info)
-				return true, route.handler(ctx)
-			}
-		}
 		return r.dispatchDynamicInto(method, lower, ctx)
 	}
 	return false, nil
@@ -324,7 +280,7 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 				return nil
 			}
 			ctx.applyRouteParams(path, entry.route, entry.values)
-			ctx.setRoute(entry.route.info)
+			ctx.setRoute(r.routeMetaAt(entry.route.infoIndex))
 			return entry.route.handler
 		}
 	}
@@ -338,7 +294,7 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 		return nil
 	}
 	ctx.applyRouteParams(path, matched, captured)
-	ctx.setRoute(matched.info)
+	ctx.setRoute(r.routeMetaAt(matched.infoIndex))
 	if cacheEnabled {
 		entry := routeCacheEntry{
 			route:  matched,
@@ -359,7 +315,7 @@ func (r *Router) dispatchDynamicInto(method, path string, ctx *Context) (bool, e
 				return false, nil
 			}
 			ctx.applyRouteParams(path, entry.route, entry.values)
-			ctx.setRoute(entry.route.info)
+			ctx.setRouteIndex(entry.route.infoIndex)
 			return true, entry.route.handler(ctx)
 		}
 	}
@@ -373,7 +329,7 @@ func (r *Router) dispatchDynamicInto(method, path string, ctx *Context) (bool, e
 		return false, nil
 	}
 	ctx.applyRouteParams(path, matched, captured)
-	ctx.setRoute(matched.info)
+	ctx.setRouteIndex(matched.infoIndex)
 	if cacheEnabled {
 		entry := routeCacheEntry{
 			route:  matched,
@@ -437,99 +393,55 @@ func methodRank(method string) int {
 	return len(routeMethods)
 }
 
-func methodBit(method string) uint16 {
-	for i, candidate := range routeMethods {
-		if candidate == method {
-			return 1 << i
-		}
-	}
-	return 0
-}
-
-func (r *Router) trackStaticPathMethod(path, method string) {
-	bit := methodBit(method)
-	if bit == 0 {
-		return
-	}
-	if r.pathMethods == nil {
-		r.pathMethods = make(map[string]uint16, 32)
-	}
-	r.pathMethods[path] |= bit
-}
-
-func (r *Router) trackStaticFoldCandidate(method, path string, route *Route) {
-	if r.config == nil || r.config.CaseSensitive {
-		return
-	}
-	hash, ok := foldHashASCII(path)
-	if !ok {
-		return
-	}
-	if r.staticFold == nil {
-		r.staticFold = make(map[string]map[uint64][]staticFoldEntry, 4)
-	}
-	methodEntries := r.staticFold[method]
-	if methodEntries == nil {
-		methodEntries = make(map[uint64][]staticFoldEntry, 32)
-		r.staticFold[method] = methodEntries
-	}
-	methodEntries[hash] = append(methodEntries[hash], staticFoldEntry{path: path, route: route})
-}
-
-func (r *Router) findStaticFoldRoute(method, path string) *Route {
-	if len(path) == 0 || r.staticFold == nil {
-		return nil
-	}
-	hash, ok := foldHashASCII(path)
-	if !ok {
-		return nil
-	}
-	methodEntries := r.staticFold[method]
-	if len(methodEntries) == 0 {
-		return nil
-	}
-	for _, entry := range methodEntries[hash] {
-		if equalFoldASCII(entry.path, path) {
-			return entry.route
-		}
-	}
-	return nil
-}
-
 func (r *Router) hasDynamicRoutes() bool {
 	return len(r.trees) > 0
 }
 
 func (r *Router) staticPathKnown(path string) bool {
-	if len(r.pathMethods) == 0 {
+	if len(r.routes) == 0 {
 		return false
 	}
 
 	originalPath := path
 	strictRouting := r.config != nil && r.config.StrictRouting
-	if r.config != nil && !r.config.CaseSensitive {
-		if lower, changed := lowercasePath(path); changed {
-			path = lower
-		}
-	}
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
-
-	if _, ok := r.pathMethods[originalPath]; ok {
-		return true
-	}
-	if _, ok := r.pathMethods[path]; ok {
-		return true
-	}
-
-	if !strictRouting && path != "/" {
-		if _, ok := r.pathMethods[path+"/"]; ok {
+	caseSensitive := r.config != nil && r.config.CaseSensitive
+	for _, methodRoutes := range r.routes {
+		if lookupStaticRouteIn(methodRoutes, originalPath, path, caseSensitive) != nil {
 			return true
 		}
 	}
-
 	return false
+}
+
+func lookupStaticRouteIn(methodRoutes map[string]*Route, originalPath, path string, caseSensitive bool) *Route {
+	if len(methodRoutes) == 0 {
+		return nil
+	}
+	if route := methodRoutes[originalPath]; route != nil {
+		return route
+	}
+	if route := methodRoutes[path]; route != nil {
+		return route
+	}
+	if caseSensitive {
+		return nil
+	}
+	if lower, changed := lowercasePath(originalPath); changed {
+		if route := methodRoutes[lower]; route != nil {
+			return route
+		}
+	}
+	if path != originalPath {
+		if lower, changed := lowercasePath(path); changed {
+			if route := methodRoutes[lower]; route != nil {
+				return route
+			}
+		}
+	}
+	return nil
 }
 
 func (r *Router) normalizePath(path string) string {
@@ -615,6 +527,38 @@ func nextSlash(path string) int {
 	return strings.IndexByte(path, '/')
 }
 
+func newRadixRoute(handler HandlerFunc, infoIndex uint32, names [8]string, count int) *radixRoute {
+	route := &radixRoute{
+		handler:   handler,
+		infoIndex: infoIndex,
+	}
+	if count < 0 {
+		count = 0
+	}
+	if count > len(names) {
+		count = len(names)
+	}
+	route.paramCount = uint8(count)
+	inlineCount := count
+	if inlineCount > len(route.inlineParamNames) {
+		inlineCount = len(route.inlineParamNames)
+	}
+	for i := 0; i < inlineCount; i++ {
+		route.inlineParamNames[i] = names[i]
+	}
+	if count > len(route.inlineParamNames) {
+		route.extraParamNames = append([]string(nil), names[len(route.inlineParamNames):count]...)
+	}
+	return route
+}
+
+func (r *radixRoute) paramNameAt(index int) string {
+	if index < len(r.inlineParamNames) {
+		return r.inlineParamNames[index]
+	}
+	return r.extraParamNames[index-len(r.inlineParamNames)]
+}
+
 func (n *radixNode) add(path string, route *radixRoute) error {
 	current := n
 	remaining := path
@@ -643,16 +587,16 @@ func (n *radixNode) add(path string, route *radixRoute) error {
 				end++
 			}
 			if end != len(remaining) {
-				return fmt.Errorf("wildcard must be final in path %q", route.path)
+				return fmt.Errorf("wildcard must be final in path %q", path)
 			}
 			current = current.addCatchAllChild()
 			remaining = ""
 		default:
-			return fmt.Errorf("invalid route segment in path %q", route.path)
+			return fmt.Errorf("invalid route segment in path %q", path)
 		}
 	}
 	if current.route != nil {
-		return fmt.Errorf("route already registered for %s", route.path)
+		return fmt.Errorf("route already registered for %s", path)
 	}
 	current.route = route
 	return nil
@@ -814,13 +758,16 @@ func (n *radixNode) lookup(path string, offset int, values *[8]paramRange, captu
 }
 
 func (n *radixNode) matchRoute(captured int) *radixRoute {
-	if n.route == nil || captured != n.route.paramCount {
+	if n.route == nil || captured != int(n.route.paramCount) {
 		return nil
 	}
 	return n.route
 }
 
 func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
+	if rc == nil || rc.cache == nil {
+		return routeCacheEntry{}, false
+	}
 	rc.mu.RLock()
 	entry, ok := rc.cache[key]
 	rc.mu.RUnlock()
@@ -828,8 +775,15 @@ func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 }
 
 func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
+	if rc == nil || rc.size <= 0 {
+		return
+	}
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
+	if rc.cache == nil {
+		rc.cache = make(map[routeCacheKey]routeCacheEntry, rc.size)
+		rc.keys = make([]routeCacheKey, 0, rc.size)
+	}
 	if _, exists := rc.cache[key]; exists {
 		rc.cache[key] = entry
 		return
@@ -856,47 +810,25 @@ func lowercasePath(path string) (string, bool) {
 	return path, false
 }
 
-func foldASCIIByte(b byte) byte {
-	if b >= 'A' && b <= 'Z' {
-		return b + ('a' - 'A')
-	}
-	return b
-}
-
-func equalFoldASCII(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		if foldASCIIByte(a[i]) != foldASCIIByte(b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func foldHashASCII(path string) (uint64, bool) {
-	var hash uint64 = 1469598103934665603
-	for i := 0; i < len(path); i++ {
-		b := path[i]
-		if b >= 0x80 {
-			return 0, false
-		}
-		hash ^= uint64(foldASCIIByte(b))
-		hash *= 1099511628211
-	}
-	return hash, true
-}
-
-func handlerName(handler HandlerFunc) string {
+func handlerPC(handler HandlerFunc) uintptr {
 	if handler == nil {
-		return ""
+		return 0
 	}
 	value := reflect.ValueOf(handler)
 	if !value.IsValid() || value.IsNil() {
+		return 0
+	}
+	return value.Pointer()
+}
+
+func handlerName(handler HandlerFunc) string {
+	return handlerNameFromPC(handlerPC(handler))
+}
+
+func handlerNameFromPC(pc uintptr) string {
+	if pc == 0 {
 		return ""
 	}
-	pc := value.Pointer()
 	if cached, ok := handlerNameCache.Load(pc); ok {
 		return cached.(string)
 	}

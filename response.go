@@ -84,11 +84,36 @@ func (c *Context) Vary(fields ...string) *Context {
 }
 
 func (c *Context) String(data string) error {
-	writer, writeBody, err := c.prepareResponse(plainText)
-	if err != nil || !writeBody {
-		return err
+	if c.written {
+		return ErrResponseAlreadySent
 	}
-	_, err = io.WriteString(writer, data)
+	c.written = true
+
+	writer := c.Writer()
+	header := writer.Header()
+	if len(header[contentType]) == 0 {
+		header[contentType] = plainTextHeader
+	}
+
+	status := c.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	method := ""
+	if c.request != nil {
+		method = c.request.Method
+	}
+	if !bodyAllowed(method, status) {
+		if status != http.StatusOK {
+			writer.WriteHeader(status)
+		}
+		return nil
+	}
+	if status != http.StatusOK {
+		writer.WriteHeader(status)
+	}
+
+	_, err := io.WriteString(writer, data)
 	return err
 }
 

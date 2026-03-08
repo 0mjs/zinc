@@ -139,13 +139,16 @@ func TestRouteCacheSetUpdateAndEviction(t *testing.T) {
 
 	key1 := routeCacheKey{method: MethodGet, path: "/one"}
 	key2 := routeCacheKey{method: MethodGet, path: "/two"}
-	entry1 := routeCacheEntry{route: &radixRoute{path: "/one"}}
-	entry1Updated := routeCacheEntry{route: &radixRoute{path: "/one-updated"}}
-	entry2 := routeCacheEntry{route: &radixRoute{path: "/two"}}
+	route1 := &radixRoute{infoIndex: 1}
+	route1Updated := &radixRoute{infoIndex: 2}
+	route2 := &radixRoute{infoIndex: 3}
+	entry1 := routeCacheEntry{route: route1}
+	entry1Updated := routeCacheEntry{route: route1Updated}
+	entry2 := routeCacheEntry{route: route2}
 
 	cache.set(key1, entry1)
 	cache.set(key1, entry1Updated) // update existing key branch
-	if got, ok := cache.get(key1); !ok || got.route.path != "/one-updated" {
+	if got, ok := cache.get(key1); !ok || got.route != route1Updated {
 		t.Fatalf("updated entry=%v ok=%v", got, ok)
 	}
 
@@ -153,20 +156,20 @@ func TestRouteCacheSetUpdateAndEviction(t *testing.T) {
 	if _, ok := cache.get(key1); ok {
 		t.Fatal("expected key1 to be evicted")
 	}
-	if got, ok := cache.get(key2); !ok || got.route.path != "/two" {
+	if got, ok := cache.get(key2); !ok || got.route != route2 {
 		t.Fatalf("entry2=%v ok=%v", got, ok)
 	}
 }
 
 func TestRadixNodeBranches(t *testing.T) {
 	root := &radixNode{kind: radixRoot}
-	mustDo(t, root.add("/foo", &radixRoute{path: "/foo"}))
-	mustDo(t, root.add("/fob", &radixRoute{path: "/fob"})) // triggers static-node split branch
+	mustDo(t, root.add("/foo", &radixRoute{}))
+	mustDo(t, root.add("/fob", &radixRoute{})) // triggers static-node split branch
 
-	if err := root.add("/foo", &radixRoute{path: "/foo"}); err == nil {
+	if err := root.add("/foo", &radixRoute{}); err == nil {
 		t.Fatal("expected duplicate route error")
 	}
-	if err := root.add("/files/*path/more", &radixRoute{path: "/files/*path/more"}); err == nil || !strings.Contains(err.Error(), "wildcard must be final") {
+	if err := root.add("/files/*path/more", &radixRoute{}); err == nil || !strings.Contains(err.Error(), "wildcard must be final") {
 		t.Fatalf("err=%v", err)
 	}
 
@@ -189,7 +192,7 @@ func TestRadixNodeBranches(t *testing.T) {
 		t.Fatalf("matched=%v", matched)
 	}
 
-	mismatch := &radixNode{route: &radixRoute{path: "/users/:id", paramCount: 1}}
+	mismatch := &radixNode{route: &radixRoute{paramCount: 1}}
 	if matched := mismatch.matchRoute(0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}

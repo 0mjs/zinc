@@ -872,8 +872,8 @@ func TestContextParamMutationHelpers(t *testing.T) {
 	ctx.setParam("c", "3")
 
 	route := &radixRoute{
-		paramCount: 2,
-		paramNames: [8]string{"x", "y"},
+		paramCount:       2,
+		inlineParamNames: [2]string{"x", "y"},
 	}
 	ctx.applyRouteParams("/users/10/posts/20", route, [8]paramRange{
 		{start: 7, end: 9},

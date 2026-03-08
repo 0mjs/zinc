@@ -1,4 +1,4 @@
-package zinc
+package benchmarks
 
 import (
 	"fmt"
@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/0mjs/zinc"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/julienschmidt/httprouter"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 var benchmarkSinkInt int
@@ -262,7 +263,7 @@ func scenarioParamScoreChi(names []string, req *http.Request) int {
 	return score
 }
 
-func scenarioParamScoreEcho(names []string, c echo.Context) int {
+func scenarioParamScoreEcho(names []string, c *echo.Context) int {
 	score := 0
 	for _, name := range names {
 		score += len(c.Param(name))
@@ -329,7 +330,7 @@ func buildEchoScenarioHandler(routes []scenarioRoute) http.Handler {
 	e := echo.New()
 	for _, route := range routes {
 		route := route
-		e.Add(route.method, route.pattern, func(c echo.Context) error {
+		e.Add(route.method, route.pattern, func(c *echo.Context) error {
 			scenarioParamScoreEcho(route.paramNames, c)
 			return c.String(http.StatusOK, benchmarkOKResponse)
 		})
@@ -774,10 +775,13 @@ func gitHubRouteScenarioSpecs() []scenarioRouteSpec {
 
 func TestRunScenarioBenchmarks(t *testing.T) {
 	t.Skip(`
-To run the scenario route-set suite:
+From benchmarks/:
     go test -run=^$ -bench '^BenchmarkScenarioRouteSet' -benchmem
 
-To keep local runs fast while iterating:
+To run from the repo root:
+    cd benchmarks && go test -run=^$ -bench '^BenchmarkScenarioRouteSet' -benchmem
+
+To keep local runs fast while iterating from benchmarks/:
     go test -run=^$ -bench '^BenchmarkScenarioRouteSet(All|Param|Static)$' -benchmem -benchtime=200ms
 
 Notes:

@@ -16,23 +16,25 @@ import (
 )
 
 type Context struct {
-	writer      http.ResponseWriter
-	request     *http.Request
-	PathParams  params
-	queryParams url.Values
-	written     bool
-	handlers    []HandlerFunc
-	index       int
-	store       map[any]any
-	status      int
-	app         *App
-	routeInfo   routeMeta
-	lastErr     error
-	body        []byte
-	bodyRead    bool
-	bodyErr     error
-	paramPath   string
-	paramCount  int
+	writer       http.ResponseWriter
+	request      *http.Request
+	PathParams   params
+	queryParams  url.Values
+	written      bool
+	handlers     []HandlerFunc
+	index        int
+	store        map[any]any
+	status       int
+	app          *App
+	routeInfo    routeMeta
+	routeIndex   int32
+	routeIndexed bool
+	lastErr      error
+	body         []byte
+	bodyRead     bool
+	bodyErr      error
+	paramPath    string
+	paramCount   int
 }
 
 type param struct {
@@ -51,9 +53,9 @@ const directParamStart int32 = -1
 var contextPool = sync.Pool{
 	New: func() any {
 		return &Context{
-			store:  make(map[any]any, 8),
-			status: http.StatusOK,
-			index:  -1,
+			status:     http.StatusOK,
+			index:      -1,
+			routeIndex: -1,
 		}
 	},
 }
@@ -74,6 +76,8 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.status = http.StatusOK
 	c.app = nil
 	c.routeInfo = routeMeta{}
+	c.routeIndex = -1
+	c.routeIndexed = false
 	c.lastErr = nil
 	c.body = nil
 	c.bodyRead = false
@@ -458,6 +462,9 @@ func (c *Context) RequestID() string {
 }
 
 func (c *Context) FullPath() string {
+	if c.routeIndexed && c.app != nil && c.app.router != nil {
+		return c.app.router.routeMetaAt(uint32(c.routeIndex)).path
+	}
 	return c.routeInfo.path
 }
 
@@ -476,11 +483,22 @@ func (c *Context) Error(err error) {
 }
 
 func (c *Context) Route() RouteInfo {
+	if c.routeIndexed && c.app != nil && c.app.router != nil {
+		return c.app.router.routeMetaAt(uint32(c.routeIndex)).export()
+	}
 	return c.routeInfo.export()
 }
 
 func (c *Context) setRoute(info routeMeta) {
 	c.routeInfo = info
+	c.routeIndex = -1
+	c.routeIndexed = false
+}
+
+func (c *Context) setRouteIndex(index uint32) {
+	c.routeInfo = routeMeta{}
+	c.routeIndex = int32(index)
+	c.routeIndexed = true
 }
 
 func (c *Context) setParam(key, value string) {
@@ -496,7 +514,7 @@ func (c *Context) setParam(key, value string) {
 }
 
 func (c *Context) applyRouteParams(path string, route *radixRoute, values [8]paramRange) {
-	count := route.paramCount
+	count := int(route.paramCount)
 	if count > len(c.PathParams) {
 		count = len(c.PathParams)
 	}
@@ -509,7 +527,7 @@ func (c *Context) applyRouteParams(path string, route *radixRoute, values [8]par
 	for i := 0; i < count; i++ {
 		valueRange := values[i]
 		c.PathParams[i] = param{
-			key:   route.paramNames[i],
+			key:   route.paramNameAt(i),
 			start: int32(valueRange.start),
 			end:   int32(valueRange.end),
 		}

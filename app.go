@@ -25,16 +25,24 @@ type RouteInfo struct {
 }
 
 type routeMeta struct {
-	method  string
-	path    string
-	handler HandlerFunc
+	method    string
+	path      string
+	handlerPC uintptr
 }
 
 func (m routeMeta) export() RouteInfo {
 	return RouteInfo{
 		Method:  m.method,
 		Path:    m.path,
-		Handler: handlerName(m.handler),
+		Handler: handlerNameFromPC(m.handlerPC),
+	}
+}
+
+func newRouteMeta(method, path string, handler HandlerFunc) routeMeta {
+	return routeMeta{
+		method:    method,
+		path:      path,
+		handlerPC: handlerPC(handler),
 	}
 }
 
@@ -225,7 +233,7 @@ func (a *App) Mount(prefix string, h http.Handler) {
 		prefix:     storedPrefix(prefix, a.config.CaseSensitive),
 		prefixPath: prefix,
 		handler:    h,
-		info:       routeMeta{method: methodUse, path: prefix, handler: Wrap(h)},
+		info:       newRouteMeta(methodUse, prefix, Wrap(h)),
 	}
 	a.mounts = append(a.mounts, entry)
 	sort.SliceStable(a.mounts, func(i, j int) bool {
