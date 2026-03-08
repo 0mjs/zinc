@@ -5,3 +5,4 @@ tmp/*
 restricted/*
 vendor/*
 examples/*
+.vscode/*
