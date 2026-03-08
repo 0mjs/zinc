@@ -105,7 +105,7 @@ app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 
 ## Optional Real-Time Endpoints (SSE + WebSocket)
 
-`WS` uses `github.com/gorilla/websocket`.
+`WS` exposes Zinc's `WebSocketConn` for common server-side handlers. If you need client dialers or advanced websocket helpers, you can still import `github.com/gorilla/websocket` directly.
 
 ```go
 app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
@@ -115,7 +115,7 @@ app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
 	})
 })
 
-app.WS("/ws", func(c *zinc.Context, conn *websocket.Conn) error {
+app.WS("/ws", func(c *zinc.Context, conn *zinc.WebSocketConn) error {
 	for {
 		msgType, payload, err := conn.ReadMessage()
 		if err != nil {

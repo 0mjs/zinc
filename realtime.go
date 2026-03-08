@@ -16,6 +16,19 @@ import (
 
 const sseContentType = "text/event-stream; charset=utf-8"
 
+const (
+	// WebSocketTextMessage is a text data message.
+	WebSocketTextMessage = websocket.TextMessage
+	// WebSocketBinaryMessage is a binary data message.
+	WebSocketBinaryMessage = websocket.BinaryMessage
+	// WebSocketCloseMessage is a close control message.
+	WebSocketCloseMessage = websocket.CloseMessage
+	// WebSocketPingMessage is a ping control message.
+	WebSocketPingMessage = websocket.PingMessage
+	// WebSocketPongMessage is a pong control message.
+	WebSocketPongMessage = websocket.PongMessage
+)
+
 var (
 	// ErrStreamingNotSupported indicates the response writer cannot flush streamed data.
 	ErrStreamingNotSupported = errors.New("response writer does not support streaming")
@@ -28,8 +41,11 @@ var (
 // SSEHandler handles a server-sent events stream.
 type SSEHandler func(*Context, *SSEStream) error
 
+// WebSocketConn aliases Gorilla's websocket connection for Zinc server handlers.
+type WebSocketConn = websocket.Conn
+
 // WebSocketHandler handles a websocket connection lifecycle.
-type WebSocketHandler func(*Context, *websocket.Conn) error
+type WebSocketHandler func(*Context, *WebSocketConn) error
 
 // SSEEvent represents one server-sent event frame.
 type SSEEvent struct {
@@ -196,7 +212,7 @@ func (s *SSEStream) Retry(duration time.Duration) error {
 }
 
 // UpgradeWebSocket upgrades the request to a websocket connection.
-func (c *Context) UpgradeWebSocket(config ...WebSocketConfig) (*websocket.Conn, error) {
+func (c *Context) UpgradeWebSocket(config ...WebSocketConfig) (*WebSocketConn, error) {
 	if c.written {
 		return nil, ErrResponseAlreadySent
 	}

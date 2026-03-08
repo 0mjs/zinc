@@ -144,7 +144,7 @@ func TestSSEHelpers(t *testing.T) {
 func TestWebSocketHelpers(t *testing.T) {
 	t.Run("ws route helper echoes messages", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.WS("/ws", func(c *Context, conn *websocket.Conn) error {
+		mustDo(t, app.WS("/ws", func(c *Context, conn *WebSocketConn) error {
 			msgType, payload, err := conn.ReadMessage()
 			if err != nil {
 				return err
@@ -159,10 +159,10 @@ func TestWebSocketHelpers(t *testing.T) {
 		mustDo(t, err)
 		defer conn.Close()
 
-		mustDo(t, conn.WriteMessage(websocket.TextMessage, []byte("hello")))
+		mustDo(t, conn.WriteMessage(WebSocketTextMessage, []byte("hello")))
 		msgType, payload, err := conn.ReadMessage()
 		mustDo(t, err)
-		if msgType != websocket.TextMessage || string(payload) != "echo:hello" {
+		if msgType != WebSocketTextMessage || string(payload) != "echo:hello" {
 			t.Fatalf("message=%d %q", msgType, string(payload))
 		}
 	})
@@ -170,8 +170,8 @@ func TestWebSocketHelpers(t *testing.T) {
 	t.Run("group ws helper and config", func(t *testing.T) {
 		app := New()
 		group := app.Group("/rt")
-		mustDo(t, group.WS("/ws", func(c *Context, conn *websocket.Conn) error {
-			return conn.WriteMessage(websocket.TextMessage, []byte(conn.Subprotocol()))
+		mustDo(t, group.WS("/ws", func(c *Context, conn *WebSocketConn) error {
+			return conn.WriteMessage(WebSocketTextMessage, []byte(conn.Subprotocol()))
 		}, WebSocketConfig{
 			Subprotocols: []string{"chat.v2", "chat.v1"},
 			CheckOrigin: func(c *Context) bool {
@@ -208,7 +208,7 @@ func TestWebSocketHelpers(t *testing.T) {
 
 	t.Run("upgrade failure does not get double-written", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.WS("/ws", func(c *Context, conn *websocket.Conn) error {
+		mustDo(t, app.WS("/ws", func(c *Context, conn *WebSocketConn) error {
 			return nil
 		}))
 
