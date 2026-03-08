@@ -3,7 +3,7 @@
 ![Version](https://img.shields.io/badge/version-0.0.78-red)
 ![Go Version](https://img.shields.io/badge/Go-1.26+-blue)
 [![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
-[![Coverage](https://img.shields.io/badge/coverage-94.39%25-brightgreen)](#quality-snapshot)
+[![Coverage](https://img.shields.io/badge/coverage-90.6%25-brightgreen)](#quality-snapshot)
 [![Go%20Report%20Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -168,9 +168,9 @@ app.Get("/dashboard", func(c *zinc.Context) error {
 Latest local coverage run (`go test -count=1 ./... -coverprofile=coverage.out`):
 
 ```text
-Overall                                      [###################.] 94.39%
-Core (github.com/0mjs/zinc)                  [###################.] 95.3%
-Middleware (github.com/0mjs/zinc/middleware) [####################] 98.9%
+Overall                                      [##################..] 90.6%
+Core (github.com/0mjs/zinc)                  [###################.] 95.1%
+Middleware (github.com/0mjs/zinc/middleware) [#################...] 83.9%
 ```
 
 ## Benchmark Snapshot (vs Gin, Echo, Chi)
