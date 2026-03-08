@@ -1,11 +1,11 @@
 # zinc
 
-![Zinc](https://img.shields.io/badge/Zinc-%20Go%20API%20Framework-silver)
 ![Version](https://img.shields.io/badge/version-0.0.78-red)
-![Go Version](https://img.shields.io/badge/Go-1.24+-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![Go Version](https://img.shields.io/badge/Go-1.26+-blue)
+[![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
 [![Coverage](https://img.shields.io/badge/coverage-94.39%25-brightgreen)](#quality-snapshot)
 [![Go%20Report%20Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 Zinc is an API framework for Go built on top of `net/http`. It keeps the server and transport model familiar,
 while adding practical routing, middleware, binding, response helpers, and explicit lifecycle APIs.
