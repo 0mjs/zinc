@@ -34,7 +34,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a.dispatch(ctx)
+	if err := a.dispatch(ctx); err != nil {
+		a.handleError(ctx, err)
+	}
 	ctx.release()
 }
 
@@ -59,7 +61,7 @@ func (a *App) preHandlersForPath(path string) []HandlerFunc {
 	return handlers
 }
 
-func (a *App) dispatch(ctx *Context) {
+func (a *App) dispatch(ctx *Context) error {
 	method := ctx.Method()
 	path := ctx.Path()
 
@@ -69,14 +71,13 @@ func (a *App) dispatch(ctx *Context) {
 		handler = a.router.findInto(MethodGet, path, ctx)
 	}
 	if handler != nil {
-		a.execute(ctx, handler)
-		return
+		return handler(ctx)
 	}
 
 	if mount := a.matchMount(path); mount != nil {
 		ctx.setRoute(mount.info)
 		mount.serve(ctx)
-		return
+		return nil
 	}
 
 	var allowed []string
@@ -88,39 +89,35 @@ func (a *App) dispatch(ctx *Context) {
 	}
 	if method == MethodOptions && a.config.AutoOptions && len(allowed) > 0 {
 		ctx.SetHeader(HeaderAllow, strings.Join(allowed, ", "))
-		_ = ctx.Status(StatusNoContent).NoContent()
-		return
+		return ctx.Status(StatusNoContent).NoContent()
 	}
 
 	if a.config.HandleMethodNotAllowed && len(allowed) > 0 {
 		ctx.Status(StatusMethodNotAllowed)
 		ctx.SetHeader(HeaderAllow, strings.Join(allowed, ", "))
 		if a.methodNA != nil {
-			a.execute(ctx, a.methodNA)
-			if !ctx.written {
-				_ = ctx.NoContent()
+			if err := a.methodNA(ctx); err != nil {
+				return err
 			}
-			return
+			if !ctx.written {
+				return ctx.NoContent()
+			}
+			return nil
 		}
-		a.handleError(ctx, ErrMethodNotAllowed)
-		return
+		return ErrMethodNotAllowed
 	}
 
 	ctx.Status(StatusNotFound)
 	if a.notFound != nil {
-		a.execute(ctx, a.notFound)
-		if !ctx.written {
-			_ = ctx.String(http.StatusText(StatusNotFound))
+		if err := a.notFound(ctx); err != nil {
+			return err
 		}
-		return
+		if !ctx.written {
+			return ctx.String(http.StatusText(StatusNotFound))
+		}
+		return nil
 	}
-	a.handleError(ctx, ErrNotFound)
-}
-
-func (a *App) execute(ctx *Context, handler HandlerFunc) {
-	if err := handler(ctx); err != nil {
-		a.handleError(ctx, err)
-	}
+	return ErrNotFound
 }
 
 func (a *App) handleError(ctx *Context, err error) {
@@ -135,7 +132,7 @@ func (a *App) handleError(ctx *Context, err error) {
 
 func appDispatchHandler(c *Context) error {
 	if c != nil && c.app != nil {
-		c.app.dispatch(c)
+		return c.app.dispatch(c)
 	}
 	return nil
 }

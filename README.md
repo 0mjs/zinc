@@ -171,8 +171,6 @@ Latest local coverage run (`go test -count=1 ./... -coverprofile=coverage.out`):
 Overall                                      [###################.] 94.39%
 Core (github.com/0mjs/zinc)                  [###################.] 95.3%
 Middleware (github.com/0mjs/zinc/middleware) [####################] 98.9%
-CORS (github.com/0mjs/zinc/middleware/cors)  [####################] 98.4%
-JWT (github.com/0mjs/zinc/middleware/jwt)    [################....] 79.6%
 ```
 
 ## Benchmark Snapshot (vs Gin, Echo, Chi)
@@ -212,23 +210,47 @@ Selected benchmark table:
 
 ## Optional Middleware
 
-Zinc ships focused middleware packages outside the core, such as:
+Zinc ships middleware behind one unified import:
 
-- `github.com/0mjs/zinc/middleware/cors`
-- `github.com/0mjs/zinc/middleware/jwt`
+- `github.com/0mjs/zinc/middleware`
 
 ```go
 import (
-	zincjwt "github.com/0mjs/zinc/middleware/jwt"
+	"log"
+	"os"
+	"time"
+
+	"github.com/0mjs/zinc"
+	"github.com/0mjs/zinc/middleware"
 	jwt "github.com/golang-jwt/jwt/v5"
 )
 
-app.Use(zincjwt.New(zincjwt.Config{
+app.Use(middleware.BodyDump(func(c *zinc.Context, snapshot middleware.BodyDumpSnapshot) {
+	log.Printf("%s %s -> %d", snapshot.Method, snapshot.Path, snapshot.Status)
+}))
+
+app.Use(middleware.CORS("https://app.example.com"))
+
+admin := app.Group("/admin")
+admin.Use(middleware.BodyLimit(256 * middleware.KB))
+admin.Use(middleware.ContextTimeout(250 * time.Millisecond))
+
+app.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
+	ExposeHeader: zinc.HeaderXCSRFToken,
+}))
+
+app.Use(middleware.BasicAuthWithConfig(middleware.BasicAuthConfig{
+	Validator: middleware.BasicAuthStatic("admin", os.Getenv("ADMIN_PASSWORD")),
+}))
+
+app.Use(middleware.JWTWithConfig(middleware.JWTConfig{
 	KeyFunc: func(*zinc.Context, *jwt.Token) (any, error) {
 		return []byte("secret"), nil
 	},
 }))
 ```
+
+Zinc now exposes middleware through a single public package: `github.com/0mjs/zinc/middleware`.
 
 ## License
 
