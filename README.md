@@ -12,7 +12,7 @@ Zinc is an fast, minimal API framework for Go built on top of `net/http`.
 - [Documentation](https://zinc.carbonsoft.com)
 - [Quickstart](https://zinc.carbonsoft.sh/guide/quick-start)
 - [Middleware](https://zinc.carbonsoft.sh/middleware)
-- [pkg.go.dev]([pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc))
+- [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
 
 ### Features
 
