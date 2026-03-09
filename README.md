@@ -1,18 +1,21 @@
-# zinc
-
-![Version](https://img.shields.io/badge/version-0.0.78-red)
+![Version](https://img.shields.io/badge/version-0.0.83-blue)
 ![Go Version](https://img.shields.io/badge/Go-1.26+-blue)
 [![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
 [![Coverage](https://img.shields.io/badge/coverage-90.6%25-brightgreen)](#quality-snapshot)
 [![Go%20Report%20Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Zinc is an API framework for Go built on top of `net/http`. It keeps the server and transport model familiar,
-while adding practical routing, middleware, binding, response helpers, and explicit lifecycle APIs.
+# Zinc
 
-## Features
+Zinc is an fast, minimal API framework for Go built on top of `net/http`.
 
-- `App` is an `http.Handler`
+- [Documentation](https://zinc.carbonsoft.com)
+- [Quickstart](https://zinc.carbonsoft.sh/guide/quick-start)
+- [Middleware](https://zinc.carbonsoft.sh/middleware)
+- [pkg.go.dev]([pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc))
+
+### Features
+
 - Express-style routes with `:param` and `*wildcard`
 - Route groups, prefix middleware, and route metadata
 - Binding helpers for path, query, headers, JSON, XML, and forms
@@ -20,14 +23,6 @@ while adding practical routing, middleware, binding, response helpers, and expli
 - First-party template renderer helper for `html/template` and `text/template`
 - Static/file serving and stdlib handler interop through `Mount`, `Wrap`, and `WrapFunc`
 - Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
-- Optional real-time endpoints with SSE and Gorilla WebSocket integration
-
-## Typical Use Cases
-
-- JSON APIs and backend services
-- Internal tools and admin endpoints
-- Public REST APIs with middleware and validation
-- Real-time features (chat, activity feeds, live dashboards) when needed
 
 ## Installation
 
@@ -44,23 +39,19 @@ import (
 	"log"
 
 	"github.com/0mjs/zinc"
+	middleware "github.com/0mjs/zinc/middleware"
 )
 
 func main() {
 	app := zinc.New()
+
+	app.Use(middleware.RequestLogger())
 
 	app.Get("/", "Hello, world!") // Shorthand
 
 	app.Get("/greet", func(c *zinc.Context) error {
 		return c.JSON(zinc.Map{
 			"greeting": "Hello, world!",
-		})
-	})
-
-	app.Get("/users/:id", func(c *zinc.Context) error {
-		return c.JSON(zinc.Map{
-			"id":        c.Param("id"),
-			"full_path": c.FullPath(),
 		})
 	})
 
@@ -103,31 +94,6 @@ app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 
 	return c.Status(zinc.StatusCreated).JSON(input)
 })
-```
-
-## Optional Real-Time Endpoints (SSE + WebSocket)
-
-`WS` exposes Zinc's `WebSocketConn` for common server-side handlers. If you need client dialers or advanced websocket helpers, you can still import `github.com/gorilla/websocket` directly.
-
-```go
-app.SSE("/events", func(c *zinc.Context, stream *zinc.SSEStream) error {
-	return stream.Send(zinc.SSEEvent{
-		Event: "ready",
-		Data:  zinc.Map{"ok": true},
-	})
-})
-
-app.WS("/ws", func(c *zinc.Context, conn *zinc.WebSocketConn) error {
-	for {
-		msgType, payload, err := conn.ReadMessage()
-		if err != nil {
-			return nil
-		}
-		if err := conn.WriteMessage(msgType, payload); err != nil {
-			return err
-		}
-	}
-}, zinc.WebSocketConfig{})
 ```
 
 ## Configuration
@@ -175,51 +141,58 @@ Middleware (github.com/0mjs/zinc/middleware) [#################...] 83.9%
 
 ## Benchmark Snapshot
 
-Benchmark suites now live in [`./benchmarks`](./benchmarks), so Zinc's main module does not need Gin, Echo, Chi, or HttpRouter as direct dependencies.
+Latest local snapshot (`Apple M1 Pro`, `darwin/arm64`, averaged over `count=3`):
 
-Latest local snapshot (`Apple M1 Pro`, `darwin/arm64`, lower is better for `ns/op`):
+- This view intentionally compares full frameworks only: `Zinc`, `Gin`, `Echo`, and `Chi`.
+- Loopback `req/s` is left out here on purpose; the cleaner signal for docs is in-process request-path cost.
+- Zinc wins `23/43` non-throughput rows in the current framework-only suite.
+- Zinc is strongest on static and mixed dispatch, middleware, JSON response, and scenario static sweeps.
+- Gin still leads most `404` / `405` paths and the nastiest param-heavy scenario corpus.
 
-- Zinc wins `9/11` request-path rows in the broader in-process suite against `Gin`, `Echo`, and `Chi`.
-- Zinc is still `0 allocs/op` on the main routing hot paths.
-- Static dispatch is a real strength: Zinc leads the scenario static sweeps and large static route-set benchmarks.
-- Route registration memory is no longer a major outlier: Zinc is now in the same class as Gin instead of multiple times larger.
-- Focused loopback RPS is competitive, but Zinc is not consistently first there.
+Framework-only scorecard:
 
-High-signal examples:
+| Framework | Wins | 2nd Place |
+|---|---:|---:|
+| `Zinc` | `23` | `16` |
+| `Gin` | `18` | `19` |
+| `Echo` | `1` | `4` |
+| `Chi` | `1` | `4` |
 
-| Benchmark | Zinc | Gin | Echo | Chi | Read |
+Request-path highlights (`ns/op`, lower is better):
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `Static157 All` | `71.8 ns` | `133.7 ns` | `173.9 ns` | `274.1 ns` | Zinc win |
-| `GitHubAPI203 All` | `162.1 ns` | `156.6 ns` | `202.8 ns` | `365.1 ns` | Near Gin, ahead of Echo/Chi |
-| `HelloWorld` | `67.1 ns` | `93.4 ns` | `131.0 ns` | `172.9 ns` | Zinc win |
-| `RouterParam` | `87.5 ns` | `97.9 ns` | `131.4 ns` | `331.5 ns` | Zinc win |
-| `LargeRouteSetStatic` | `66.1 ns` | `100.8 ns` | `146.8 ns` | `208.9 ns` | Zinc win |
-| `LargeRouteSetParam` | `108.1 ns` | `107.2 ns` | `154.1 ns` | `381.4 ns` | Effectively tied with Gin |
+| `HelloWorld` | `73.1` | `91.4` | `133.7` | `199.7` | 🥇 Zinc |
+| `StaticRoute` | `69.4` | `98.5` | `134.0` | `191.1` | 🥇 Zinc |
+| `RouterParam` | `87.6` | `95.7` | `137.4` | `368.7` | 🥇 Zinc |
+| `JSONResponse` | `338.0` | `400.4` | `447.0` | `561.5` | 🥇 Zinc |
+| `MiddlewareChain` | `367.4` | `420.8` | `537.1` | `853.3` | 🥇 Zinc |
+| `LargeRouteSetStaticMixed` | `71.3` | `123.0` | `162.9` | `260.6` | 🥇 Zinc |
+| `LargeRouteSetMethodMismatch` | `153.8` | `101.3` | `856.3` | `328.2` | 🥇 Gin |
+| `APIParamQueryJSON` | `1195.3` | `2741.0` | `1876.0` | `1095.3` | 🥇 Chi |
+| `APIHappyPath` | `1487.7` | `3069.3` | `2239.7` | `1727.0` | 🥇 Zinc |
+| `APIBindJSONHappyPath` | `2774.0` | `4503.0` | `2570.7` | `2926.7` | 🥇 Echo |
+
+Scenario highlights (`ns/op`, lower is better):
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `ScenarioStatic/GitHubAPI203` | `68.9` | `103.3` | `148.3` | `242.3` | 🥇 Zinc |
+| `ScenarioStatic/ParseAPI26` | `70.1` | `98.5` | `145.4` | `238.1` | 🥇 Zinc |
+| `ScenarioAll/Static157` | `72.9` | `130.2` | `171.6` | `294.0` | 🥇 Zinc |
+| `ScenarioAll/GPlusAPI13` | `143.6` | `180.6` | `173.7` | `280.5` | 🥇 Zinc |
+| `ScenarioParam/GitHubAPI203` | `171.4` | `159.0` | `225.4` | `436.6` | 🥇 Gin |
+| `ScenarioParam/ParseAPI26` | `217.9` | `118.1` | `158.6` | `279.5` | 🥇 Gin |
+| `ScenarioNotFound/GitHubAPI203` | `161.4` | `118.8` | `611.0` | `358.8` | 🥇 Gin |
+| `Scenario405/GPlusAPI13` | `170.3` | `182.7` | `866.8` | `424.2` | 🥇 Zinc |
 
 Build-time highlights:
 
-| Registration Benchmark | Zinc | Gin | Echo | Chi |
-|---|---:|---:|---:|---:|
-| `RouteRegistrationStatic` | `68.4 µs / 62.5 KB` | `76.7 µs / 54.3 KB` | `401.4 µs / 185.9 KB` | `113.3 µs / 123.6 KB` |
-| `RouteRegistrationParam` | `49.0 µs / 67.8 KB` | `134.6 µs / 47.9 KB` | `157.5 µs / 155.7 KB` | `73.0 µs / 92.1 KB` |
+| Registration Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `RouteRegistrationStatic` | `84.3 µs / 62.5 KB` | `74.8 µs / 54.3 KB` | `338.3 µs / 185.9 KB` | `88.5 µs / 123.6 KB` | 🥇 Gin |
+| `RouteRegistrationParam` | `64.1 µs / 67.8 KB` | `55.8 µs / 47.9 KB` | `161.8 µs / 155.7 KB` | `73.8 µs / 92.1 KB` | 🥇 Gin |
 
-Focused loopback RPS average (`count=3`):
-
-| Framework | Req/s |
-|---|---:|
-| `Chi` | `88.9k` |
-| `Gin` | `88.5k` |
-| `Zinc` | `82.6k` |
-| `Echo` | `80.5k` |
-
-The short version: Zinc already has a strong benchmark story on real request dispatch, especially for static and mixed route sets. The remaining obvious runtime gap is dedicated param-heavy paths against Gin, not broad request-path throughput.
-
-## Documentation
-
-- [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
-- [Docs app source](./docs)
-- [Benchmark module](./benchmarks)
-- [Benchmark summary](_docs/BENCHMARK_SUMMARY.md)
 
 ## Optional Middleware
 
@@ -267,4 +240,4 @@ Zinc now exposes middleware through a single public package: `github.com/0mjs/zi
 
 ## License
 
-MIT
+[MIT](./LICENSE)

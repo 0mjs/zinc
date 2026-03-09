@@ -447,12 +447,6 @@ func (c *Context) Secure() bool {
 	return c.Scheme() == "https"
 }
 
-func (c *Context) IsWebSocket() bool {
-	connection := strings.ToLower(c.GetHeader(HeaderConnection))
-	upgrade := strings.ToLower(c.GetHeader(HeaderUpgrade))
-	return strings.Contains(connection, "upgrade") && upgrade == "websocket"
-}
-
 func (c *Context) IsPreflight() bool {
 	return c.Method() == MethodOptions && c.GetHeader(HeaderAccessControlRequestMethod) != ""
 }

@@ -40,8 +40,6 @@ func TestContextRequestHelpersAndMetadata(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set(HeaderXForwardedFor, "203.0.113.8, 10.0.0.1")
 	req.Header.Set("X-Forwarded-Proto", "https")
-	req.Header.Set(HeaderUpgrade, "websocket")
-	req.Header.Set(HeaderConnection, "keep-alive, Upgrade")
 	req.Header.Set(HeaderXRequestID, "req-123")
 	req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
 
@@ -96,9 +94,6 @@ func TestContextRequestHelpersAndMetadata(t *testing.T) {
 	}
 	if len(ctx.IPs()) != 2 || ctx.RemoteIP() != "10.0.0.1" {
 		t.Fatalf("ips=%v remote=%q", ctx.IPs(), ctx.RemoteIP())
-	}
-	if !ctx.IsWebSocket() {
-		t.Fatal("expected websocket upgrade")
 	}
 	preflightReq := httptest.NewRequest(http.MethodOptions, "http://example.com", nil)
 	preflightReq.Header.Set(HeaderAccessControlRequestMethod, http.MethodPost)

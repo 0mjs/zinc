@@ -164,6 +164,28 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 		}
 	})
 
+	t.Run("method not allowed unions overlapping route shapes", func(t *testing.T) {
+		app := New()
+		mustDo(t, app.Get("/users/:id", func(c *Context) error { return c.String("param") }))
+		mustDo(t, app.Post("/users/me", func(c *Context) error { return c.String("static") }))
+
+		resp := performRequest(t, app, http.MethodPut, "/users/me", nil, nil)
+		if resp.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status=%d", resp.Code)
+		}
+		if allow := resp.Header().Get(HeaderAllow); allow != "GET, HEAD, POST, OPTIONS" {
+			t.Fatalf("allow=%q", allow)
+		}
+
+		options := performRequest(t, app, http.MethodOptions, "/users/me", nil, nil)
+		if options.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", options.Code)
+		}
+		if allow := options.Header().Get(HeaderAllow); allow != "GET, HEAD, POST, OPTIONS" {
+			t.Fatalf("allow=%q", allow)
+		}
+	})
+
 	t.Run("mount strips prefix", func(t *testing.T) {
 		app := New()
 		mux := http.NewServeMux()

@@ -3,6 +3,7 @@ package zinc
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -244,5 +245,27 @@ func TestRouterAddAndMatchErrorBranches(t *testing.T) {
 	app := New()
 	if err := app.Match([]string{MethodGet}, "/users"); err == nil {
 		t.Fatal("expected Match to fail when handlers are missing")
+	}
+}
+
+func TestRouterAllowedMethodsSharedPathIndex(t *testing.T) {
+	router := &Router{config: &DefaultConfig}
+	mustDo(t, router.Add(MethodGet, "/shared/one", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodPost, "/shared/two", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/users/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodPost, "/users/me", func(*Context) error { return nil }))
+
+	shared := router.allowedMethods("/shared/one", true, true)
+	if want := []string{MethodGet, MethodHead, MethodOptions}; !reflect.DeepEqual(shared, want) {
+		t.Fatalf("shared allow = %v want %v", shared, want)
+	}
+
+	overlap := router.allowedMethods("/users/me", true, true)
+	if want := []string{MethodGet, MethodHead, MethodPost, MethodOptions}; !reflect.DeepEqual(overlap, want) {
+		t.Fatalf("overlap allow = %v want %v", overlap, want)
+	}
+
+	if header := router.allowedMethodHeader("/users/me", true, true); header != "GET, HEAD, POST, OPTIONS" {
+		t.Fatalf("allow header = %q", header)
 	}
 }

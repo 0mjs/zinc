@@ -31,13 +31,15 @@ type scenarioRoute struct {
 }
 
 type benchmarkScenario struct {
-	name           string
-	routes         []scenarioRoute
-	allRequests    []*http.Request
-	staticRequest  *http.Request
-	paramRequest   *http.Request
-	withServeMux   bool
-	withHTTPRouter bool
+	name                  string
+	routes                []scenarioRoute
+	allRequests           []*http.Request
+	staticRequest         *http.Request
+	paramRequest          *http.Request
+	notFoundRequest       *http.Request
+	methodMismatchRequest *http.Request
+	withServeMux          bool
+	withHTTPRouter        bool
 }
 
 var scenarioBenchmarks = []benchmarkScenario{
@@ -75,6 +77,7 @@ func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) 
 		}
 	}
 
+	methodsByPath := make(map[string]map[string]struct{}, len(routes))
 	var (
 		staticRoute *scenarioRoute
 		paramRoute  *scenarioRoute
@@ -83,6 +86,10 @@ func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) 
 	for i := range routes {
 		route := &routes[i]
 		allRequests[i] = httptest.NewRequest(route.method, route.requestPath, nil)
+		if methodsByPath[route.requestPath] == nil {
+			methodsByPath[route.requestPath] = make(map[string]struct{}, 2)
+		}
+		methodsByPath[route.requestPath][route.method] = struct{}{}
 
 		if len(route.paramNames) == 0 {
 			if staticRoute == nil || len(route.pattern) > len(staticRoute.pattern) {
@@ -99,9 +106,10 @@ func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) 
 	}
 
 	scenario := benchmarkScenario{
-		name:        name,
-		routes:      routes,
-		allRequests: allRequests,
+		name:            name,
+		routes:          routes,
+		allRequests:     allRequests,
+		notFoundRequest: httptest.NewRequest(http.MethodGet, scenarioMissingPath(name), nil),
 	}
 	if staticRoute != nil {
 		scenario.staticRequest = httptest.NewRequest(staticRoute.method, staticRoute.requestPath, nil)
@@ -109,7 +117,46 @@ func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) 
 	if paramRoute != nil {
 		scenario.paramRequest = httptest.NewRequest(paramRoute.method, paramRoute.requestPath, nil)
 	}
+	if methodMismatchRoute, method := scenarioMethodMismatchRoute(routes, staticRoute, paramRoute, methodsByPath); methodMismatchRoute != nil {
+		scenario.methodMismatchRequest = httptest.NewRequest(method, methodMismatchRoute.requestPath, nil)
+	}
 	return scenario
+}
+
+func scenarioMissingPath(name string) string {
+	return "/__benchmark_missing__/" + strings.ToLower(name)
+}
+
+func scenarioMethodMismatchRoute(routes []scenarioRoute, staticRoute, paramRoute *scenarioRoute, methodsByPath map[string]map[string]struct{}) (*scenarioRoute, string) {
+	candidates := make([]*scenarioRoute, 0, len(routes))
+	if staticRoute != nil {
+		candidates = append(candidates, staticRoute)
+	}
+	if paramRoute != nil && paramRoute != staticRoute {
+		candidates = append(candidates, paramRoute)
+	}
+	for i := range routes {
+		route := &routes[i]
+		if route != staticRoute && route != paramRoute {
+			candidates = append(candidates, route)
+		}
+	}
+
+	for _, route := range candidates {
+		if method, ok := scenarioAlternativeMethod(methodsByPath[route.requestPath]); ok {
+			return route, method
+		}
+	}
+	return nil, ""
+}
+
+func scenarioAlternativeMethod(methods map[string]struct{}) (string, bool) {
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodGet} {
+		if _, exists := methods[method]; !exists {
+			return method, true
+		}
+	}
+	return "", false
 }
 
 func scenarioParamNames(pattern string) []string {
@@ -339,7 +386,7 @@ func buildEchoScenarioHandler(routes []scenarioRoute) http.Handler {
 }
 
 func buildGinScenarioHandler(routes []scenarioRoute) http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	for _, route := range routes {
 		route := route
 		r.Handle(route.method, route.pattern, func(c *gin.Context) {
@@ -413,6 +460,30 @@ func BenchmarkScenarioRouteSetParam(b *testing.B) {
 		scenario := scenario
 		b.Run(scenario.name, func(b *testing.B) {
 			runScenarioSingleRequestBenchmark(b, scenario.paramRequest, scenarioCases(scenario))
+		})
+	}
+}
+
+func BenchmarkScenarioRouteSetNotFound(b *testing.B) {
+	for _, scenario := range scenarioBenchmarks {
+		if scenario.notFoundRequest == nil {
+			continue
+		}
+		scenario := scenario
+		b.Run(scenario.name, func(b *testing.B) {
+			runScenarioSingleRequestBenchmark(b, scenario.notFoundRequest, scenarioCases(scenario))
+		})
+	}
+}
+
+func BenchmarkScenarioRouteSetMethodMismatch(b *testing.B) {
+	for _, scenario := range scenarioBenchmarks {
+		if scenario.methodMismatchRequest == nil {
+			continue
+		}
+		scenario := scenario
+		b.Run(scenario.name, func(b *testing.B) {
+			runScenarioSingleRequestBenchmark(b, scenario.methodMismatchRequest, scenarioCases(scenario))
 		})
 	}
 }
@@ -782,7 +853,7 @@ To run from the repo root:
     cd benchmarks && go test -run=^$ -bench '^BenchmarkScenarioRouteSet' -benchmem
 
 To keep local runs fast while iterating from benchmarks/:
-    go test -run=^$ -bench '^BenchmarkScenarioRouteSet(All|Param|Static)$' -benchmem -benchtime=200ms
+    go test -run=^$ -bench '^BenchmarkScenarioRouteSet(All|Param|Static|NotFound|MethodMismatch)$' -benchmem -benchtime=200ms
 
 Notes:
 - These route corpora are benchmark-oriented recreations inspired by the classic Go HTTP router benchmark shapes.

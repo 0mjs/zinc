@@ -80,21 +80,19 @@ func (a *App) dispatch(ctx *Context) error {
 		return nil
 	}
 
-	var allowed []string
+	allowedHeader := ""
 	needsAllowScan := (method == MethodOptions && a.config.AutoOptions) || a.config.HandleMethodNotAllowed
 	if needsAllowScan {
-		if a.router.hasDynamicRoutes() || a.router.staticPathKnown(path) {
-			allowed = a.router.allowedMethods(path, a.config.AutoHead, a.config.AutoOptions)
-		}
+		allowedHeader = a.router.allowedMethodHeader(path, a.config.AutoHead, a.config.AutoOptions)
 	}
-	if method == MethodOptions && a.config.AutoOptions && len(allowed) > 0 {
-		ctx.SetHeader(HeaderAllow, strings.Join(allowed, ", "))
+	if method == MethodOptions && a.config.AutoOptions && allowedHeader != "" {
+		ctx.SetHeader(HeaderAllow, allowedHeader)
 		return ctx.Status(StatusNoContent).NoContent()
 	}
 
-	if a.config.HandleMethodNotAllowed && len(allowed) > 0 {
+	if a.config.HandleMethodNotAllowed && allowedHeader != "" {
 		ctx.Status(StatusMethodNotAllowed)
-		ctx.SetHeader(HeaderAllow, strings.Join(allowed, ", "))
+		ctx.SetHeader(HeaderAllow, allowedHeader)
 		if a.methodNA != nil {
 			if err := a.methodNA(ctx); err != nil {
 				return err

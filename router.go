@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -39,6 +38,8 @@ type radixNode struct {
 	kind          radixNodeKind
 	prefix        string
 	route         *radixRoute
+	allowMethods  methodMask
+	allowParamCnt uint8
 	indices       []byte
 	indexTable    *[256]uint16
 	children      []*radixNode
@@ -51,6 +52,7 @@ type Router struct {
 	config            *Config
 	routes            RouteMap
 	trees             map[string]*radixNode
+	allowTree         *radixNode
 	routeInfos        []routeMeta
 	dynamicRouteCount int
 }
@@ -97,7 +99,31 @@ var routeMethods = []string{
 	MethodTrace,
 }
 
+type methodMask uint16
+
+const (
+	methodMaskGet methodMask = 1 << iota
+	methodMaskHead
+	methodMaskPost
+	methodMaskPut
+	methodMaskPatch
+	methodMaskDelete
+	methodMaskOptions
+	methodMaskConnect
+	methodMaskTrace
+)
+
+const allowHeaderTableSize = 1 << 9
+
 const routeCacheMinDynamicRoutes = 64
+
+var allowHeaderByMask [allowHeaderTableSize]string
+
+func init() {
+	for raw := 0; raw < len(allowHeaderByMask); raw++ {
+		allowHeaderByMask[raw] = buildAllowHeader(methodMask(raw))
+	}
+}
 
 func NewRouteCache(size int) *RouteCache {
 	return &RouteCache{
@@ -179,6 +205,7 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		for i := 0; i < routeCandidateCount; i++ {
 			methodRoutes[routeCandidates[i]] = route
 		}
+		r.ensureAllowTree().addAllowedPath(path, methodMaskFor(method), paramCount)
 
 		r.routeInfos = append(r.routeInfos, info)
 		return nil
@@ -195,6 +222,7 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	if err := root.add(path, newRadixRoute(precomposed, infoIndex, paramNames, paramCount)); err != nil {
 		return err
 	}
+	r.ensureAllowTree().addAllowedPath(path, methodMaskFor(method), paramCount)
 	r.routeInfos = append(r.routeInfos, info)
 	r.dynamicRouteCount++
 	return nil
@@ -346,60 +374,32 @@ func (r *Router) dynamicCacheEnabled() bool {
 }
 
 func (r *Router) allowedMethods(path string, autoHead, autoOptions bool) []string {
-	allowed := make([]string, 0, len(routeMethods)+1)
-	hasGet := false
-	hasOptions := false
-	ctx := &Context{}
-	for _, method := range routeMethods {
-		ctx.truncateParams(0)
-		if r.findInto(method, path, ctx) == nil {
-			continue
-		}
-		allowed = append(allowed, method)
-		if method == MethodGet {
-			hasGet = true
-		}
-		if method == MethodOptions {
-			hasOptions = true
-		}
+	mask := r.allowedMethodMask(path, autoHead, autoOptions)
+	if mask == 0 {
+		return nil
 	}
-	if autoHead && hasGet && !containsMethod(allowed, MethodHead) {
-		allowed = append(allowed, MethodHead)
-	}
-	if autoOptions && len(allowed) > 0 && !hasOptions {
-		allowed = append(allowed, MethodOptions)
-	}
-	sort.SliceStable(allowed, func(i, j int) bool {
-		return methodRank(allowed[i]) < methodRank(allowed[j])
-	})
-	return allowed
+	return allowedMethodsFromMask(mask)
 }
 
-func containsMethod(methods []string, target string) bool {
-	for _, method := range methods {
-		if method == target {
-			return true
-		}
+func (r *Router) allowedMethodMask(path string, autoHead, autoOptions bool) methodMask {
+	mask := r.lookupAllowedMethodMask(path)
+	if mask == 0 {
+		return 0
 	}
-	return false
+	return applyAutomaticMethods(mask, autoHead, autoOptions)
 }
 
-func methodRank(method string) int {
-	for i, candidate := range routeMethods {
-		if candidate == method {
-			return i
-		}
+func (r *Router) allowedMethodHeader(path string, autoHead, autoOptions bool) string {
+	mask := r.allowedMethodMask(path, autoHead, autoOptions)
+	if mask == 0 {
+		return ""
 	}
-	return len(routeMethods)
+	return allowHeader(mask)
 }
 
-func (r *Router) hasDynamicRoutes() bool {
-	return len(r.trees) > 0
-}
-
-func (r *Router) staticPathKnown(path string) bool {
-	if len(r.routes) == 0 {
-		return false
+func (r *Router) lookupAllowedMethodMask(path string) methodMask {
+	if r.allowTree == nil {
+		return 0
 	}
 
 	originalPath := path
@@ -408,12 +408,49 @@ func (r *Router) staticPathKnown(path string) bool {
 		path = path[:len(path)-1]
 	}
 	caseSensitive := r.config != nil && r.config.CaseSensitive
-	for _, methodRoutes := range r.routes {
-		if lookupStaticRouteIn(methodRoutes, originalPath, path, caseSensitive) != nil {
-			return true
+
+	if mask := lookupAllowedMaskInTree(r.allowTree, originalPath, path, caseSensitive); mask != 0 {
+		return mask
+	}
+	return 0
+}
+
+func lookupAllowedMaskInTree(root *radixNode, originalPath, path string, caseSensitive bool) methodMask {
+	if root == nil {
+		return 0
+	}
+
+	tryLookup := func(candidate string) methodMask {
+		if candidate == "" {
+			return 0
+		}
+		return root.lookupAllowed(candidate, 0)
+	}
+
+	if mask := tryLookup(originalPath); mask != 0 {
+		return mask
+	}
+	if path != originalPath {
+		if mask := tryLookup(path); mask != 0 {
+			return mask
 		}
 	}
-	return false
+	if caseSensitive {
+		return 0
+	}
+	if lower, changed := lowercasePath(originalPath); changed {
+		if mask := tryLookup(lower); mask != 0 {
+			return mask
+		}
+	}
+	if path != originalPath {
+		if lower, changed := lowercasePath(path); changed {
+			if mask := tryLookup(lower); mask != 0 {
+				return mask
+			}
+		}
+	}
+	return 0
 }
 
 func lookupStaticRouteIn(methodRoutes map[string]*Route, originalPath, path string, caseSensitive bool) *Route {
@@ -532,12 +569,7 @@ func newRadixRoute(handler HandlerFunc, infoIndex uint32, names [8]string, count
 		handler:   handler,
 		infoIndex: infoIndex,
 	}
-	if count < 0 {
-		count = 0
-	}
-	if count > len(names) {
-		count = len(names)
-	}
+	count = clampParamCount(count, len(names))
 	route.paramCount = uint8(count)
 	inlineCount := count
 	if inlineCount > len(route.inlineParamNames) {
@@ -557,6 +589,16 @@ func (r *radixRoute) paramNameAt(index int) string {
 		return r.inlineParamNames[index]
 	}
 	return r.extraParamNames[index-len(r.inlineParamNames)]
+}
+
+func clampParamCount(count, limit int) int {
+	if count < 0 {
+		return 0
+	}
+	if count > limit {
+		return limit
+	}
+	return count
 }
 
 func (n *radixNode) add(path string, route *radixRoute) error {
@@ -602,6 +644,38 @@ func (n *radixNode) add(path string, route *radixRoute) error {
 	return nil
 }
 
+func (n *radixNode) addAllowedPath(path string, methods methodMask, paramCount int) {
+	current := n
+	remaining := path
+	for len(remaining) > 0 {
+		wildIndex := strings.IndexAny(remaining, ":*")
+		if wildIndex < 0 {
+			current = current.addStaticPath(remaining)
+			remaining = ""
+			break
+		}
+		if wildIndex > 0 {
+			current = current.addStaticPath(remaining[:wildIndex])
+			remaining = remaining[wildIndex:]
+		}
+		switch remaining[0] {
+		case ParamIdentifier:
+			end := 1
+			for end < len(remaining) && remaining[end] != '/' {
+				end++
+			}
+			current = current.addParamChild()
+			remaining = remaining[end:]
+		case WildcardIdentifier:
+			current = current.addCatchAllChild()
+			remaining = ""
+		}
+	}
+
+	current.allowMethods |= methods
+	current.allowParamCnt = uint8(clampParamCount(paramCount, 8))
+}
+
 func (n *radixNode) addStaticPath(path string) *radixNode {
 	current := n
 	remaining := path
@@ -623,6 +697,8 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 			kind:          radixStatic,
 			prefix:        child.prefix[common:],
 			route:         child.route,
+			allowMethods:  child.allowMethods,
+			allowParamCnt: child.allowParamCnt,
 			indices:       child.indices,
 			indexTable:    child.indexTable,
 			children:      child.children,
@@ -631,6 +707,8 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 		}
 		child.prefix = child.prefix[:common]
 		child.route = nil
+		child.allowMethods = 0
+		child.allowParamCnt = 0
 		child.indices = nil
 		child.indexTable = nil
 		child.children = nil
@@ -757,11 +835,144 @@ func (n *radixNode) lookup(path string, offset int, values *[8]paramRange, captu
 	return nil
 }
 
+func (n *radixNode) lookupAllowed(path string, captured int) methodMask {
+	switch n.kind {
+	case radixStatic:
+		if len(path) < len(n.prefix) || path[:len(n.prefix)] != n.prefix {
+			return 0
+		}
+		path = path[len(n.prefix):]
+	case radixParam:
+		if len(path) == 0 || path[0] == '/' {
+			return 0
+		}
+		end := nextSlash(path)
+		if end < 0 {
+			end = len(path)
+		}
+		captured++
+		path = path[end:]
+	case radixCatchAll:
+		captured++
+		return n.matchAllowed(captured)
+	}
+
+	var matched methodMask
+	if len(path) == 0 {
+		matched |= n.matchAllowed(captured)
+	}
+	if len(path) > 0 {
+		if idx := n.staticChildIndex(path[0]); idx >= 0 {
+			matched |= n.children[idx].lookupAllowed(path, captured)
+		}
+		if n.paramChild != nil {
+			matched |= n.paramChild.lookupAllowed(path, captured)
+		}
+		if n.catchAllChild != nil {
+			matched |= n.catchAllChild.lookupAllowed(path, captured)
+		}
+	}
+	return matched
+}
+
 func (n *radixNode) matchRoute(captured int) *radixRoute {
 	if n.route == nil || captured != int(n.route.paramCount) {
 		return nil
 	}
 	return n.route
+}
+
+func (n *radixNode) matchAllowed(captured int) methodMask {
+	if n.allowMethods == 0 || captured != int(n.allowParamCnt) {
+		return 0
+	}
+	return n.allowMethods
+}
+
+func (r *Router) ensureAllowTree() *radixNode {
+	if r.allowTree == nil {
+		r.allowTree = &radixNode{kind: radixRoot}
+	}
+	return r.allowTree
+}
+
+func methodMaskFor(method string) methodMask {
+	switch method {
+	case MethodGet:
+		return methodMaskGet
+	case MethodHead:
+		return methodMaskHead
+	case MethodPost:
+		return methodMaskPost
+	case MethodPut:
+		return methodMaskPut
+	case MethodPatch:
+		return methodMaskPatch
+	case MethodDelete:
+		return methodMaskDelete
+	case MethodOptions:
+		return methodMaskOptions
+	case MethodConnect:
+		return methodMaskConnect
+	case MethodTrace:
+		return methodMaskTrace
+	default:
+		return 0
+	}
+}
+
+func applyAutomaticMethods(mask methodMask, autoHead, autoOptions bool) methodMask {
+	if mask == 0 {
+		return 0
+	}
+	if autoHead && mask&methodMaskGet != 0 {
+		mask |= methodMaskHead
+	}
+	if autoOptions {
+		mask |= methodMaskOptions
+	}
+	return mask
+}
+
+func allowedMethodsFromMask(mask methodMask) []string {
+	if mask == 0 {
+		return nil
+	}
+	allowed := make([]string, 0, len(routeMethods))
+	for _, method := range routeMethods {
+		if mask&methodMaskFor(method) == 0 {
+			continue
+		}
+		allowed = append(allowed, method)
+	}
+	return allowed
+}
+
+func allowHeader(mask methodMask) string {
+	if mask == 0 {
+		return ""
+	}
+	if int(mask) < len(allowHeaderByMask) {
+		return allowHeaderByMask[int(mask)]
+	}
+	return buildAllowHeader(mask)
+}
+
+func buildAllowHeader(mask methodMask) string {
+	if mask == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	for _, method := range routeMethods {
+		if mask&methodMaskFor(method) == 0 {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteString(", ")
+		}
+		builder.WriteString(method)
+	}
+	return builder.String()
 }
 
 func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
@@ -920,27 +1131,6 @@ func (a *App) All(path string, handlers ...HandlerFunc) error {
 
 func (a *App) Any(path string, handlers ...HandlerFunc) error {
 	return a.All(path, handlers...)
-}
-
-// SSE registers a GET route that serves server-sent events.
-func (a *App) SSE(path string, handler SSEHandler) error {
-	if handler == nil {
-		return ErrSSEHandlerNil
-	}
-	return a.Get(path, func(c *Context) error {
-		return c.SSE(handler)
-	})
-}
-
-// WS registers a GET route that upgrades to websocket.
-func (a *App) WS(path string, handler WebSocketHandler, config ...WebSocketConfig) error {
-	if handler == nil {
-		return ErrWebSocketHandlerNil
-	}
-	cfg := firstWebSocketConfig(config)
-	return a.Get(path, func(c *Context) error {
-		return c.WebSocket(handler, cfg)
-	})
 }
 
 func StringHandler(str string) HandlerFunc {

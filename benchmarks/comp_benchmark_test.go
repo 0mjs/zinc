@@ -1,6 +1,7 @@
 package benchmarks
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,10 +30,14 @@ func TestMain(m *testing.M) {
 const (
 	benchmarkHelloResponse = "Hello World!"
 	benchmarkOKResponse    = "OK"
+	staticColdRouteCount   = 64
 	largeStaticRouteCount  = 256
 	largeParamRouteCount   = 128
 	coldPathRequestCount   = 256
+	throughputDuration     = 1500 * time.Millisecond
 )
+
+var throughputConcurrencyLevels = []int{1, 8, 32, 128}
 
 var (
 	benchmarkSinkString  string
@@ -58,6 +63,26 @@ var benchmarkJSONData = func() benchmarkResponse {
 	resp.Data.Count = len(resp.Data.Items)
 	return resp
 }()
+
+type benchmarkAPIBindInput struct {
+	TeamID  int      `path:"teamID" uri:"teamID" param:"teamID"`
+	UserID  int      `path:"userID" uri:"userID" param:"userID"`
+	Verbose bool     `query:"verbose" form:"verbose"`
+	Limit   int      `query:"limit" form:"limit"`
+	Name    string   `json:"name"`
+	Roles   []string `json:"roles"`
+}
+
+type benchmarkAPIResponse struct {
+	OK        bool   `json:"ok"`
+	TeamID    int    `json:"team_id"`
+	UserID    int    `json:"user_id"`
+	Limit     int    `json:"limit"`
+	RoleCount int    `json:"role_count"`
+	Name      string `json:"name"`
+}
+
+var benchmarkAPIBindBody = []byte(`{"name":"alice","roles":["admin","editor"]}`)
 
 type discardResponseWriter struct {
 	header http.Header
@@ -106,6 +131,11 @@ type benchmarkCase struct {
 	build func() http.Handler
 }
 
+type preparedBenchmarkRequest struct {
+	request *http.Request
+	body    []byte
+}
+
 type middlewareContextKey int
 
 const (
@@ -122,6 +152,42 @@ func mustNoErr(err error) {
 	}
 }
 
+func newGinBenchmarkRouter() *gin.Engine {
+	r := gin.New()
+	r.HandleMethodNotAllowed = true
+	return r
+}
+
+func newPreparedBenchmarkRequest(method, target string, body []byte, headers http.Header) preparedBenchmarkRequest {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+
+	req := httptest.NewRequest(method, target, reader)
+	for key, values := range headers {
+		req.Header[key] = append([]string(nil), values...)
+	}
+
+	return preparedBenchmarkRequest{
+		request: req,
+		body:    append([]byte(nil), body...),
+	}
+}
+
+func (r *preparedBenchmarkRequest) reset() *http.Request {
+	if len(r.body) == 0 {
+		return r.request
+	}
+
+	r.request.Body = io.NopCloser(bytes.NewReader(r.body))
+	r.request.ContentLength = int64(len(r.body))
+	r.request.Form = nil
+	r.request.PostForm = nil
+	r.request.MultipartForm = nil
+	return r.request
+}
+
 func runServeHTTPBenchmarks(b *testing.B, method, target string, cases []benchmarkCase) {
 	for _, bc := range cases {
 		b.Run(bc.name, func(b *testing.B) {
@@ -135,6 +201,7 @@ func runServeHTTPBenchmarks(b *testing.B, method, target string, cases []benchma
 				rw.reset()
 				handler.ServeHTTP(rw, req)
 			}
+			benchmarkSinkInt = rw.status + rw.bytes
 		})
 	}
 }
@@ -151,6 +218,42 @@ func runServeHTTPRequestSetBenchmarks(b *testing.B, cases []benchmarkCase, reque
 				rw.reset()
 				handler.ServeHTTP(rw, requests[i%len(requests)])
 			}
+			benchmarkSinkInt = rw.status + rw.bytes
+		})
+	}
+}
+
+func runPreparedRequestBenchmarks(b *testing.B, cases []benchmarkCase, request preparedBenchmarkRequest) {
+	for _, bc := range cases {
+		b.Run(bc.name, func(b *testing.B) {
+			handler := bc.build()
+			rw := newDiscardResponseWriter()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rw.reset()
+				handler.ServeHTTP(rw, request.reset())
+			}
+			benchmarkSinkInt = rw.status + rw.bytes
+		})
+	}
+}
+
+func runPreparedRequestSetBenchmarks(b *testing.B, cases []benchmarkCase, requests []preparedBenchmarkRequest) {
+	for _, bc := range cases {
+		b.Run(bc.name, func(b *testing.B) {
+			handler := bc.build()
+			rw := newDiscardResponseWriter()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rw.reset()
+				req := &requests[i%len(requests)]
+				handler.ServeHTTP(rw, req.reset())
+			}
+			benchmarkSinkInt = rw.status + rw.bytes
 		})
 	}
 }
@@ -241,12 +344,77 @@ func coldParamTargets(count int) []string {
 	return targets
 }
 
+func staticColdPath(i int) string {
+	return "/static-cold/" + strconv.Itoa(i)
+}
+
+func staticColdTargets(count int) []string {
+	targets := make([]string, count)
+	for i := 0; i < count; i++ {
+		targets[i] = staticColdPath(i % staticColdRouteCount)
+	}
+	return targets
+}
+
+func mixedLargeStaticTargets(count int) []string {
+	targets := make([]string, count)
+	for i := 0; i < count; i++ {
+		targets[i] = largeStaticPath(i % largeStaticRouteCount)
+	}
+	return targets
+}
+
 func mixedLargeParamTargets(count int) []string {
 	targets := make([]string, count)
 	for i := 0; i < count; i++ {
 		targets[i] = "/teams/" + strconv.Itoa(i%largeParamRouteCount) + "/users/" + strconv.Itoa(1000+i)
 	}
 	return targets
+}
+
+func benchmarkAPIQueryTarget() string {
+	return "/teams/42/users/7?verbose=true&limit=25"
+}
+
+func benchmarkAPIBindTarget() string {
+	return "/teams/42/users/7?verbose=true&limit=25"
+}
+
+func benchmarkAPIBodyHeaders() http.Header {
+	header := make(http.Header, 1)
+	header.Set(HeaderContentType, "application/json")
+	return header
+}
+
+func consumeBenchmarkAPIInput(input benchmarkAPIBindInput) {
+	benchmarkSinkString = input.Name
+	benchmarkSinkBool = input.Verbose
+	benchmarkSinkInt = input.TeamID + input.UserID + input.Limit + len(input.Roles)
+}
+
+func benchmarkAPIResponseFrom(input benchmarkAPIBindInput) benchmarkAPIResponse {
+	return benchmarkAPIResponse{
+		OK:        true,
+		TeamID:    input.TeamID,
+		UserID:    input.UserID,
+		Limit:     input.Limit,
+		RoleCount: len(input.Roles),
+		Name:      input.Name,
+	}
+}
+
+func parseBenchmarkInt(value string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func fillBenchmarkAPIQuery(input *benchmarkAPIBindInput, req *http.Request) {
+	values := req.URL.Query()
+	input.Verbose = values.Get("verbose") == "true"
+	input.Limit = parseBenchmarkInt(values.Get("limit"))
 }
 
 func buildZincHelloHandler() http.Handler {
@@ -282,7 +450,7 @@ func buildEchoHelloHandler() http.Handler {
 }
 
 func buildGinHelloHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/", func(c *gin.Context) {
 		c.String(http.StatusOK, benchmarkHelloResponse)
 	})
@@ -330,7 +498,7 @@ func buildEchoStaticHandler() http.Handler {
 }
 
 func buildGinStaticHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/hello", func(c *gin.Context) {
 		c.String(http.StatusOK, benchmarkHelloResponse)
 	})
@@ -342,6 +510,72 @@ func buildHttpRouterStaticHandler() http.Handler {
 	r.GET("/hello", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		_, _ = io.WriteString(w, benchmarkHelloResponse)
 	})
+	return r
+}
+
+func buildZincStaticColdHandler() http.Handler {
+	app := New()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		mustNoErr(app.Get(path, func(c *Context) error {
+			return c.String(benchmarkOKResponse)
+		}))
+	}
+	return app
+}
+
+func buildServeMuxStaticColdHandler() http.Handler {
+	mux := http.NewServeMux()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, benchmarkOKResponse)
+		})
+	}
+	return mux
+}
+
+func buildChiStaticColdHandler() http.Handler {
+	r := chi.NewRouter()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		r.Get(path, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, benchmarkOKResponse)
+		})
+	}
+	return r
+}
+
+func buildEchoStaticColdHandler() http.Handler {
+	e := echo.New()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		e.GET(path, func(c *echo.Context) error {
+			return c.String(http.StatusOK, benchmarkOKResponse)
+		})
+	}
+	return e
+}
+
+func buildGinStaticColdHandler() http.Handler {
+	r := newGinBenchmarkRouter()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		r.GET(path, func(c *gin.Context) {
+			c.String(http.StatusOK, benchmarkOKResponse)
+		})
+	}
+	return r
+}
+
+func buildHttpRouterStaticColdHandler() http.Handler {
+	r := httprouter.New()
+	for i := 0; i < staticColdRouteCount; i++ {
+		path := staticColdPath(i)
+		r.GET(path, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+			_, _ = io.WriteString(w, benchmarkOKResponse)
+		})
+	}
 	return r
 }
 
@@ -382,7 +616,7 @@ func buildEchoParamHandler() http.Handler {
 }
 
 func buildGinParamHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/hello/:name", func(c *gin.Context) {
 		benchmarkSinkString = c.Param("name")
 		c.String(http.StatusOK, benchmarkHelloResponse)
@@ -434,7 +668,7 @@ func buildEchoJSONHandler() http.Handler {
 }
 
 func buildGinJSONHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/json", func(c *gin.Context) {
 		c.JSON(http.StatusOK, benchmarkJSONData)
 	})
@@ -489,7 +723,7 @@ func buildEchoQueryHandler() http.Handler {
 }
 
 func buildGinQueryHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/query", func(c *gin.Context) {
 		benchmarkSinkBool = c.Query("name") != "" && c.Query("age") != "" && c.Query("city") != ""
 		c.String(http.StatusOK, benchmarkOKResponse)
@@ -589,7 +823,7 @@ func buildEchoMiddlewareHandler() http.Handler {
 }
 
 func buildGinMiddlewareHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.Use(
 		ginMiddleware("mw1"),
 		ginMiddleware("mw2"),
@@ -663,7 +897,7 @@ func buildEchoNotFoundHandler() http.Handler {
 }
 
 func buildGinNotFoundHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/found", func(c *gin.Context) {
 		c.String(http.StatusOK, benchmarkOKResponse)
 	})
@@ -723,7 +957,7 @@ func buildEchoLargeStaticHandler() http.Handler {
 }
 
 func buildGinLargeStaticHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	for i := 0; i < largeStaticRouteCount; i++ {
 		path := largeStaticPath(i)
 		r.GET(path, func(c *gin.Context) {
@@ -793,7 +1027,7 @@ func buildEchoLargeParamHandler() http.Handler {
 }
 
 func buildGinLargeParamHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	for i := 0; i < largeParamRouteCount; i++ {
 		path := largeParamPatternColon(i)
 		r.GET(path, func(c *gin.Context) {
@@ -849,7 +1083,7 @@ func buildEchoRPSHandler() http.Handler {
 }
 
 func buildGinRPSHandler() http.Handler {
-	r := gin.New()
+	r := newGinBenchmarkRouter()
 	r.GET("/rps", func(c *gin.Context) {
 		c.String(http.StatusOK, benchmarkOKResponse)
 	})
@@ -862,6 +1096,416 @@ func buildHttpRouterRPSHandler() http.Handler {
 		_, _ = io.WriteString(w, benchmarkOKResponse)
 	})
 	return r
+}
+
+func requestContextMiddlewareSatisfied(r *http.Request) bool {
+	ctx := r.Context()
+	return ctx.Value(middlewareKey1) != nil &&
+		ctx.Value(middlewareKey2) != nil &&
+		ctx.Value(middlewareKey3) != nil &&
+		ctx.Value(middlewareKey4) != nil &&
+		ctx.Value(middlewareKey5) != nil
+}
+
+func zincMiddlewareSatisfied(c *Context) bool {
+	_, ok1 := c.Get("mw1")
+	_, ok2 := c.Get("mw2")
+	_, ok3 := c.Get("mw3")
+	_, ok4 := c.Get("mw4")
+	_, ok5 := c.Get("mw5")
+	return ok1 && ok2 && ok3 && ok4 && ok5
+}
+
+func echoMiddlewareSatisfied(c *echo.Context) bool {
+	return c.Get("mw1") != nil &&
+		c.Get("mw2") != nil &&
+		c.Get("mw3") != nil &&
+		c.Get("mw4") != nil &&
+		c.Get("mw5") != nil
+}
+
+func ginMiddlewareSatisfied(c *gin.Context) bool {
+	_, ok1 := c.Get("mw1")
+	_, ok2 := c.Get("mw2")
+	_, ok3 := c.Get("mw3")
+	_, ok4 := c.Get("mw4")
+	_, ok5 := c.Get("mw5")
+	return ok1 && ok2 && ok3 && ok4 && ok5
+}
+
+func buildZincAPIParamQueryJSONHandler() http.Handler {
+	app := New()
+	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		return c.JSON(benchmarkAPIResponseFrom(input))
+	}))
+	return app
+}
+
+func buildServeMuxAPIParamQueryJSONHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
+			UserID: parseBenchmarkInt(r.PathValue("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, r)
+		consumeBenchmarkAPIInput(input)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+	return mux
+}
+
+func buildChiAPIParamQueryJSONHandler() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/teams/{teamID}/users/{userID}", func(w http.ResponseWriter, req *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(chi.URLParam(req, "teamID")),
+			UserID: parseBenchmarkInt(chi.URLParam(req, "userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		consumeBenchmarkAPIInput(input)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildEchoAPIParamQueryJSONHandler() http.Handler {
+	e := echo.New()
+	e.GET("/teams/:teamID/users/:userID", func(c *echo.Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		return c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return e
+}
+
+func buildGinAPIParamQueryJSONHandler() http.Handler {
+	r := newGinBenchmarkRouter()
+	r.GET("/teams/:teamID/users/:userID", func(c *gin.Context) {
+		var input benchmarkAPIBindInput
+		if err := c.ShouldBindUri(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if err := c.ShouldBindQuery(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildHttpRouterAPIParamQueryJSONHandler() http.Handler {
+	r := httprouter.New()
+	r.GET("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
+			UserID: parseBenchmarkInt(ps.ByName("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		consumeBenchmarkAPIInput(input)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildZincAPIHappyPathHandler() http.Handler {
+	app := New()
+	app.Use(
+		zincMiddleware("mw1"),
+		zincMiddleware("mw2"),
+		zincMiddleware("mw3"),
+		zincMiddleware("mw4"),
+		zincMiddleware("mw5"),
+	)
+	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && zincMiddlewareSatisfied(c)
+		return c.JSON(benchmarkAPIResponseFrom(input))
+	}))
+	return app
+}
+
+func buildServeMuxAPIHappyPathHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
+			UserID: parseBenchmarkInt(r.PathValue("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, r)
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(r)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+
+	var handler http.Handler = mux
+	handler = stdMiddleware(handler, middlewareKey5)
+	handler = stdMiddleware(handler, middlewareKey4)
+	handler = stdMiddleware(handler, middlewareKey3)
+	handler = stdMiddleware(handler, middlewareKey2)
+	handler = stdMiddleware(handler, middlewareKey1)
+	return handler
+}
+
+func buildChiAPIHappyPathHandler() http.Handler {
+	r := chi.NewRouter()
+	r.Use(chiMiddleware(middlewareKey1))
+	r.Use(chiMiddleware(middlewareKey2))
+	r.Use(chiMiddleware(middlewareKey3))
+	r.Use(chiMiddleware(middlewareKey4))
+	r.Use(chiMiddleware(middlewareKey5))
+	r.Get("/teams/{teamID}/users/{userID}", func(w http.ResponseWriter, req *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(chi.URLParam(req, "teamID")),
+			UserID: parseBenchmarkInt(chi.URLParam(req, "userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildEchoAPIHappyPathHandler() http.Handler {
+	e := echo.New()
+	e.Use(
+		echoMiddleware("mw1"),
+		echoMiddleware("mw2"),
+		echoMiddleware("mw3"),
+		echoMiddleware("mw4"),
+		echoMiddleware("mw5"),
+	)
+	e.GET("/teams/:teamID/users/:userID", func(c *echo.Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && echoMiddlewareSatisfied(c)
+		return c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return e
+}
+
+func buildGinAPIHappyPathHandler() http.Handler {
+	r := newGinBenchmarkRouter()
+	r.Use(
+		ginMiddleware("mw1"),
+		ginMiddleware("mw2"),
+		ginMiddleware("mw3"),
+		ginMiddleware("mw4"),
+		ginMiddleware("mw5"),
+	)
+	r.GET("/teams/:teamID/users/:userID", func(c *gin.Context) {
+		var input benchmarkAPIBindInput
+		if err := c.ShouldBindUri(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if err := c.ShouldBindQuery(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && ginMiddlewareSatisfied(c)
+		c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildHttpRouterAPIHappyPathHandler() http.Handler {
+	r := httprouter.New()
+	r.GET("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
+			UserID: parseBenchmarkInt(ps.ByName("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+
+	var handler http.Handler = r
+	handler = stdMiddleware(handler, middlewareKey5)
+	handler = stdMiddleware(handler, middlewareKey4)
+	handler = stdMiddleware(handler, middlewareKey3)
+	handler = stdMiddleware(handler, middlewareKey2)
+	handler = stdMiddleware(handler, middlewareKey1)
+	return handler
+}
+
+func buildZincAPIBindJSONHappyPathHandler() http.Handler {
+	app := New()
+	app.Use(
+		zincMiddleware("mw1"),
+		zincMiddleware("mw2"),
+		zincMiddleware("mw3"),
+		zincMiddleware("mw4"),
+		zincMiddleware("mw5"),
+	)
+	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && zincMiddlewareSatisfied(c)
+		return c.JSON(benchmarkAPIResponseFrom(input))
+	}))
+	return app
+}
+
+func buildServeMuxAPIBindJSONHappyPathHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
+			UserID: parseBenchmarkInt(r.PathValue("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, r)
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(r)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+
+	var handler http.Handler = mux
+	handler = stdMiddleware(handler, middlewareKey5)
+	handler = stdMiddleware(handler, middlewareKey4)
+	handler = stdMiddleware(handler, middlewareKey3)
+	handler = stdMiddleware(handler, middlewareKey2)
+	handler = stdMiddleware(handler, middlewareKey1)
+	return handler
+}
+
+func buildChiAPIBindJSONHappyPathHandler() http.Handler {
+	r := chi.NewRouter()
+	r.Use(chiMiddleware(middlewareKey1))
+	r.Use(chiMiddleware(middlewareKey2))
+	r.Use(chiMiddleware(middlewareKey3))
+	r.Use(chiMiddleware(middlewareKey4))
+	r.Use(chiMiddleware(middlewareKey5))
+	r.Post("/teams/{teamID}/users/{userID}", func(w http.ResponseWriter, req *http.Request) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(chi.URLParam(req, "teamID")),
+			UserID: parseBenchmarkInt(chi.URLParam(req, "userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildEchoAPIBindJSONHappyPathHandler() http.Handler {
+	e := echo.New()
+	e.Use(
+		echoMiddleware("mw1"),
+		echoMiddleware("mw2"),
+		echoMiddleware("mw3"),
+		echoMiddleware("mw4"),
+		echoMiddleware("mw5"),
+	)
+	e.POST("/teams/:teamID/users/:userID", func(c *echo.Context) error {
+		var input benchmarkAPIBindInput
+		if err := c.Bind(&input); err != nil {
+			return err
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && echoMiddlewareSatisfied(c)
+		return c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return e
+}
+
+func buildGinAPIBindJSONHappyPathHandler() http.Handler {
+	r := newGinBenchmarkRouter()
+	r.Use(
+		ginMiddleware("mw1"),
+		ginMiddleware("mw2"),
+		ginMiddleware("mw3"),
+		ginMiddleware("mw4"),
+		ginMiddleware("mw5"),
+	)
+	r.POST("/teams/:teamID/users/:userID", func(c *gin.Context) {
+		var input benchmarkAPIBindInput
+		if err := c.ShouldBindUri(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if err := c.ShouldBindQuery(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && ginMiddlewareSatisfied(c)
+		c.JSON(http.StatusOK, benchmarkAPIResponseFrom(input))
+	})
+	return r
+}
+
+func buildHttpRouterAPIBindJSONHappyPathHandler() http.Handler {
+	r := httprouter.New()
+	r.POST("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+		input := benchmarkAPIBindInput{
+			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
+			UserID: parseBenchmarkInt(ps.ByName("userID")),
+		}
+		fillBenchmarkAPIQuery(&input, req)
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		consumeBenchmarkAPIInput(input)
+		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
+		w.Header().Set(HeaderContentType, "application/json")
+		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
+	})
+
+	var handler http.Handler = r
+	handler = stdMiddleware(handler, middlewareKey5)
+	handler = stdMiddleware(handler, middlewareKey4)
+	handler = stdMiddleware(handler, middlewareKey3)
+	handler = stdMiddleware(handler, middlewareKey2)
+	handler = stdMiddleware(handler, middlewareKey1)
+	return handler
 }
 
 func helloWorldCases() []benchmarkCase {
@@ -883,6 +1527,17 @@ func staticRouteCases() []benchmarkCase {
 		{name: "Chi", build: buildChiStaticHandler},
 		{name: "Echo", build: buildEchoStaticHandler},
 		{name: "Gin", build: buildGinStaticHandler},
+	}
+}
+
+func staticColdCases() []benchmarkCase {
+	return []benchmarkCase{
+		{name: "Zinc", build: buildZincStaticColdHandler},
+		{name: "ServeMux", build: buildServeMuxStaticColdHandler},
+		{name: "HttpRouter", build: buildHttpRouterStaticColdHandler},
+		{name: "Chi", build: buildChiStaticColdHandler},
+		{name: "Echo", build: buildEchoStaticColdHandler},
+		{name: "Gin", build: buildGinStaticColdHandler},
 	}
 }
 
@@ -963,6 +1618,39 @@ func largeParamCases() []benchmarkCase {
 	}
 }
 
+func apiParamQueryJSONCases() []benchmarkCase {
+	return []benchmarkCase{
+		{name: "Zinc", build: buildZincAPIParamQueryJSONHandler},
+		{name: "ServeMux", build: buildServeMuxAPIParamQueryJSONHandler},
+		{name: "HttpRouter", build: buildHttpRouterAPIParamQueryJSONHandler},
+		{name: "Chi", build: buildChiAPIParamQueryJSONHandler},
+		{name: "Echo", build: buildEchoAPIParamQueryJSONHandler},
+		{name: "Gin", build: buildGinAPIParamQueryJSONHandler},
+	}
+}
+
+func apiHappyPathCases() []benchmarkCase {
+	return []benchmarkCase{
+		{name: "Zinc", build: buildZincAPIHappyPathHandler},
+		{name: "ServeMux", build: buildServeMuxAPIHappyPathHandler},
+		{name: "HttpRouter", build: buildHttpRouterAPIHappyPathHandler},
+		{name: "Chi", build: buildChiAPIHappyPathHandler},
+		{name: "Echo", build: buildEchoAPIHappyPathHandler},
+		{name: "Gin", build: buildGinAPIHappyPathHandler},
+	}
+}
+
+func apiBindJSONHappyPathCases() []benchmarkCase {
+	return []benchmarkCase{
+		{name: "Zinc", build: buildZincAPIBindJSONHappyPathHandler},
+		{name: "ServeMux", build: buildServeMuxAPIBindJSONHappyPathHandler},
+		{name: "HttpRouter", build: buildHttpRouterAPIBindJSONHappyPathHandler},
+		{name: "Chi", build: buildChiAPIBindJSONHappyPathHandler},
+		{name: "Echo", build: buildEchoAPIBindJSONHappyPathHandler},
+		{name: "Gin", build: buildGinAPIBindJSONHappyPathHandler},
+	}
+}
+
 func rpsCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincRPSHandler},
@@ -980,6 +1668,10 @@ func BenchmarkHelloWorld(b *testing.B) {
 
 func BenchmarkStaticRoute(b *testing.B) {
 	runServeHTTPBenchmarks(b, http.MethodGet, "/hello", staticRouteCases())
+}
+
+func BenchmarkStaticRouteCold(b *testing.B) {
+	runServeHTTPRequestSetBenchmarks(b, staticColdCases(), buildRequests(http.MethodGet, staticColdTargets(coldPathRequestCount)))
 }
 
 func BenchmarkRouterParam(b *testing.B) {
@@ -1010,6 +1702,18 @@ func BenchmarkLargeRouteSetStatic(b *testing.B) {
 	runServeHTTPBenchmarks(b, http.MethodGet, largeStaticPath(largeStaticRouteCount-1), largeStaticCases())
 }
 
+func BenchmarkLargeRouteSetStaticMixed(b *testing.B) {
+	runServeHTTPRequestSetBenchmarks(b, largeStaticCases(), buildRequests(http.MethodGet, mixedLargeStaticTargets(coldPathRequestCount)))
+}
+
+func BenchmarkLargeRouteSetNotFound(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodGet, "/static/missing", largeStaticCases())
+}
+
+func BenchmarkLargeRouteSetMethodMismatch(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodPost, largeStaticPath(largeStaticRouteCount-1), largeStaticCases())
+}
+
 func BenchmarkLargeRouteSetParam(b *testing.B) {
 	runServeHTTPBenchmarks(b, http.MethodGet, largeParamPath(largeParamRouteCount-1), largeParamCases())
 }
@@ -1026,15 +1730,33 @@ func BenchmarkRouteRegistrationParam(b *testing.B) {
 	runRegistrationBenchmarks(b, largeParamCases())
 }
 
-func BenchmarkRequestsPerSecond(b *testing.B) {
-	concurrency := 100
-	duration := time.Second
+func BenchmarkAPIParamQueryJSON(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodGet, benchmarkAPIQueryTarget(), apiParamQueryJSONCases())
+}
 
-	for _, bc := range rpsCases() {
-		b.Run(bc.name, func(b *testing.B) {
-			server := httptest.NewServer(bc.build())
-			defer server.Close()
-			measureRPS(b, server.URL+"/rps", concurrency, duration)
+func BenchmarkAPIHappyPath(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodGet, benchmarkAPIQueryTarget(), apiHappyPathCases())
+}
+
+func BenchmarkAPIBindJSONHappyPath(b *testing.B) {
+	runPreparedRequestBenchmarks(
+		b,
+		apiBindJSONHappyPathCases(),
+		newPreparedBenchmarkRequest(http.MethodPost, benchmarkAPIBindTarget(), benchmarkAPIBindBody, benchmarkAPIBodyHeaders()),
+	)
+}
+
+func BenchmarkRequestsPerSecond(b *testing.B) {
+	for _, concurrency := range throughputConcurrencyLevels {
+		concurrency := concurrency
+		b.Run("Concurrency"+strconv.Itoa(concurrency), func(b *testing.B) {
+			for _, bc := range rpsCases() {
+				b.Run(bc.name, func(b *testing.B) {
+					server := httptest.NewServer(bc.build())
+					defer server.Close()
+					measureRPS(b, server.URL+"/rps", concurrency, throughputDuration)
+				})
+			}
 		})
 	}
 }
@@ -1053,6 +1775,10 @@ func measureRPS(b *testing.B, url string, concurrency int, duration time.Duratio
 			},
 		}
 	)
+	baseReq, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		b.Fatalf("create base request: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
@@ -1066,12 +1792,7 @@ func measureRPS(b *testing.B, url string, concurrency int, duration time.Duratio
 				case <-ctx.Done():
 					return
 				default:
-					req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-					if err != nil {
-						b.Logf("error creating request: %v", err)
-						continue
-					}
-
+					req := baseReq.Clone(ctx)
 					resp, err := client.Do(req)
 					if err != nil {
 						if !errors.Is(err, context.DeadlineExceeded) {
@@ -1100,19 +1821,26 @@ func measureRPS(b *testing.B, url string, concurrency int, duration time.Duratio
 func TestRunBenchmarks(t *testing.T) {
 	t.Skip(`
 From benchmarks/:
-    go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
+    go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkStaticRouteCold|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetStaticMixed|BenchmarkLargeRouteSetNotFound|BenchmarkLargeRouteSetMethodMismatch|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkAPIParamQueryJSON|BenchmarkAPIHappyPath|BenchmarkAPIBindJSONHappyPath|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
 
 To run the comparison suite from the repo root:
-    cd benchmarks && go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
+    cd benchmarks && go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkStaticRouteCold|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetStaticMixed|BenchmarkLargeRouteSetNotFound|BenchmarkLargeRouteSetMethodMismatch|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed|BenchmarkAPIParamQueryJSON|BenchmarkAPIHappyPath|BenchmarkAPIBindJSONHappyPath|BenchmarkRouteRegistrationStatic|BenchmarkRouteRegistrationParam' -benchmem
+
+Dispatch-only slice:
+    go test -run=^$ -bench 'BenchmarkHelloWorld|BenchmarkStaticRoute|BenchmarkStaticRouteCold|BenchmarkRouterParam|BenchmarkRouterParamCold|BenchmarkNotFound|BenchmarkLargeRouteSetStatic|BenchmarkLargeRouteSetStaticMixed|BenchmarkLargeRouteSetNotFound|BenchmarkLargeRouteSetMethodMismatch|BenchmarkLargeRouteSetParam|BenchmarkLargeRouteSetParamMixed' -benchmem
+
+Idiomatic framework-path slice:
+    go test -run=^$ -bench 'BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkAPIParamQueryJSON|BenchmarkAPIHappyPath|BenchmarkAPIBindJSONHappyPath' -benchmem
 
 To run the end-to-end throughput benchmark from benchmarks/:
     go test -run=^$ -bench BenchmarkRequestsPerSecond
 
 Notes:
 - The request/response harness now reuses requests and a discard response writer to reduce benchmark noise.
+- Body-consuming endpoint benches reset request bodies between iterations instead of charging full request construction cost to the handler path.
 - The suite includes ServeMux and HttpRouter as additional net/http-based baselines.
 - BenchmarkHelloWorld exercises Zinc's special-case root fast path, while BenchmarkStaticRoute measures a normal non-root static route.
-- The cold param benchmarks rotate request paths to avoid flattering Zinc's route cache.
-- The throughput benchmark uses a real loopback listener; run it with -count=3 or higher and compare reqs/s, not ns/op.
+- The cold route benchmarks rotate request paths to avoid flattering Zinc's route cache.
+- The throughput benchmark uses a real loopback listener with a concurrency sweep; run it with -count=3 or higher and compare reqs/s, not ns/op.
 `)
 }
