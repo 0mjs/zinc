@@ -1,6 +1,7 @@
 package zinc
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -222,9 +223,6 @@ func TestRouterFindIntoAndDynamicCacheBranches(t *testing.T) {
 
 	dynamic := &Router{
 		cache: NewRouteCache(2),
-		trees: map[string]*radixNode{
-			MethodGet: {kind: radixRoot},
-		},
 	}
 	cacheKey := routeCacheKey{method: MethodGet, path: "/cached"}
 	dynamic.cache.set(cacheKey, routeCacheEntry{route: nil})
@@ -267,5 +265,58 @@ func TestRouterAllowedMethodsSharedPathIndex(t *testing.T) {
 
 	if header := router.allowedMethodHeader("/users/me", true, true); header != "GET, HEAD, POST, OPTIONS" {
 		t.Fatalf("allow header = %q", header)
+	}
+}
+
+func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(routeCacheMinRoutes + 8),
+		config: &DefaultConfig,
+	}
+	for i := 0; i < routeCacheMinRoutes; i++ {
+		path := fmt.Sprintf("/bulk/%d", i)
+		mustDo(t, router.Add(MethodGet, path, func(*Context) error { return nil }))
+	}
+	mustDo(t, router.Add(MethodPost, "/only-post", func(*Context) error { return nil }))
+
+	handled, allowed, err := router.dispatchInto(MethodPut, "/only-post", true, &Context{})
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if handled {
+		t.Fatal("expected method mismatch to miss the handler")
+	}
+	if allowed != methodMaskPost {
+		t.Fatalf("allowed=%v", allowed)
+	}
+
+	key := routeCacheKey{method: MethodPut, path: "/only-post"}
+	entry, ok := router.cache.get(key)
+	if !ok {
+		t.Fatal("expected dispatch miss to be cached")
+	}
+	if entry.route != nil {
+		t.Fatalf("cached route=%v", entry.route)
+	}
+	if entry.allowed != methodMaskPost {
+		t.Fatalf("cached allowed=%v", entry.allowed)
+	}
+
+	mustDo(t, router.Add(MethodPut, "/only-post", func(*Context) error { return nil }))
+	if _, ok := router.cache.get(key); ok {
+		t.Fatal("expected route registration to invalidate cached miss results")
+	}
+
+	router.routeTree = nil
+
+	handled, allowed, err = router.dispatchInto(MethodPut, "/only-post", true, &Context{})
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected registered method to handle the request")
+	}
+	if allowed != 0 {
+		t.Fatalf("allowed=%v", allowed)
 	}
 }

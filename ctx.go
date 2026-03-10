@@ -351,29 +351,92 @@ func (c *Context) bodyBytes() ([]byte, error) {
 	if c.bodyRead {
 		return c.body, c.bodyErr
 	}
+	_, readErr, _ := c.readAndCacheBody(nil)
+	return c.body, readErr
+}
+
+func (c *Context) readAndCacheBody(decode func(io.Reader) error) (int, error, error) {
+	if c.bodyRead {
+		if c.bodyErr != nil {
+			return len(c.body), c.bodyErr, nil
+		}
+		if decode == nil {
+			return len(c.body), nil, nil
+		}
+		return len(c.body), nil, decode(bytes.NewReader(c.body))
+	}
 	c.bodyRead = true
-	if c.request == nil || c.request.Body == nil {
-		return nil, nil
+	if !requestHasBody(c.request) {
+		return 0, nil, nil
 	}
 
 	reader := io.Reader(c.request.Body)
 	if c.app != nil && c.app.config.BodyLimit > 0 {
 		reader = io.LimitReader(reader, c.app.config.BodyLimit+1)
 	}
-	body, err := io.ReadAll(reader)
-	if err == nil && c.app != nil && c.app.config.BodyLimit > 0 && int64(len(body)) > c.app.config.BodyLimit {
-		err = ErrRequestEntityTooLarge
+
+	capture := newBodyCaptureReader(reader, c.request.ContentLength)
+	var decodeErr error
+	if decode != nil {
+		decodeErr = decode(capture)
+	}
+	_, drainErr := io.Copy(io.Discard, capture)
+
+	body := capture.Bytes()
+	readErr := capture.readErr
+	if readErr == nil {
+		readErr = drainErr
+	}
+	if readErr == nil && c.app != nil && c.app.config.BodyLimit > 0 && int64(len(body)) > c.app.config.BodyLimit {
+		readErr = ErrRequestEntityTooLarge
 		body = nil
 	}
-	if closeErr := c.request.Body.Close(); err == nil && closeErr != nil {
-		err = closeErr
+	if closeErr := c.request.Body.Close(); readErr == nil && closeErr != nil {
+		readErr = closeErr
 	}
+
 	c.body = body
-	c.bodyErr = err
-	if err == nil {
+	c.bodyErr = readErr
+	if readErr == nil {
 		c.request.Body = io.NopCloser(bytes.NewReader(body))
 	}
-	return c.body, c.bodyErr
+	return len(body), readErr, decodeErr
+}
+
+func requestHasBody(req *http.Request) bool {
+	if req == nil || req.Body == nil || req.Body == http.NoBody {
+		return false
+	}
+	return true
+}
+
+type bodyCaptureReader struct {
+	reader  io.Reader
+	buffer  bytes.Buffer
+	readErr error
+}
+
+func newBodyCaptureReader(reader io.Reader, contentLength int64) *bodyCaptureReader {
+	capture := &bodyCaptureReader{reader: reader}
+	if contentLength > 0 && contentLength <= int64(^uint(0)>>1) {
+		capture.buffer.Grow(int(contentLength))
+	}
+	return capture
+}
+
+func (r *bodyCaptureReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		_, _ = r.buffer.Write(p[:n])
+	}
+	if err != nil && err != io.EOF && r.readErr == nil {
+		r.readErr = err
+	}
+	return n, err
+}
+
+func (r *bodyCaptureReader) Bytes() []byte {
+	return r.buffer.Bytes()
 }
 
 func (c *Context) Scheme() string {
@@ -512,11 +575,7 @@ func (c *Context) applyRouteParams(path string, route *radixRoute, values [8]par
 	if count > len(c.PathParams) {
 		count = len(c.PathParams)
 	}
-	if c.request != nil && c.request.URL != nil && c.request.URL.Path == path {
-		c.paramPath = ""
-	} else {
-		c.paramPath = path
-	}
+	c.paramPath = path
 	previousCount := c.paramCount
 	for i := 0; i < count; i++ {
 		valueRange := values[i]
@@ -546,7 +605,7 @@ func (c *Context) truncateParams(count int) {
 }
 
 func (c *Context) pathParamValueAt(i int) string {
-	p := c.PathParams[i]
+	p := &c.PathParams[i]
 	if p.start == directParamStart {
 		return p.value
 	}
@@ -559,7 +618,10 @@ func (c *Context) pathParamValueAt(i int) string {
 	if start < 0 || end < start || end > len(path) {
 		return ""
 	}
-	return path[start:end]
+	p.value = path[start:end]
+	p.start = directParamStart
+	p.end = 0
+	return p.value
 }
 
 func (c *Context) trustProxy() bool {

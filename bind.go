@@ -1,7 +1,6 @@
 package zinc
 
 import (
-	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -44,36 +43,48 @@ func (b defaultBinder) Bind(c *Context, v any) error {
 	if err := bindFieldsFromPath(val, plan.pathFields, c); err != nil {
 		return err
 	}
-	if len(plan.queryFields) > 0 && c.Request().URL.RawQuery != "" {
+	req := c.Request()
+	if len(plan.queryFields) > 0 && req != nil && req.URL != nil && req.URL.RawQuery != "" {
 		if err := bindFieldsFromValues(val, plan.queryFields, c.QueryValues()); err != nil {
 			return err
 		}
 	}
-	if c.Request().Body == nil {
-		return c.Validate(v)
-	}
-	body, err := c.bodyBytes()
-	if err != nil {
-		return err
-	}
-	if len(body) == 0 {
+	if req == nil || req.Body == nil {
 		return c.Validate(v)
 	}
 	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
 	switch mediaType {
 	case "", "application/json":
-		if err := b.codec.Decode(bytes.NewReader(body), v); err != nil {
-			return fmt.Errorf("bind body: %w", err)
+		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+			return b.codec.Decode(r, v)
+		})
+		if readErr != nil {
+			return readErr
+		}
+		if bodyLen == 0 {
+			return c.Validate(v)
+		}
+		if decodeErr != nil {
+			return fmt.Errorf("bind body: %w", decodeErr)
 		}
 	case "application/xml", "text/xml":
-		if err := xml.NewDecoder(bytes.NewReader(body)).Decode(v); err != nil {
-			return fmt.Errorf("bind body: %w", err)
+		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+			return xml.NewDecoder(r).Decode(v)
+		})
+		if readErr != nil {
+			return readErr
+		}
+		if bodyLen == 0 {
+			return c.Validate(v)
+		}
+		if decodeErr != nil {
+			return fmt.Errorf("bind body: %w", decodeErr)
 		}
 	case "application/x-www-form-urlencoded", "multipart/form-data":
-		if err := c.Request().ParseForm(); err != nil {
+		if err := req.ParseForm(); err != nil {
 			return fmt.Errorf("parse form: %w", err)
 		}
-		if err := bindFieldsFromValues(val, plan.formFields, c.Request().Form); err != nil {
+		if err := bindFieldsFromValues(val, plan.formFields, req.Form); err != nil {
 			return err
 		}
 	default:
@@ -83,23 +94,33 @@ func (b defaultBinder) Bind(c *Context, v any) error {
 }
 
 func (b defaultBinder) BindBody(c *Context, v any) error {
-	body, err := c.bodyBytes()
-	if err != nil {
-		return err
-	}
-	if len(body) == 0 {
-		return errors.New("request body is empty")
-	}
-
 	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
 	switch mediaType {
 	case "", "application/json":
-		if err := b.codec.Decode(bytes.NewReader(body), v); err != nil {
-			return fmt.Errorf("bind body: %w", err)
+		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+			return b.codec.Decode(r, v)
+		})
+		if readErr != nil {
+			return readErr
+		}
+		if bodyLen == 0 {
+			return errors.New("request body is empty")
+		}
+		if decodeErr != nil {
+			return fmt.Errorf("bind body: %w", decodeErr)
 		}
 	case "application/xml", "text/xml":
-		if err := xml.NewDecoder(bytes.NewReader(body)).Decode(v); err != nil {
-			return fmt.Errorf("bind body: %w", err)
+		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+			return xml.NewDecoder(r).Decode(v)
+		})
+		if readErr != nil {
+			return readErr
+		}
+		if bodyLen == 0 {
+			return errors.New("request body is empty")
+		}
+		if decodeErr != nil {
+			return fmt.Errorf("bind body: %w", decodeErr)
 		}
 	case "application/x-www-form-urlencoded", "multipart/form-data":
 		return b.BindForm(c, v)
@@ -165,15 +186,17 @@ func (c *Context) BindJSON(v any) error {
 }
 
 func (c *Context) BindXML(v any) error {
-	body, err := c.bodyBytes()
-	if err != nil {
-		return err
+	bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+		return xml.NewDecoder(r).Decode(v)
+	})
+	if readErr != nil {
+		return readErr
 	}
-	if len(body) == 0 {
+	if bodyLen == 0 {
 		return errors.New("request body is empty")
 	}
-	if err := xml.NewDecoder(bytes.NewReader(body)).Decode(v); err != nil {
-		return err
+	if decodeErr != nil {
+		return decodeErr
 	}
 	return c.Validate(v)
 }

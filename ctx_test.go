@@ -147,6 +147,11 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		if payload.ID != 7 || payload.Page != 2 || payload.Name != "matt" || payload.Auth != "secret" || !payload.Ready {
 			t.Fatalf("payload=%+v", payload)
 		}
+		bodyAgain, err := ctx.BodyBytes()
+		mustDo(t, err)
+		if string(bodyAgain) != `{"name":"matt"}` {
+			t.Fatalf("body after bind=%q", string(bodyAgain))
+		}
 	})
 
 	t.Run("xml and form binding", func(t *testing.T) {
@@ -395,6 +400,22 @@ func TestDefaultBinderBindAndBindBodyBranches(t *testing.T) {
 	t.Run("Bind handles nil body", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/users/9?page=3", nil)
 		req.Body = nil
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			ID   int `path:"id"`
+			Page int `query:"page"`
+		}
+		ctx.setParam("id", "9")
+		mustDo(t, binder.Bind(ctx, &got))
+		if got.ID != 9 || got.Page != 3 {
+			t.Fatalf("payload=%+v", got)
+		}
+	})
+
+	t.Run("Bind handles http.NoBody", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/users/9?page=3", nil)
 		ctx, _ := newRecorderContext(t, req)
 		defer ctx.release()
 
@@ -880,6 +901,9 @@ func TestContextParamMutationHelpers(t *testing.T) {
 	if ctx.Param("x") != "10" || ctx.Param("y") != "20" {
 		t.Fatalf("params x=%q y=%q", ctx.Param("x"), ctx.Param("y"))
 	}
+	if got, ok := ctx.lookupPathParam("x"); !ok || got != "10" {
+		t.Fatalf("lookup x=%q ok=%v", got, ok)
+	}
 	if ctx.PathParams[2] != emptyParam {
 		t.Fatalf("stale path param=%+v", ctx.PathParams[2])
 	}
@@ -890,6 +914,9 @@ func TestContextParamMutationHelpers(t *testing.T) {
 	}
 	if ctx.Param("y") != "" {
 		t.Fatalf("y should be cleared, got=%q", ctx.Param("y"))
+	}
+	if _, ok := ctx.lookupPathParam("y"); ok {
+		t.Fatal("lookup for truncated param should fail")
 	}
 
 	ctx.truncateParams(-1)
