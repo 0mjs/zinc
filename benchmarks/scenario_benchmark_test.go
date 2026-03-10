@@ -47,6 +47,8 @@ var scenarioBenchmarks = []benchmarkScenario{
 	scenarioWithRouters(newBenchmarkScenario("GitHubAPI203", gitHubRouteScenarioSpecs(), 203), true, false),
 	scenarioWithRouters(newBenchmarkScenario("GPlusAPI13", gplusRouteScenarioSpecs(), 13), true, false),
 	scenarioWithRouters(newBenchmarkScenario("ParseAPI26", parseRouteScenarioSpecs(), 26), true, true),
+	scenarioWithRouters(newBenchmarkScenario("NestedAPI36", nestedAPIRouteScenarioSpecs(), 36), true, true),
+	scenarioWithRouters(newBenchmarkScenario("ParamsAny24", paramsAnyRouteScenarioSpecs(), 24), false, true),
 }
 
 func scenarioWithRouters(scenario benchmarkScenario, withServeMux, withHTTPRouter bool) benchmarkScenario {
@@ -160,7 +162,7 @@ func scenarioAlternativeMethod(methods map[string]struct{}) (string, bool) {
 }
 
 func scenarioParamNames(pattern string) []string {
-	if !strings.Contains(pattern, ":") {
+	if !strings.ContainsAny(pattern, ":*") {
 		return nil
 	}
 
@@ -169,13 +171,20 @@ func scenarioParamNames(pattern string) []string {
 	for _, segment := range segments {
 		if strings.HasPrefix(segment, ":") {
 			names = append(names, segment[1:])
+			continue
 		}
+		if segment == "*" {
+			names = append(names, "*")
+		}
+	}
+	if len(names) == 0 {
+		return nil
 	}
 	return names
 }
 
 func materializeScenarioPath(pattern string) string {
-	if !strings.Contains(pattern, ":") {
+	if !strings.ContainsAny(pattern, ":*") {
 		return pattern
 	}
 
@@ -183,13 +192,17 @@ func materializeScenarioPath(pattern string) string {
 	for i, segment := range segments {
 		if strings.HasPrefix(segment, ":") {
 			segments[i] = scenarioSampleValue(segment[1:])
+			continue
+		}
+		if segment == "*" {
+			segments[i] = scenarioWildcardSampleValue(pattern)
 		}
 	}
 	return strings.Join(segments, "/")
 }
 
 func scenarioBracePattern(pattern string) string {
-	if !strings.Contains(pattern, ":") {
+	if !strings.ContainsAny(pattern, ":*") {
 		return pattern
 	}
 
@@ -200,6 +213,61 @@ func scenarioBracePattern(pattern string) string {
 		}
 	}
 	return strings.Join(segments, "/")
+}
+
+func scenarioZincPattern(pattern string) string {
+	if !strings.Contains(pattern, "*") {
+		return pattern
+	}
+
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		if segment == "*" {
+			segments[i] = "*tail"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+func scenarioGinPattern(pattern string) string {
+	if !strings.Contains(pattern, "*") {
+		return pattern
+	}
+
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		if segment == "*" {
+			segments[i] = "*tail"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+func scenarioHTTPRouterPattern(pattern string) string {
+	if !strings.Contains(pattern, "*") {
+		return pattern
+	}
+
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		if segment == "*" {
+			segments[i] = "*tail"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+func scenarioWildcardSampleValue(pattern string) string {
+	switch {
+	case strings.Contains(pattern, "artifacts"), strings.Contains(pattern, "archive"):
+		return "builds/linux/amd64/app.tar.gz"
+	case strings.Contains(pattern, "logs"):
+		return "2026/03/10/request.log"
+	case strings.Contains(pattern, "tree"), strings.Contains(pattern, "files"):
+		return "src/internal/router/bench.go"
+	default:
+		return "nested/path/value.txt"
+	}
 }
 
 func scenarioSampleValue(name string) string {
@@ -268,6 +336,8 @@ func scenarioSampleValue(name string) string {
 		return "zinc"
 	case "sha":
 		return "deadbeef"
+	case "service":
+		return "billing"
 	case "target":
 		return "bob"
 	case "teamId":
@@ -322,6 +392,10 @@ func scenarioParamScoreEcho(names []string, c *echo.Context) int {
 func scenarioParamScoreGin(names []string, c *gin.Context) int {
 	score := 0
 	for _, name := range names {
+		if name == "*" {
+			score += len(strings.TrimPrefix(c.Param("tail"), "/"))
+			continue
+		}
 		score += len(c.Param(name))
 	}
 	benchmarkSinkInt = score
@@ -331,6 +405,10 @@ func scenarioParamScoreGin(names []string, c *gin.Context) int {
 func scenarioParamScoreHTTPRouter(names []string, ps httprouter.Params) int {
 	score := 0
 	for _, name := range names {
+		if name == "*" {
+			score += len(strings.TrimPrefix(ps.ByName("tail"), "/"))
+			continue
+		}
 		score += len(ps.ByName(name))
 	}
 	benchmarkSinkInt = score
@@ -341,7 +419,7 @@ func buildZincScenarioHandler(routes []scenarioRoute) http.Handler {
 	app := New()
 	for _, route := range routes {
 		route := route
-		mustNoErr(app.Add(route.method, route.pattern, func(c *Context) error {
+		mustNoErr(app.Add(route.method, scenarioZincPattern(route.pattern), func(c *Context) error {
 			scenarioParamScoreZinc(route.paramNames, c)
 			return c.String(benchmarkOKResponse)
 		}))
@@ -389,7 +467,7 @@ func buildGinScenarioHandler(routes []scenarioRoute) http.Handler {
 	r := newGinBenchmarkRouter()
 	for _, route := range routes {
 		route := route
-		r.Handle(route.method, route.pattern, func(c *gin.Context) {
+		r.Handle(route.method, scenarioGinPattern(route.pattern), func(c *gin.Context) {
 			scenarioParamScoreGin(route.paramNames, c)
 			c.String(http.StatusOK, benchmarkOKResponse)
 		})
@@ -401,7 +479,7 @@ func buildHTTPRouterScenarioHandler(routes []scenarioRoute) http.Handler {
 	r := httprouter.New()
 	for _, route := range routes {
 		route := route
-		r.Handle(route.method, route.pattern, func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+		r.Handle(route.method, scenarioHTTPRouterPattern(route.pattern), func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
 			scenarioParamScoreHTTPRouter(route.paramNames, ps)
 			_, _ = io.WriteString(w, benchmarkOKResponse)
 		})
@@ -563,6 +641,76 @@ func staticRouteScenarioSpecs() []scenarioRouteSpec {
 	}
 
 	return routes
+}
+
+func nestedAPIRouteScenarioSpecs() []scenarioRouteSpec {
+	return []scenarioRouteSpec{
+		{method: http.MethodGet, pattern: "/api/v1/health"},
+		{method: http.MethodGet, pattern: "/api/v1/status"},
+		{method: http.MethodGet, pattern: "/api/v1/admin/metrics"},
+		{method: http.MethodGet, pattern: "/api/v1/admin/logs"},
+		{method: http.MethodPost, pattern: "/api/v1/admin/logs/search"},
+		{method: http.MethodGet, pattern: "/api/v1/teams"},
+		{method: http.MethodPost, pattern: "/api/v1/teams"},
+		{method: http.MethodGet, pattern: "/api/v1/teams/:teamId"},
+		{method: http.MethodPatch, pattern: "/api/v1/teams/:teamId"},
+		{method: http.MethodGet, pattern: "/api/v1/teams/:teamId/members"},
+		{method: http.MethodPost, pattern: "/api/v1/teams/:teamId/members"},
+		{method: http.MethodGet, pattern: "/api/v1/teams/:teamId/members/:userId"},
+		{method: http.MethodDelete, pattern: "/api/v1/teams/:teamId/members/:userId"},
+		{method: http.MethodGet, pattern: "/api/v1/teams/:teamId/settings"},
+		{method: http.MethodPut, pattern: "/api/v1/teams/:teamId/settings"},
+		{method: http.MethodGet, pattern: "/api/v1/projects"},
+		{method: http.MethodPost, pattern: "/api/v1/projects"},
+		{method: http.MethodGet, pattern: "/api/v1/projects/:projectId"},
+		{method: http.MethodPatch, pattern: "/api/v1/projects/:projectId"},
+		{method: http.MethodGet, pattern: "/api/v1/projects/:projectId/builds"},
+		{method: http.MethodPost, pattern: "/api/v1/projects/:projectId/builds"},
+		{method: http.MethodGet, pattern: "/api/v1/projects/:projectId/builds/:number"},
+		{method: http.MethodDelete, pattern: "/api/v1/projects/:projectId/builds/:number"},
+		{method: http.MethodGet, pattern: "/api/v1/projects/:projectId/releases"},
+		{method: http.MethodPost, pattern: "/api/v1/projects/:projectId/releases"},
+		{method: http.MethodGet, pattern: "/api/v1/projects/:projectId/releases/:releaseId"},
+		{method: http.MethodGet, pattern: "/api/v1/orgs/:org"},
+		{method: http.MethodGet, pattern: "/api/v1/orgs/:org/repos"},
+		{method: http.MethodPost, pattern: "/api/v1/orgs/:org/repos"},
+		{method: http.MethodGet, pattern: "/api/v1/orgs/:org/repos/:repo"},
+		{method: http.MethodPatch, pattern: "/api/v1/orgs/:org/repos/:repo"},
+		{method: http.MethodGet, pattern: "/api/v1/orgs/:org/repos/:repo/issues"},
+		{method: http.MethodPost, pattern: "/api/v1/orgs/:org/repos/:repo/issues"},
+		{method: http.MethodGet, pattern: "/api/v1/orgs/:org/repos/:repo/issues/:number"},
+		{method: http.MethodDelete, pattern: "/api/v1/orgs/:org/repos/:repo/issues/:number"},
+		{method: http.MethodGet, pattern: "/api/v1/search/projects"},
+	}
+}
+
+func paramsAnyRouteScenarioSpecs() []scenarioRouteSpec {
+	return []scenarioRouteSpec{
+		{method: http.MethodGet, pattern: "/status"},
+		{method: http.MethodGet, pattern: "/assets/all/*"},
+		{method: http.MethodGet, pattern: "/assets/org/:org/*"},
+		{method: http.MethodGet, pattern: "/releases/archive/*"},
+		{method: http.MethodGet, pattern: "/project-downloads/:projectId/artifacts/*"},
+		{method: http.MethodGet, pattern: "/repos/:owner/:repo/archive/*"},
+		{method: http.MethodGet, pattern: "/repos/:owner/:repo/compare/:base/:head"},
+		{method: http.MethodGet, pattern: "/repos/:owner/:repo/commits/:sha"},
+		{method: http.MethodGet, pattern: "/repos/:owner/:repo/tree/*"},
+		{method: http.MethodGet, pattern: "/users/:user/documents/*"},
+		{method: http.MethodGet, pattern: "/teams/:teamId/users/:userId/files/*"},
+		{method: http.MethodGet, pattern: "/teams/:teamId/users/:userId/preferences"},
+		{method: http.MethodPut, pattern: "/teams/:teamId/users/:userId/preferences"},
+		{method: http.MethodGet, pattern: "/projects/:projectId/builds/:number/logs/*"},
+		{method: http.MethodGet, pattern: "/projects/:projectId/builds/:number/artifacts/*"},
+		{method: http.MethodPost, pattern: "/projects/:projectId/builds/:number/retry"},
+		{method: http.MethodGet, pattern: "/projects/:projectId/environments/:key/config"},
+		{method: http.MethodPut, pattern: "/projects/:projectId/environments/:key/config"},
+		{method: http.MethodGet, pattern: "/services/:service/releases/latest"},
+		{method: http.MethodGet, pattern: "/services/:service/releases/archive/*"},
+		{method: http.MethodPost, pattern: "/services/:service/releases/archive/*"},
+		{method: http.MethodGet, pattern: "/workspaces/:org/:repo/files/*"},
+		{method: http.MethodPost, pattern: "/workspaces/:org/:repo/files/*"},
+		{method: http.MethodGet, pattern: "/workspaces/:org/:repo/manifest"},
+	}
 }
 
 func gplusRouteScenarioSpecs() []scenarioRouteSpec {
@@ -852,12 +1000,16 @@ From benchmarks/:
 To run from the repo root:
     cd benchmarks && go test -run=^$ -bench '^BenchmarkScenarioRouteSet' -benchmem
 
+Scenario corpora slice:
+    go test -run=^$ -bench 'BenchmarkScenarioRouteSet(Build|Static|Param|NotFound|MethodMismatch|All)/(NestedAPI36|ParamsAny24)' -benchmem
+
 To keep local runs fast while iterating from benchmarks/:
     go test -run=^$ -bench '^BenchmarkScenarioRouteSet(All|Param|Static|NotFound|MethodMismatch)$' -benchmem -benchtime=200ms
 
 Notes:
 - These route corpora are benchmark-oriented recreations inspired by the classic Go HTTP router benchmark shapes.
 - The scenario suite is intentionally separate from comp_benchmark_test.go so micro and scenario results stay comparable over time.
+- NestedAPI36 adds three-level grouped routing with real miss and 405 paths; ParamsAny24 adds wildcard and param-plus-static-suffix coverage.
 - HttpRouter is excluded from the overlapping GitHub and GPlus corpora because it rejects those static-vs-param branches at registration time.
 `)
 }

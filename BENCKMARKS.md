@@ -7,8 +7,8 @@ Framework-only snapshot from the latest full benchmark suite run. The raw suite 
 - Date: `2026-03-10`
 - Machine: `Apple M1 Pro`
 - OS / Arch: `darwin / arm64`
-- Command: split run with `GOCACHE=/tmp/zinc-go-build`, `-benchmem`, `-count=3` for non-throughput and throughput slices
-- Reporting: averages across `count=3`
+- Command: historical snapshot rows come from the split `GOCACHE=/tmp/zinc-go-build` suite with `-benchmem`, `-count=3`; the new routing-realism, scenario-expansion, and parallel rows below come from targeted `-benchmem`, `-count=1` reruns on `2026-03-10`
+- Reporting: the original snapshot rows are averages across `count=3`; the newly added rows report the targeted rerun values and are not folded into the scorecards above yet
 - Units: lower is better for `ns/op`, higher is better for `req/s`
 
 ## Headline
@@ -59,6 +59,19 @@ Framework-only snapshot from the latest full benchmark suite run. The raw suite 
 | `APIHappyPath` | `1292.3 ns` | `3073.3 ns` | `2221.7 ns` | `1696.7 ns` | 🥇 `Zinc` |
 | `APIBindJSONHappyPath` | `2689.7 ns` | `4463.7 ns` | `2569.7 ns` | `2906.3 ns` | 🥇 `Echo` |
 
+## Routing Realism
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `Param5` | `197.2 ns` | `147.1 ns` | `215.6 ns` | `488.9 ns` | 🥇 `Gin` |
+| `Param10` | `500.5 ns` | `321.4 ns` | `378.2 ns` | `1095.0 ns` | 🥇 `Gin` |
+| `NestedGroupStatic` | `76.9 ns` | `171.0 ns` | `147.2 ns` | `811.3 ns` | 🥇 `Zinc` |
+| `NestedGroupParam` | `194.4 ns` | `140.8 ns` | `189.0 ns` | `1065.0 ns` | 🥇 `Gin` |
+| `NestedGroupNotFound` | `191.4 ns` | `112.3 ns` | `175.8 ns` | `982.4 ns` | 🥇 `Gin` |
+| `NestedGroupMethodMismatch` | `222.6 ns` | `152.0 ns` | `408.2 ns` | `1039.0 ns` | 🥇 `Gin` |
+| `WildcardTail` | `96.6 ns` | `102.7 ns` | `134.9 ns` | `335.0 ns` | 🥇 `Zinc` |
+| `WildcardTailNotFound` | `84.8 ns` | `96.7 ns` | `137.5 ns` | `167.0 ns` | 🥇 `Zinc` |
+
 ## Build-Time Highlights
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
@@ -98,6 +111,32 @@ Framework-only snapshot from the latest full benchmark suite run. The raw suite 
 | `Scenario405/GitHubAPI203` | `160.2 ns` | `161.3 ns` | `798.7 ns` | `279.4 ns` | 🥇 `Zinc` |
 | `Scenario405/GPlusAPI13` | `166.1 ns` | `164.3 ns` | `774.5 ns` | `382.4 ns` | 🥇 `Gin` |
 | `Scenario405/ParseAPI26` | `324.2 ns` | `156.8 ns` | `793.8 ns` | `266.2 ns` | 🥇 `Gin` |
+
+## Scenario Expansion
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `ScenarioBuild/NestedAPI36` | `13.2 µs` | `21.3 µs` | `33.7 µs` | `22.1 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/ParamsAny24` | `17.4 µs` | `21.6 µs` | `37.0 µs` | `24.0 µs` | 🥇 `Zinc` |
+| `ScenarioStatic/NestedAPI36` | `68.2 ns` | `98.0 ns` | `148.8 ns` | `209.4 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/ParamsAny24` | `68.1 ns` | `103.1 ns` | `136.8 ns` | `206.9 ns` | 🥇 `Zinc` |
+| `ScenarioParam/NestedAPI36` | `210.4 ns` | `138.5 ns` | `194.5 ns` | `315.9 ns` | 🥇 `Gin` |
+| `ScenarioParam/ParamsAny24` | `255.6 ns` | `162.9 ns` | `219.2 ns` | `522.5 ns` | 🥇 `Gin` |
+| `ScenarioNotFound/NestedAPI36` | `163.1 ns` | `128.7 ns` | `621.0 ns` | `358.7 ns` | 🥇 `Gin` |
+| `ScenarioNotFound/ParamsAny24` | `178.3 ns` | `82.3 ns` | `633.7 ns` | `378.3 ns` | 🥇 `Gin` |
+| `Scenario405/NestedAPI36` | `172.9 ns` | `186.7 ns` | `880.2 ns` | `323.7 ns` | 🥇 `Zinc` |
+| `Scenario405/ParamsAny24` | `156.4 ns` | `118.6 ns` | `874.3 ns` | `308.0 ns` | 🥇 `Gin` |
+| `ScenarioAll/NestedAPI36` | `156.0 ns` | `130.6 ns` | `178.0 ns` | `278.7 ns` | 🥇 `Gin` |
+| `ScenarioAll/ParamsAny24` | `212.3 ns` | `145.5 ns` | `189.4 ns` | `459.8 ns` | 🥇 `Gin` |
+
+## Parallel In-Process
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `ParallelStaticRoute` | `15.0 ns` | `52.2 ns` | `61.9 ns` | `167.3 ns` | 🥇 `Zinc` |
+| `ParallelRouterParam` | `17.1 ns` | `59.6 ns` | `66.8 ns` | `298.7 ns` | 🥇 `Zinc` |
+| `ParallelMiddlewareChain` | `69.5 ns` | `231.1 ns` | `317.5 ns` | `916.9 ns` | 🥇 `Zinc` |
+| `ParallelAPIHappyPath` | `383.2 ns` | `1148.0 ns` | `956.1 ns` | `1392.0 ns` | 🥇 `Zinc` |
 
 ## Throughput
 
