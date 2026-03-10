@@ -185,12 +185,12 @@ func TestRadixNodeBranches(t *testing.T) {
 	}
 
 	static := &radixNode{kind: radixStatic, prefix: "abc"}
-	if matched := static.lookup("ab", 0, &[8]paramRange{}, 0); matched != nil {
+	if matched := static.lookup("ab", 0, &paramRanges{}, 0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}
 
 	param := &radixNode{kind: radixParam}
-	if matched := param.lookup("/x", 0, &[8]paramRange{}, 0); matched != nil {
+	if matched := param.lookup("/x", 0, &paramRanges{}, 0); matched != nil {
 		t.Fatalf("matched=%v", matched)
 	}
 
@@ -286,7 +286,7 @@ func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
 	if handled {
 		t.Fatal("expected method mismatch to miss the handler")
 	}
-	if allowed != methodMaskPost {
+	if allowed.mask != methodMaskPost || len(allowed.extra) != 0 {
 		t.Fatalf("allowed=%v", allowed)
 	}
 
@@ -298,7 +298,7 @@ func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
 	if entry.route != nil {
 		t.Fatalf("cached route=%v", entry.route)
 	}
-	if entry.allowed != methodMaskPost {
+	if entry.allowed.mask != methodMaskPost || len(entry.allowed.extra) != 0 {
 		t.Fatalf("cached allowed=%v", entry.allowed)
 	}
 
@@ -316,7 +316,142 @@ func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
 	if !handled {
 		t.Fatal("expected registered method to handle the request")
 	}
-	if allowed != 0 {
+	if !allowed.empty() {
 		t.Fatalf("allowed=%v", allowed)
 	}
+}
+
+func TestRouterSupportsMoreThanInlinePathParams(t *testing.T) {
+	pattern, path, names, _ := buildSequentialParamRoute(10)
+
+	app := New()
+	mustDo(t, app.Get(pattern, func(c *Context) error {
+		return c.String(c.Param(names[len(names)-1]))
+	}))
+
+	resp := performRequest(t, app, http.MethodGet, path, nil, nil)
+	if resp.Body.String() != "10" {
+		t.Fatalf("body=%q", resp.Body.String())
+	}
+}
+
+func TestRouterDispatchIntoCachesManyParams(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(routeCacheMinRoutes + 8),
+		config: &DefaultConfig,
+	}
+	for i := 0; i < routeCacheMinRoutes; i++ {
+		path := fmt.Sprintf("/bulk/%d", i)
+		mustDo(t, router.Add(MethodGet, path, func(*Context) error { return nil }))
+	}
+
+	pattern, path, names, _ := buildSequentialParamRoute(10)
+	mustDo(t, router.Add(MethodGet, pattern, func(*Context) error { return nil }))
+
+	ctx := &Context{}
+	handled, allowed, err := router.dispatchInto(MethodGet, path, false, ctx)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected dynamic route to handle the request")
+	}
+	if !allowed.empty() {
+		t.Fatalf("allowed=%v", allowed)
+	}
+	if got := ctx.Param(names[8]); got != "9" {
+		t.Fatalf("param9=%q", got)
+	}
+	if got := ctx.Param(names[9]); got != "10" {
+		t.Fatalf("param10=%q", got)
+	}
+	if len(ctx.PathParams) < len(names) || ctx.PathParams[9].key != names[9] {
+		t.Fatalf("path params not expanded: len=%d last=%+v", len(ctx.PathParams), ctx.PathParams[9])
+	}
+
+	key := routeCacheKey{method: MethodGet, path: path}
+	if entry, ok := router.cache.get(key); !ok || entry.route == nil {
+		t.Fatalf("expected cached hit entry, got=%+v ok=%v", entry, ok)
+	}
+
+	ctxCached := &Context{}
+	handled, allowed, err = router.dispatchInto(MethodGet, path, false, ctxCached)
+	if err != nil {
+		t.Fatalf("cached err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected cached dispatch to handle the request")
+	}
+	if !allowed.empty() {
+		t.Fatalf("cached allowed=%v", allowed)
+	}
+	if got := ctxCached.Param(names[9]); got != "10" {
+		t.Fatalf("cached param10=%q", got)
+	}
+}
+
+func TestRouterSupportsCustomDynamicMethods(t *testing.T) {
+	const methodPurge = "PURGE"
+
+	router := &Router{config: &DefaultConfig}
+	mustDo(t, router.Add(methodPurge, "/items/:id", func(*Context) error { return nil }))
+
+	ctx := &Context{}
+	handled, allowed, err := router.dispatchInto(methodPurge, "/items/42", false, ctx)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected custom dynamic method to match")
+	}
+	if !allowed.empty() {
+		t.Fatalf("allowed=%v", allowed)
+	}
+	if got := ctx.Param("id"); got != "42" {
+		t.Fatalf("id=%q", got)
+	}
+
+	handled, allowed, err = router.dispatchInto(MethodGet, "/items/42", true, &Context{})
+	if err != nil {
+		t.Fatalf("method mismatch err=%v", err)
+	}
+	if handled {
+		t.Fatal("expected GET to miss the PURGE route")
+	}
+	if allowed.mask != 0 {
+		t.Fatalf("mask=%v", allowed.mask)
+	}
+	if !reflect.DeepEqual(allowed.extra, []string{methodPurge}) {
+		t.Fatalf("extra=%v", allowed.extra)
+	}
+	if header := allowed.header(true, true); header != "OPTIONS, PURGE" {
+		t.Fatalf("allow header=%q", header)
+	}
+}
+
+func buildSequentialParamRoute(count int) (string, string, []string, paramRanges) {
+	var (
+		pattern strings.Builder
+		path    strings.Builder
+		names   = make([]string, count)
+		ranges  paramRanges
+	)
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("p%d", i+1)
+		value := fmt.Sprintf("%d", i+1)
+		names[i] = name
+
+		pattern.WriteByte('/')
+		pattern.WriteByte(':')
+		pattern.WriteString(name)
+
+		path.WriteByte('/')
+		start := path.Len()
+		path.WriteString(value)
+		ranges.set(i, paramRange{
+			start: uint32(start),
+			end:   uint32(path.Len()),
+		})
+	}
+	return pattern.String(), path.String(), names, ranges
 }

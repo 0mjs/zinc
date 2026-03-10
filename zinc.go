@@ -66,10 +66,10 @@ func (a *App) dispatch(ctx *Context) error {
 	path := ctx.Path()
 	needsAllowScan := (method == MethodOptions && a.config.AutoOptions) || a.config.HandleMethodNotAllowed
 
-	handled, allowedMask, err := a.router.dispatchInto(method, path, needsAllowScan, ctx)
+	handled, allowed, err := a.router.dispatchInto(method, path, needsAllowScan, ctx)
 	if !handled && method == MethodHead && a.config.AutoHead {
 		ctx.truncateParams(0)
-		handled, allowedMask, err = a.router.dispatchInto(MethodGet, path, needsAllowScan, ctx)
+		handled, allowed, err = a.router.dispatchInto(MethodGet, path, needsAllowScan, ctx)
 	}
 	if handled {
 		return err
@@ -81,10 +81,7 @@ func (a *App) dispatch(ctx *Context) error {
 		return nil
 	}
 
-	allowedHeader := ""
-	if allowedMask != 0 {
-		allowedHeader = allowHeader(applyAutomaticMethods(allowedMask, a.config.AutoHead, a.config.AutoOptions))
-	}
+	allowedHeader := allowed.header(a.config.AutoHead, a.config.AutoOptions)
 	if method == MethodOptions && a.config.AutoOptions && allowedHeader != "" {
 		ctx.SetHeader(HeaderAllow, allowedHeader)
 		return ctx.Status(StatusNoContent).NoContent()

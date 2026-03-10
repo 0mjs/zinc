@@ -19,6 +19,7 @@ type Context struct {
 	writer       http.ResponseWriter
 	request      *http.Request
 	PathParams   params
+	inlineParams [inlineParamSlotCount]param
 	queryParams  url.Values
 	written      bool
 	handlers     []HandlerFunc
@@ -44,19 +45,23 @@ type param struct {
 	end   int32
 }
 
-type params [8]param
+type params []param
 
 var emptyParam param
+
+const inlineParamSlotCount = 8
 
 const directParamStart int32 = -1
 
 var contextPool = sync.Pool{
 	New: func() any {
-		return &Context{
+		c := &Context{
 			status:     http.StatusOK,
 			index:      -1,
 			routeIndex: -1,
 		}
+		c.PathParams = c.inlineParams[:inlineParamSlotCount]
+		return c
 	},
 }
 
@@ -67,6 +72,7 @@ func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 }
 
 func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
+	c.initPathParams()
 	c.writer = w
 	c.request = r
 	c.queryParams = nil
@@ -558,27 +564,45 @@ func (c *Context) setRouteIndex(index uint32) {
 	c.routeIndexed = true
 }
 
-func (c *Context) setParam(key, value string) {
-	for i := range c.PathParams {
-		if c.PathParams[i].key == "" {
-			c.PathParams[i] = param{key: key, value: value, start: directParamStart}
-			if c.paramCount < len(c.PathParams) {
-				c.paramCount++
-			}
-			return
-		}
+func (c *Context) initPathParams() {
+	if c.PathParams == nil {
+		c.PathParams = c.inlineParams[:inlineParamSlotCount]
 	}
 }
 
-func (c *Context) applyRouteParams(path string, route *radixRoute, values [8]paramRange) {
-	count := int(route.paramCount)
-	if count > len(c.PathParams) {
-		count = len(c.PathParams)
+func (c *Context) ensurePathParamCapacity(count int) {
+	c.initPathParams()
+	if count <= len(c.PathParams) {
+		return
 	}
+	size := len(c.PathParams)
+	if size < inlineParamSlotCount {
+		size = inlineParamSlotCount
+	}
+	if size == 0 {
+		size = inlineParamSlotCount
+	}
+	for size < count {
+		size *= 2
+	}
+	grown := make(params, size)
+	copy(grown, c.PathParams[:c.paramCount])
+	c.PathParams = grown
+}
+
+func (c *Context) setParam(key, value string) {
+	c.ensurePathParamCapacity(c.paramCount + 1)
+	c.PathParams[c.paramCount] = param{key: key, value: value, start: directParamStart}
+	c.paramCount++
+}
+
+func (c *Context) applyRouteParams(path string, route *radixRoute, values paramRanges) {
+	count := int(route.paramCount)
+	c.ensurePathParamCapacity(count)
 	c.paramPath = path
 	previousCount := c.paramCount
 	for i := 0; i < count; i++ {
-		valueRange := values[i]
+		valueRange := values.at(i)
 		c.PathParams[i] = param{
 			key:   route.paramNameAt(i),
 			start: int32(valueRange.start),

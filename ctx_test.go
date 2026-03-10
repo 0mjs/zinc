@@ -891,10 +891,10 @@ func TestContextParamMutationHelpers(t *testing.T) {
 		paramCount:       2,
 		inlineParamNames: [2]string{"x", "y"},
 	}
-	ctx.applyRouteParams("/users/10/posts/20", route, [8]paramRange{
-		{start: 7, end: 9},
-		{start: 16, end: 18},
-	})
+	ranges := paramRanges{}
+	ranges.set(0, paramRange{start: 7, end: 9})
+	ranges.set(1, paramRange{start: 16, end: 18})
+	ctx.applyRouteParams("/users/10/posts/20", route, ranges)
 	if ctx.paramCount != 2 {
 		t.Fatalf("param count=%d", ctx.paramCount)
 	}
@@ -922,6 +922,42 @@ func TestContextParamMutationHelpers(t *testing.T) {
 	ctx.truncateParams(-1)
 	if ctx.paramCount != 0 {
 		t.Fatalf("param count=%d", ctx.paramCount)
+	}
+}
+
+func TestContextParamMutationHelpersBeyondInline(t *testing.T) {
+	_, path, names, captured := buildSequentialParamRoute(10)
+
+	route := &radixRoute{
+		paramCount:       uint16(len(names)),
+		inlineParamNames: [2]string{names[0], names[1]},
+		extraParamNames:  append([]string(nil), names[2:]...),
+	}
+
+	ctx := &Context{}
+	ctx.applyRouteParams(path, route, captured)
+	if ctx.paramCount != len(names) {
+		t.Fatalf("param count=%d", ctx.paramCount)
+	}
+	if got := ctx.Param(names[8]); got != "9" {
+		t.Fatalf("param9=%q", got)
+	}
+	if got := ctx.Param(names[9]); got != "10" {
+		t.Fatalf("param10=%q", got)
+	}
+	if got, ok := ctx.lookupPathParam(names[9]); !ok || got != "10" {
+		t.Fatalf("lookup param10=%q ok=%v", got, ok)
+	}
+	if len(ctx.PathParams) < len(names) || ctx.PathParams[9].key != names[9] {
+		t.Fatalf("path params not expanded: len=%d last=%+v", len(ctx.PathParams), ctx.PathParams[9])
+	}
+
+	ctx.truncateParams(8)
+	if ctx.paramCount != 8 {
+		t.Fatalf("param count=%d", ctx.paramCount)
+	}
+	if ctx.PathParams[8] != emptyParam || ctx.PathParams[9] != emptyParam {
+		t.Fatalf("spill params should be cleared: p9=%+v p10=%+v", ctx.PathParams[8], ctx.PathParams[9])
 	}
 }
 

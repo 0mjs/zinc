@@ -186,6 +186,34 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 		}
 	})
 
+	t.Run("custom methods route and advertise allow", func(t *testing.T) {
+		app := New()
+		mustDo(t, app.Add("PURGE", "/cache/:key", func(c *Context) error {
+			return c.String(c.Param("key"))
+		}))
+
+		purge := performRequest(t, app, "PURGE", "/cache/home", nil, nil)
+		if purge.Code != http.StatusOK || purge.Body.String() != "home" {
+			t.Fatalf("purge response = %d %q", purge.Code, purge.Body.String())
+		}
+
+		get := performRequest(t, app, http.MethodGet, "/cache/home", nil, nil)
+		if get.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status=%d", get.Code)
+		}
+		if allow := get.Header().Get(HeaderAllow); allow != "OPTIONS, PURGE" {
+			t.Fatalf("allow=%q", allow)
+		}
+
+		options := performRequest(t, app, http.MethodOptions, "/cache/home", nil, nil)
+		if options.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", options.Code)
+		}
+		if allow := options.Header().Get(HeaderAllow); allow != "OPTIONS, PURGE" {
+			t.Fatalf("allow=%q", allow)
+		}
+	})
+
 	t.Run("mount strips prefix", func(t *testing.T) {
 		app := New()
 		mux := http.NewServeMux()

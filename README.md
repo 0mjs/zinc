@@ -7,7 +7,7 @@
 
 # Zinc
 
-Zinc is an fast, minimal API framework for Go built on top of `net/http`.
+Zinc is an Express-inspired, idiomatic Go API framework built on `net/http`.
 
 - [Documentation](https://zinc.carbonsoft.com)
 - [Quickstart](https://zinc.carbonsoft.sh/guide/quick-start)
@@ -145,53 +145,54 @@ Latest local snapshot (`Apple M1 Pro`, `darwin/arm64`, averaged over `count=3`):
 
 - This view intentionally compares full frameworks only: `Zinc`, `Gin`, `Echo`, and `Chi`.
 - Loopback `req/s` is left out here on purpose; the cleaner signal for docs is in-process request-path cost.
-- Zinc wins `31/43` non-throughput rows in the current framework-only suite.
-- Zinc now leads static dispatch, API-path work, and route/build-time benchmarks.
-- Gin's remaining latency edges are concentrated in a smaller set of `404` / `405` paths plus the heavier `ParseAPI26` / `GPlusAPI13` param-routing cases.
+- Zinc wins `25/43` non-throughput rows in the current framework-only suite.
+- Zinc still leads static dispatch and most API-path work.
+- Gin's current latency edges are broader than the previous snapshot, covering more cold `404` / `405` paths plus the heavier `ParseAPI26` / `GPlusAPI13` param-routing cases.
+- Build-time leadership is now mixed: Zinc still wins param registration, but Gin is slightly ahead on static registration.
 
 Framework-only scorecard:
 
 | Framework | Wins | 2nd Place |
 |---|---:|---:|
-| `Zinc` | `31` | `10` |
-| `Gin` | `11` | `26` |
-| `Echo` | `1` | `3` |
+| `Zinc` | `25` | `15` |
+| `Gin` | `17` | `20` |
+| `Echo` | `1` | `4` |
 | `Chi` | `0` | `4` |
 
 Request-path highlights (`ns/op`, lower is better):
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `HelloWorld` | `66.5` | `89.2` | `128.9` | `193.7` | 🥇 Zinc |
-| `StaticRoute` | `66.9` | `90.4` | `129.6` | `174.5` | 🥇 Zinc |
-| `RouterParam` | `83.9` | `120.5` | `150.4` | `345.2` | 🥇 Zinc |
-| `JSONResponse` | `331.7` | `422.3` | `398.4` | `510.1` | 🥇 Zinc |
-| `MiddlewareChain` | `379.2` | `443.9` | `543.5` | `871.4` | 🥇 Zinc |
-| `LargeRouteSetStaticMixed` | `70.2` | `122.8` | `168.5` | `258.4` | 🥇 Zinc |
-| `LargeRouteSetMethodMismatch` | `319.6` | `134.0` | `1316.2` | `438.2` | 🥇 Gin |
-| `APIParamQueryJSON` | `933.9` | `2708.3` | `1831.3` | `953.1` | 🥇 Zinc |
-| `APIHappyPath` | `1336.7` | `3123.7` | `2348.0` | `1684.0` | 🥇 Zinc |
-| `APIBindJSONHappyPath` | `2631.7` | `4525.3` | `2592.0` | `2812.7` | 🥇 Echo |
+| `HelloWorld` | `65.7` | `84.3` | `123.6` | `170.9` | 🥇 Zinc |
+| `StaticRoute` | `63.8` | `83.9` | `124.2` | `166.3` | 🥇 Zinc |
+| `RouterParam` | `92.8` | `93.0` | `134.6` | `315.9` | 🥇 Zinc |
+| `JSONResponse` | `326.3` | `388.8` | `389.7` | `491.9` | 🥇 Zinc |
+| `MiddlewareChain` | `354.1` | `385.6` | `485.8` | `810.6` | 🥇 Zinc |
+| `LargeRouteSetStaticMixed` | `66.9` | `114.7` | `151.7` | `234.3` | 🥇 Zinc |
+| `LargeRouteSetMethodMismatch` | `153.9` | `100.8` | `869.2` | `304.7` | 🥇 Gin |
+| `APIParamQueryJSON` | `873.7` | `2742.0` | `1814.0` | `1004.6` | 🥇 Zinc |
+| `APIHappyPath` | `1292.3` | `3073.3` | `2221.7` | `1696.7` | 🥇 Zinc |
+| `APIBindJSONHappyPath` | `2689.7` | `4463.7` | `2569.7` | `2906.3` | 🥇 Echo |
 
 Scenario highlights (`ns/op`, lower is better):
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioStatic/GitHubAPI203` | `80.2` | `105.0` | `149.6` | `272.6` | 🥇 Zinc |
-| `ScenarioStatic/ParseAPI26` | `67.9` | `101.2` | `146.1` | `229.9` | 🥇 Zinc |
-| `ScenarioAll/Static157` | `74.9` | `137.5` | `179.9` | `302.3` | 🥇 Zinc |
-| `ScenarioAll/GPlusAPI13` | `147.4` | `192.5` | `208.7` | `304.7` | 🥇 Zinc |
-| `ScenarioParam/GitHubAPI203` | `158.9` | `162.5` | `251.0` | `412.9` | 🥇 Zinc |
-| `ScenarioParam/ParseAPI26` | `217.3` | `122.0` | `166.0` | `291.3` | 🥇 Gin |
-| `ScenarioNotFound/GitHubAPI203` | `118.2` | `127.2` | `656.6` | `379.9` | 🥇 Zinc |
-| `Scenario405/GPlusAPI13` | `174.6` | `206.7` | `1032.2` | `446.2` | 🥇 Zinc |
+| `ScenarioStatic/GitHubAPI203` | `70.5` | `97.6` | `147.4` | `205.7` | 🥇 Zinc |
+| `ScenarioStatic/ParseAPI26` | `67.0` | `93.9` | `145.3` | `196.3` | 🥇 Zinc |
+| `ScenarioAll/Static157` | `70.7` | `124.7` | `169.0` | `257.0` | 🥇 Zinc |
+| `ScenarioAll/GPlusAPI13` | `153.6` | `173.9` | `169.8` | `275.0` | 🥇 Zinc |
+| `ScenarioParam/GitHubAPI203` | `152.8` | `155.2` | `220.9` | `373.5` | 🥇 Zinc |
+| `ScenarioParam/ParseAPI26` | `219.1` | `116.4` | `164.7` | `255.3` | 🥇 Gin |
+| `ScenarioNotFound/GitHubAPI203` | `113.6` | `120.8` | `589.0` | `366.7` | 🥇 Zinc |
+| `Scenario405/GPlusAPI13` | `166.1` | `164.3` | `774.5` | `382.4` | 🥇 Gin |
 
 Build-time highlights:
 
 | Registration Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `RouteRegistrationStatic` | `68.8 µs / 87.5 KB` | `79.4 µs / 53.0 KB` | `350.7 µs / 181.6 KB` | `87.7 µs / 120.7 KB` | 🥇 Zinc |
-| `RouteRegistrationParam` | `46.0 µs / 70.2 KB` | `54.3 µs / 46.8 KB` | `162.4 µs / 152.1 KB` | `76.6 µs / 89.9 KB` | 🥇 Zinc |
+| `RouteRegistrationStatic` | `80.7 µs / 113.7 KB` | `77.1 µs / 53.0 KB` | `338.2 µs / 181.6 KB` | `92.5 µs / 120.7 KB` | 🥇 Gin |
+| `RouteRegistrationParam` | `51.1 µs / 86.8 KB` | `51.7 µs / 46.8 KB` | `160.1 µs / 152.1 KB` | `76.8 µs / 89.9 KB` | 🥇 Zinc |
 
 
 ## Optional Middleware
