@@ -232,6 +232,7 @@ func TestRouterFindIntoAndDynamicCacheBranches(t *testing.T) {
 	if handler := dynamic.findDynamicInto(MethodGet, "/missing", &Context{}); handler != nil {
 		t.Fatalf("handler=%v", handler)
 	}
+
 }
 
 func TestRouterAddAndMatchErrorBranches(t *testing.T) {
@@ -386,6 +387,94 @@ func TestRouterDispatchIntoCachesManyParams(t *testing.T) {
 		t.Fatalf("cached allowed=%v", allowed)
 	}
 	if got := ctxCached.Param(names[9]); got != "10" {
+		t.Fatalf("cached param10=%q", got)
+	}
+}
+
+func TestRouterDispatchIntoCachesSmallDynamicRouteSets(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(8),
+		config: &DefaultConfig,
+	}
+	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+
+	ctx := &Context{}
+	handled, allowed, err := router.dispatchInto(MethodGet, "/items/42", false, ctx)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected dynamic route to handle the request")
+	}
+	if !allowed.empty() {
+		t.Fatalf("allowed=%v", allowed)
+	}
+
+	key := routeCacheKey{method: MethodGet, path: "/items/42"}
+	entry, ok := router.cache.get(key)
+	if !ok {
+		t.Fatal("expected small dynamic route set to populate the dispatch cache")
+	}
+	if entry.route == nil {
+		t.Fatalf("cached entry=%+v", entry)
+	}
+}
+
+func TestRouterDispatchIntoCachedManyParamsIsolation(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(routeCacheMinRoutes + 8),
+		config: &DefaultConfig,
+	}
+	for i := 0; i < routeCacheMinRoutes; i++ {
+		path := fmt.Sprintf("/bulk/%d", i)
+		mustDo(t, router.Add(MethodGet, path, func(*Context) error { return nil }))
+	}
+
+	pattern, pathShort, names, _ := buildSequentialParamRoute(10)
+	var pathLong strings.Builder
+	for i := 0; i < 10; i++ {
+		pathLong.WriteByte('/')
+		pathLong.WriteString(fmt.Sprintf("%d", 1000+i))
+	}
+
+	mustDo(t, router.Add(MethodGet, pattern, func(*Context) error { return nil }))
+
+	shortCtx := &Context{}
+	handled, _, err := router.dispatchInto(MethodGet, pathShort, false, shortCtx)
+	if err != nil {
+		t.Fatalf("short err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected short path to match")
+	}
+	if got := shortCtx.Param(names[9]); got != "10" {
+		t.Fatalf("short param10=%q", got)
+	}
+
+	longCtx := &Context{}
+	handled, _, err = router.dispatchInto(MethodGet, pathLong.String(), false, longCtx)
+	if err != nil {
+		t.Fatalf("long err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected long path to match")
+	}
+	if got := longCtx.Param(names[9]); got != "1009" {
+		t.Fatalf("long param10=%q", got)
+	}
+
+	shortCachedCtx := &Context{}
+	handled, _, err = router.dispatchInto(MethodGet, pathShort, false, shortCachedCtx)
+	if err != nil {
+		t.Fatalf("cached err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected cached short path to match")
+	}
+	if got := shortCachedCtx.Param(names[8]); got != "9" {
+		t.Fatalf("cached param9=%q", got)
+	}
+	if got := shortCachedCtx.Param(names[9]); got != "10" {
 		t.Fatalf("cached param10=%q", got)
 	}
 }

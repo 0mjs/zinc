@@ -465,6 +465,26 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 		}
 	})
 
+	t.Run("custom error handler still handles default 404 and 405", func(t *testing.T) {
+		app := NewWithConfig(Config{
+			HandleMethodNotAllowed: true,
+			ErrorHandler: func(c *Context, err error) {
+				_ = c.Status(http.StatusTeapot).String("handled")
+			},
+		})
+		mustDo(t, app.Get("/only", func(c *Context) error { return c.String("ok") }))
+
+		notFound := performRequest(t, app, http.MethodGet, "/missing", nil, nil)
+		if notFound.Code != http.StatusTeapot || notFound.Body.String() != "handled" {
+			t.Fatalf("notFound=%d %q", notFound.Code, notFound.Body.String())
+		}
+
+		methodNA := performRequest(t, app, http.MethodPost, "/only", nil, nil)
+		if methodNA.Code != http.StatusTeapot || methodNA.Body.String() != "handled" {
+			t.Fatalf("methodNA=%d %q", methodNA.Code, methodNA.Body.String())
+		}
+	})
+
 	t.Run("direct dispatch helpers", func(t *testing.T) {
 		app := New()
 		app.handleError(nil, nil) // no-op branch

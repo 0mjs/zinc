@@ -99,6 +99,9 @@ func (a *App) dispatch(ctx *Context) error {
 			}
 			return nil
 		}
+		if a.defaultErrors {
+			return ctx.String(http.StatusText(StatusMethodNotAllowed))
+		}
 		return ErrMethodNotAllowed
 	}
 
@@ -111,6 +114,9 @@ func (a *App) dispatch(ctx *Context) error {
 			return ctx.String(http.StatusText(StatusNotFound))
 		}
 		return nil
+	}
+	if a.defaultErrors {
+		return ctx.String(http.StatusText(StatusNotFound))
 	}
 	return ErrNotFound
 }

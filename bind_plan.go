@@ -263,9 +263,29 @@ func (s fieldSetter) set(value reflect.Value, inputs []string) error {
 }
 
 func (c *Context) lookupPathParam(name string) (string, bool) {
+	if c.paramPath != "" && c.paramCount > 1 {
+		c.materializePathParams()
+	}
+	if route := c.paramRoute; route != nil {
+		if index, ok := route.paramIndex(name); ok {
+			if index >= c.paramCount {
+				return "", false
+			}
+			if c.PathParams[index].start == directParamStart {
+				return c.PathParams[index].value, true
+			}
+			return c.pathParamValueAt(index), true
+		}
+		if len(route.paramIndices) > 0 {
+			return "", false
+		}
+	}
 	for i := 0; i < c.paramCount; i++ {
 		if c.PathParams[i].key != name {
 			continue
+		}
+		if c.PathParams[i].start == directParamStart {
+			return c.PathParams[i].value, true
 		}
 		return c.pathParamValueAt(i), true
 	}

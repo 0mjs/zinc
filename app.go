@@ -70,6 +70,7 @@ type App struct {
 	server           *http.Server
 	serverMu         sync.Mutex
 	serverHeader     []string
+	defaultErrors    bool
 }
 
 func New() *App {
@@ -77,6 +78,7 @@ func New() *App {
 }
 
 func NewWithConfig(cfg Config) *App {
+	defaultErrors := cfg.ErrorHandler == nil
 	cfg = normalizeConfig(cfg)
 
 	var cache *RouteCache
@@ -91,6 +93,7 @@ func NewWithConfig(cfg Config) *App {
 			config: &cfg,
 		},
 		middleware: make([]HandlerFunc, 0),
+		defaultErrors: defaultErrors,
 	}
 	if cfg.ServerHeader != "" {
 		app.serverHeader = []string{cfg.ServerHeader}

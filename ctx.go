@@ -36,6 +36,9 @@ type Context struct {
 	bodyErr      error
 	paramPath    string
 	paramCount   int
+	paramRanges  paramRanges
+	matchRanges  paramRanges
+	paramRoute   *radixRoute
 }
 
 type param struct {
@@ -89,6 +92,7 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.bodyRead = false
 	c.bodyErr = nil
 	c.paramPath = ""
+	c.paramRoute = nil
 	for i := 0; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
 	}
@@ -112,6 +116,7 @@ func (c *Context) release() {
 	c.bodyRead = false
 	c.bodyErr = nil
 	c.paramPath = ""
+	c.paramRoute = nil
 	contextPool.Put(c)
 }
 
@@ -217,8 +222,28 @@ func (c *Context) Status(code int) *Context {
 }
 
 func (c *Context) Param(name string) string {
+	if c.paramPath != "" && c.paramCount > 1 {
+		c.materializePathParams()
+	}
+	if route := c.paramRoute; route != nil {
+		if index, ok := route.paramIndex(name); ok {
+			if index >= c.paramCount {
+				return ""
+			}
+			if c.PathParams[index].start == directParamStart {
+				return c.PathParams[index].value
+			}
+			return c.pathParamValueAt(index)
+		}
+		if len(route.paramIndices) > 0 {
+			return ""
+		}
+	}
 	for i := 0; i < c.paramCount; i++ {
 		if c.PathParams[i].key == name {
+			if c.PathParams[i].start == directParamStart {
+				return c.PathParams[i].value
+			}
 			return c.pathParamValueAt(i)
 		}
 	}
@@ -570,6 +595,13 @@ func (c *Context) initPathParams() {
 	}
 }
 
+func (c *Context) paramRangesScratch() *paramRanges {
+	if c == nil {
+		return nil
+	}
+	return &c.paramRanges
+}
+
 func (c *Context) ensurePathParamCapacity(count int) {
 	c.initPathParams()
 	if count <= len(c.PathParams) {
@@ -594,12 +626,14 @@ func (c *Context) setParam(key, value string) {
 	c.ensurePathParamCapacity(c.paramCount + 1)
 	c.PathParams[c.paramCount] = param{key: key, value: value, start: directParamStart}
 	c.paramCount++
+	c.paramRoute = nil
 }
 
 func (c *Context) applyRouteParams(path string, route *radixRoute, values paramRanges) {
 	count := int(route.paramCount)
 	c.ensurePathParamCapacity(count)
 	c.paramPath = path
+	c.paramRoute = route
 	previousCount := c.paramCount
 	for i := 0; i < count; i++ {
 		valueRange := values.at(i)
@@ -626,6 +660,9 @@ func (c *Context) truncateParams(count int) {
 		c.PathParams[i] = emptyParam
 	}
 	c.paramCount = count
+	if count == 0 {
+		c.paramRoute = nil
+	}
 }
 
 func (c *Context) pathParamValueAt(i int) string {
@@ -646,6 +683,34 @@ func (c *Context) pathParamValueAt(i int) string {
 	p.start = directParamStart
 	p.end = 0
 	return p.value
+}
+
+func (c *Context) materializePathParams() {
+	path := c.paramPath
+	if path == "" {
+		if c.request == nil || c.request.URL == nil {
+			return
+		}
+		path = c.request.URL.Path
+	}
+	for i := 0; i < c.paramCount; i++ {
+		p := &c.PathParams[i]
+		if p.start == directParamStart {
+			continue
+		}
+		start := int(p.start)
+		end := int(p.end)
+		if start < 0 || end < start || end > len(path) {
+			p.value = ""
+			p.start = directParamStart
+			p.end = 0
+			continue
+		}
+		p.value = path[start:end]
+		p.start = directParamStart
+		p.end = 0
+	}
+	c.paramPath = ""
 }
 
 func (c *Context) trustProxy() bool {
