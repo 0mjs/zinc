@@ -88,6 +88,9 @@ func (a *App) dispatch(ctx *Context) error {
 	}
 
 	if a.config.HandleMethodNotAllowed && allowedHeader != "" {
+		if a.methodNA == nil && a.defaultErrors {
+			return ctx.writeDefaultErrorResponse(StatusMethodNotAllowed, allowedHeader)
+		}
 		ctx.Status(StatusMethodNotAllowed)
 		ctx.SetHeader(HeaderAllow, allowedHeader)
 		if a.methodNA != nil {
@@ -103,6 +106,10 @@ func (a *App) dispatch(ctx *Context) error {
 			return ctx.String(http.StatusText(StatusMethodNotAllowed))
 		}
 		return ErrMethodNotAllowed
+	}
+
+	if a.notFound == nil && a.defaultErrors {
+		return ctx.writeDefaultErrorResponse(StatusNotFound, "")
 	}
 
 	ctx.Status(StatusNotFound)

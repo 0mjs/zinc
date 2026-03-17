@@ -445,6 +445,20 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 		if body := strings.TrimSpace(mna.Body.String()); body != http.StatusText(http.StatusMethodNotAllowed) {
 			t.Fatalf("body=%q", mna.Body.String())
 		}
+		if allow := mna.Header().Get(HeaderAllow); allow != "GET" {
+			t.Fatalf("allow=%q", allow)
+		}
+		if ctype := mna.Header().Get(HeaderContentType); ctype != "text/plain; charset=utf-8" {
+			t.Fatalf("content-type=%q", ctype)
+		}
+
+		mnaHead := performRequest(t, app, http.MethodHead, "/missing", nil, nil)
+		if mnaHead.Code != http.StatusNotFound {
+			t.Fatalf("status=%d", mnaHead.Code)
+		}
+		if mnaHead.Body.Len() != 0 {
+			t.Fatalf("body=%q", mnaHead.Body.String())
+		}
 
 		app.MethodNotAllowed(func(*Context) error { return nil })
 		mnaNoWrite := performRequest(t, app, http.MethodPost, "/only", nil, nil)
@@ -462,6 +476,9 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 		}
 		if body := strings.TrimSpace(notFound.Body.String()); body != http.StatusText(http.StatusNotFound) {
 			t.Fatalf("body=%q", notFound.Body.String())
+		}
+		if ctype := notFound.Header().Get(HeaderContentType); ctype != "text/plain; charset=utf-8" {
+			t.Fatalf("content-type=%q", ctype)
 		}
 	})
 

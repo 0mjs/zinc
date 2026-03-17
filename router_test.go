@@ -163,6 +163,24 @@ func TestRouteCacheSetUpdateAndEviction(t *testing.T) {
 	}
 }
 
+func TestRouteCacheInvalidateClearsLazilyOnNextAccess(t *testing.T) {
+	cache := NewRouteCache(2)
+	key := routeCacheKey{method: MethodGet, path: "/one"}
+	entry := routeCacheEntry{route: &radixRoute{infoIndex: 1}}
+
+	cache.set(key, entry)
+	cache.invalidate()
+
+	if _, ok := cache.get(key); ok {
+		t.Fatal("expected first cache access after invalidation to clear stale entries")
+	}
+
+	cache.set(key, entry)
+	if got, ok := cache.get(key); !ok || got.route == nil || got.route.infoIndex != 1 {
+		t.Fatalf("entry=%+v ok=%v", got, ok)
+	}
+}
+
 func TestRadixNodeBranches(t *testing.T) {
 	root := &radixNode{kind: radixRoot}
 	mustDo(t, root.add("/foo", &radixRoute{}))
@@ -304,11 +322,6 @@ func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
 	}
 
 	mustDo(t, router.Add(MethodPut, "/only-post", func(*Context) error { return nil }))
-	if _, ok := router.cache.get(key); ok {
-		t.Fatal("expected route registration to invalidate cached miss results")
-	}
-
-	router.routeTree = nil
 
 	handled, allowed, err = router.dispatchInto(MethodPut, "/only-post", true, &Context{})
 	if err != nil {
@@ -319,6 +332,11 @@ func TestRouterDispatchIntoCachesMissResults(t *testing.T) {
 	}
 	if !allowed.empty() {
 		t.Fatalf("allowed=%v", allowed)
+	}
+
+	entry, ok = router.cache.get(key)
+	if ok {
+		t.Fatalf("expected stale miss cache entry to clear on first access, got=%+v", entry)
 	}
 }
 
@@ -417,6 +435,55 @@ func TestRouterDispatchIntoCachesSmallDynamicRouteSets(t *testing.T) {
 	}
 	if entry.route == nil {
 		t.Fatalf("cached entry=%+v", entry)
+	}
+}
+
+func TestRouterDispatchIntoRefreshesCachedDynamicHitAfterAdd(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(8),
+		config: &DefaultConfig,
+	}
+	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+
+	ctxParam := &Context{}
+	handled, allowed, err := router.dispatchInto(MethodGet, "/items/new", false, ctxParam)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected param route to handle the request")
+	}
+	if !allowed.empty() {
+		t.Fatalf("allowed=%v", allowed)
+	}
+	if ctxParam.routeIndex != 0 {
+		t.Fatalf("route index=%d", ctxParam.routeIndex)
+	}
+
+	key := routeCacheKey{method: MethodGet, path: "/items/new"}
+	entry, ok := router.cache.get(key)
+	if !ok || entry.route == nil || entry.route.infoIndex != 0 {
+		t.Fatalf("cached entry=%+v ok=%v", entry, ok)
+	}
+
+	mustDo(t, router.Add(MethodGet, "/items/new", func(*Context) error { return nil }))
+	if entry, ok := router.cache.get(key); ok {
+		t.Fatalf("expected stale cached hit to clear on first access after Add, got=%+v", entry)
+	}
+
+	ctxStatic := &Context{}
+	handled, allowed, err = router.dispatchInto(MethodGet, "/items/new", false, ctxStatic)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if !handled {
+		t.Fatal("expected static route to handle the request")
+	}
+	if !allowed.empty() {
+		t.Fatalf("allowed=%v", allowed)
+	}
+	if ctxStatic.routeIndex != 1 {
+		t.Fatalf("route index=%d", ctxStatic.routeIndex)
 	}
 }
 

@@ -27,10 +27,12 @@ const (
 var nullBytes = []byte("null")
 
 var (
-	plainTextHeader = []string{plainText}
-	jsonHeader      = []string{jsonType}
-	xmlHeader       = []string{xmlType}
-	htmlHeader      = []string{htmlType}
+	plainTextHeader             = []string{plainText}
+	jsonHeader                  = []string{jsonType}
+	xmlHeader                   = []string{xmlType}
+	htmlHeader                  = []string{htmlType}
+	statusNotFoundBytes         = []byte(http.StatusText(http.StatusNotFound))
+	statusMethodNotAllowedBytes = []byte(http.StatusText(http.StatusMethodNotAllowed))
 )
 
 func bodyAllowed(method string, status int) bool {
@@ -205,6 +207,39 @@ func (c *Context) NoContent() error {
 	}
 	_, _, err := c.prepareResponse("")
 	return err
+}
+
+func (c *Context) writeDefaultErrorResponse(status int, allowHeader string) error {
+	if c.written {
+		return ErrResponseAlreadySent
+	}
+	c.written = true
+
+	writer := c.Writer()
+	header := writer.Header()
+	if len(allowHeader) != 0 {
+		header.Set(HeaderAllow, allowHeader)
+	}
+	if len(header[contentType]) == 0 {
+		header[contentType] = plainTextHeader
+	}
+	if !bodyAllowed(c.Method(), status) {
+		writer.WriteHeader(status)
+		return nil
+	}
+
+	writer.WriteHeader(status)
+	switch status {
+	case http.StatusNotFound:
+		_, err := writer.Write(statusNotFoundBytes)
+		return err
+	case http.StatusMethodNotAllowed:
+		_, err := writer.Write(statusMethodNotAllowedBytes)
+		return err
+	default:
+		_, err := io.WriteString(writer, http.StatusText(status))
+		return err
+	}
 }
 
 func (c *Context) Redirect(code int, location string) error {
