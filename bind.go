@@ -1,6 +1,7 @@
 package zinc
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -35,6 +36,10 @@ type defaultBinder struct {
 	codec JSONCodec
 }
 
+type jsonBytesDecoder interface {
+	DecodeBytes(body []byte, v any) error
+}
+
 func (b defaultBinder) Bind(c *Context, v any) error {
 	val, plan, err := bindTargetPlan(v)
 	if err != nil {
@@ -55,9 +60,7 @@ func (b defaultBinder) Bind(c *Context, v any) error {
 	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
 	switch mediaType {
 	case "", "application/json":
-		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
-			return b.codec.Decode(r, v)
-		})
+		bodyLen, readErr, decodeErr := c.readAndCacheJSONBody(b.codec, v)
 		if readErr != nil {
 			return readErr
 		}
@@ -97,9 +100,7 @@ func (b defaultBinder) BindBody(c *Context, v any) error {
 	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
 	switch mediaType {
 	case "", "application/json":
-		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
-			return b.codec.Decode(r, v)
-		})
+		bodyLen, readErr, decodeErr := c.readAndCacheJSONBody(b.codec, v)
 		if readErr != nil {
 			return readErr
 		}
@@ -260,4 +261,15 @@ func (defaultJSONCodec) Encode(w io.Writer, v any, indent string) error {
 func (defaultJSONCodec) Decode(r io.Reader, v any) error {
 	dec := json.NewDecoder(r)
 	return dec.Decode(v)
+}
+
+func (defaultJSONCodec) DecodeBytes(body []byte, v any) error {
+	return json.Unmarshal(body, v)
+}
+
+func decodeJSONBody(codec JSONCodec, body []byte, v any) error {
+	if decoder, ok := codec.(jsonBytesDecoder); ok {
+		return decoder.DecodeBytes(body, v)
+	}
+	return codec.Decode(bytes.NewReader(body), v)
 }
