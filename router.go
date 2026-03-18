@@ -357,15 +357,24 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
-	if routes := r.staticRoutesFor(method, methodMaskFor(method)); routes != nil {
+	routes := r.staticRoutesFor(method, methodMaskFor(method))
+	dispatchCacheEnabled := r.dispatchCacheEnabled()
+	var key routeCacheKey
+	if dispatchCacheEnabled {
+		key = routeCacheKey{method: method, path: originalPath}
+	}
+	if dispatchCacheEnabled && routes != nil {
+		if entry, ok := r.cache.getHot(key); ok && entry.route == nil {
+			return false, entry.allowed, nil
+		}
+	}
+	if routes != nil {
 		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
 			ctx.setRouteIndex(route.infoIndex)
 			return true, allowedMethodSet{}, route.handler(ctx)
 		}
 	}
-	dispatchCacheEnabled := r.dispatchCacheEnabled()
 	if dispatchCacheEnabled {
-		key := routeCacheKey{method: method, path: originalPath}
 		if entry, ok := r.cache.get(key); ok {
 			if entry.route == nil {
 				return false, entry.allowed, nil
@@ -1596,6 +1605,16 @@ func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 	return entry, ok
 }
 
+func (rc *RouteCache) getHot(key routeCacheKey) (routeCacheEntry, bool) {
+	if rc == nil || atomic.LoadUint32(&rc.dirty) != 0 {
+		return routeCacheEntry{}, false
+	}
+	if hot := rc.hot.Load(); hot != nil && hot.key == key {
+		return hot.entry, true
+	}
+	return routeCacheEntry{}, false
+}
+
 func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	if rc == nil || rc.size <= 0 {
 		return
@@ -1627,6 +1646,7 @@ func (rc *RouteCache) invalidate() {
 		return
 	}
 	atomic.StoreUint32(&rc.dirty, 1)
+	rc.hot.Store(nil)
 }
 
 func (rc *RouteCache) clear() {
