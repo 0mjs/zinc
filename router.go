@@ -931,11 +931,29 @@ func (r *radixRoute) paramNameAt(index int) string {
 }
 
 func (r *radixRoute) paramIndex(name string) (int, bool) {
-	if r == nil || len(r.paramIndices) == 0 {
+	if r == nil {
 		return 0, false
 	}
-	index, ok := r.paramIndices[name]
-	return int(index), ok
+	if len(r.paramIndices) != 0 {
+		index, ok := r.paramIndices[name]
+		return int(index), ok
+	}
+	count := int(r.paramCount)
+	if count == 0 {
+		return 0, false
+	}
+	if count > 0 && r.inlineParamNames[0] == name {
+		return 0, true
+	}
+	if count > 1 && r.inlineParamNames[1] == name {
+		return 1, true
+	}
+	for i := 2; i < count; i++ {
+		if r.extraParamNames[i-len(r.inlineParamNames)] == name {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func singleBitIndex(mask methodMask) int {

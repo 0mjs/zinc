@@ -263,10 +263,10 @@ func (s fieldSetter) set(value reflect.Value, inputs []string) error {
 }
 
 func (c *Context) lookupPathParam(name string) (string, bool) {
-	if c.paramPath != "" && c.paramCount > 1 {
-		c.materializePathParams()
-	}
 	if route := c.paramRoute; route != nil {
+		if c.paramPath != "" && c.paramCount > 1 && len(route.paramIndices) > 0 {
+			c.materializePathParams()
+		}
 		if index, ok := route.paramIndex(name); ok {
 			if index >= c.paramCount {
 				return "", false
@@ -276,9 +276,10 @@ func (c *Context) lookupPathParam(name string) (string, bool) {
 			}
 			return c.pathParamValueAt(index), true
 		}
-		if len(route.paramIndices) > 0 {
-			return "", false
-		}
+		return "", false
+	}
+	if c.paramPath != "" && c.paramCount > 1 {
+		c.materializePathParams()
 	}
 	for i := 0; i < c.paramCount; i++ {
 		if c.PathParams[i].key != name {

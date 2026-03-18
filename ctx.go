@@ -222,10 +222,10 @@ func (c *Context) Status(code int) *Context {
 }
 
 func (c *Context) Param(name string) string {
-	if c.paramPath != "" && c.paramCount > 1 {
-		c.materializePathParams()
-	}
 	if route := c.paramRoute; route != nil {
+		if c.paramPath != "" && c.paramCount > 1 && len(route.paramIndices) > 0 {
+			c.materializePathParams()
+		}
 		if index, ok := route.paramIndex(name); ok {
 			if index >= c.paramCount {
 				return ""
@@ -235,9 +235,10 @@ func (c *Context) Param(name string) string {
 			}
 			return c.pathParamValueAt(index)
 		}
-		if len(route.paramIndices) > 0 {
-			return ""
-		}
+		return ""
+	}
+	if c.paramPath != "" && c.paramCount > 1 {
+		c.materializePathParams()
 	}
 	for i := 0; i < c.paramCount; i++ {
 		if c.PathParams[i].key == name {
