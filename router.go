@@ -70,6 +70,7 @@ type Router struct {
 	routes            RouteMap
 	staticRoutes      [routeMethodCount]map[string]*Route
 	staticAllowed     map[string]allowedMethodSet
+	hasCustomStatic   bool
 	dynamicRoots      [routeMethodCount]*radixNode
 	dynamicTrees      dynamicMethodTrees
 	routeTree         *radixNode
@@ -224,6 +225,9 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	if !isDynamic {
 		if r.routes == nil {
 			r.routes = make(map[string]map[string]*Route)
+		}
+		if mask == 0 {
+			r.hasCustomStatic = true
 		}
 		methodRoutes := r.staticRoutesFor(method, mask)
 		if methodRoutes == nil {
@@ -713,7 +717,7 @@ func (r *Router) lookupStaticAllowedByScan(originalPath, path string, caseSensit
 			allowed.mask |= methodMaskFor(method)
 		}
 	}
-	if len(r.routes) == 0 {
+	if !r.hasCustomStatic {
 		return allowed
 	}
 	var custom []string
