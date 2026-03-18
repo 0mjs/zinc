@@ -50,6 +50,35 @@ Before any optimization pass:
 
 If the tree is dirty, do not treat it as the baseline until it has passed the full suite and been explicitly accepted.
 
+## Current Accepted Snapshot
+
+Current accepted working tree:
+
+- kept code change: JSON bind fast path in [bind.go](/Users/matt/dev/oss/zinc/bind.go) and [ctx.go](/Users/matt/dev/oss/zinc/ctx.go)
+- rejected router experiments are not part of the baseline
+- latest fresh full non-throughput raw output:
+  - [/tmp/zinc_non_throughput_20260317_refresh.txt](/tmp/zinc_non_throughput_20260317_refresh.txt)
+
+Current focus score against `Gin/Echo/Chi`:
+
+- non-throughput: `58/67` Zinc wins
+- remaining losses: `9`
+- all `9` remaining losses are to `Gin`
+
+Current remaining rows from the accepted tree:
+
+- `BenchmarkNotFound` (`26.9%` slower than Gin)
+- `BenchmarkRouterParamCold` (`24.2%` slower)
+- `BenchmarkScenarioRouteSetNotFound/GPlusAPI13` (`16.7%` slower)
+- `BenchmarkLargeRouteSetMethodMismatch` (`16.0%` slower)
+- `BenchmarkScenarioRouteSetNotFound/Static157` (`15.5%` slower)
+- `BenchmarkLargeRouteSetNotFound` (`11.5%` slower)
+- `BenchmarkScenarioRouteSetMethodMismatch/Static157` (`7.7%` slower)
+- `BenchmarkScenarioRouteSetAll/ParamsAny24` (`4.7%` slower)
+- `BenchmarkRouteRegistrationParam` (`1.8%` slower)
+
+This matters because the benchmark problem is no longer broad. The remaining work is a small Gin-only cluster.
+
 ## Benchmark Groups
 
 Work only one group at a time:
@@ -129,6 +158,11 @@ A pass is keepable only if all of the following are true:
 
 If the full score gets worse, revert the pass unless there is an explicit decision to trade score for a strategic win.
 
+Also:
+
+- do not keep a pass just because it wins a narrow benchmark slice if it worsens the accepted `58/67` non-throughput score
+- do not treat rejected experiments as the new baseline, even if their target rows looked good
+
 ## Near-Tie Policy
 
 Do not treat tiny differences as meaningful.
@@ -191,13 +225,59 @@ Reason:
 
 ## Current Practical Guidance
 
-For Zinc right now, the safe order remains:
+For Zinc right now, the problem is narrower than before:
 
-1. static miss / `405`
-2. cold param lookup
-3. throughput
+- static-heavy miss / `405`
+- one cold param row
+- one small registration gap
 
-Do not reopen registration again unless the goal is explicitly registration, because that path has already shown how easy it is to trade one win for another regression.
+Do not reopen throughput until the non-throughput `9` Gin rows are handled or the user explicitly asks for throughput work.
+
+Do not reopen broad router architecture changes unless there is no smaller row-specific move left. Recent rejected work showed:
+
+- broader hot-cache changes can make `RouterParamCold` worse
+- duplicating dynamic registration work can destroy `RouteRegistrationParam`
+- targeted row wins are meaningless if they cost accepted score
+
+## Battle Plan
+
+Take the remaining rows in this order:
+
+1. `BenchmarkRouteRegistrationParam`
+2. `BenchmarkScenarioRouteSetMethodMismatch/Static157`
+3. `BenchmarkScenarioRouteSetAll/ParamsAny24`
+4. `BenchmarkLargeRouteSetNotFound`
+5. `BenchmarkLargeRouteSetMethodMismatch`
+6. `BenchmarkScenarioRouteSetNotFound/Static157`
+7. `BenchmarkScenarioRouteSetNotFound/GPlusAPI13`
+8. `BenchmarkRouterParamCold`
+9. `BenchmarkNotFound`
+
+Why this order:
+
+- `RouteRegistrationParam` is only `1.8%` behind and does not require runtime router risk
+- `ScenarioRouteSetMethodMismatch/Static157` and `ScenarioRouteSetAll/ParamsAny24` are the next closest rows
+- `LargeRouteSetNotFound` and `LargeRouteSetMethodMismatch` are the cleanest shared static miss / `405` cluster
+- `ScenarioRouteSetNotFound/GPlusAPI13` is dynamic miss work and should come after the static miss work is cleaner
+- `RouterParamCold` is the hardest remaining cold traversal row
+- `BenchmarkNotFound` is the largest remaining gap and should be left until the cheaper miss-path rows have already moved
+
+Expected implementation order:
+
+1. small registration-only cleanup for dynamic `Add`
+2. exact static miss / `405` fast path that does not add eager registration bookkeeping
+3. mixed wildcard / param miss-path cleanup for `ParamsAny24`
+4. only then consider deeper cold lookup work
+
+Rows that are already wins on the accepted tree should not be reopened casually:
+
+- `Param10`
+- `NestedGroupParam`
+- `WildcardTail`
+- `WildcardTailNotFound`
+- all binder-related rows
+
+Those rows belong in the safety slice for future passes, not the target slice.
 
 ## Bottom Line
 

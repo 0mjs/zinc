@@ -68,6 +68,7 @@ type Router struct {
 	cache             *RouteCache
 	config            *Config
 	routes            RouteMap
+	staticRoutes      [routeMethodCount]map[string]*Route
 	staticAllowed     map[string]allowedMethodSet
 	dynamicRoots      [routeMethodCount]*radixNode
 	dynamicTrees      dynamicMethodTrees
@@ -115,6 +116,12 @@ type RouteCache struct {
 type routeCacheHotEntry struct {
 	key   routeCacheKey
 	entry routeCacheEntry
+}
+
+type collectedRouteParams struct {
+	count  int
+	inline [2]string
+	extra  []string
 }
 
 func (trees dynamicMethodTrees) get(method string) *radixNode {
@@ -188,12 +195,13 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 
 	path = r.normalizePath(path)
 	var (
-		paramNames []string
+		paramNames collectedRouteParams
 		isDynamic  bool
 		err        error
 	)
-	if strings.IndexAny(path, ":*") >= 0 {
-		paramNames, isDynamic, err = collectRouteParams(path)
+	if firstDynamic := strings.IndexAny(path, ":*"); firstDynamic >= 0 {
+		isDynamic = true
+		paramNames, err = collectRouteParams(path, firstDynamic)
 		if err != nil {
 			return err
 		}
@@ -217,9 +225,12 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		if r.routes == nil {
 			r.routes = make(map[string]map[string]*Route)
 		}
-		methodRoutes := r.routes[method]
+		methodRoutes := r.staticRoutesFor(method, mask)
 		if methodRoutes == nil {
 			methodRoutes = make(map[string]*Route)
+			if slot := singleBitIndex(mask); slot >= 0 {
+				r.staticRoutes[slot] = methodRoutes
+			}
 			r.routes[method] = methodRoutes
 		}
 		strictRouting := r.config != nil && r.config.StrictRouting
@@ -268,6 +279,13 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	r.dynamicRouteCount++
 	r.invalidateCache()
 	return nil
+}
+
+func (r *Router) staticRoutesFor(method string, mask methodMask) map[string]*Route {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		return r.staticRoutes[slot]
+	}
+	return r.routes[method]
 }
 
 func (r *Router) invalidateCache() {
@@ -335,7 +353,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
-	if routes, ok := r.routes[method]; ok {
+	if routes := r.staticRoutesFor(method, methodMaskFor(method)); routes != nil {
 		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
 			ctx.setRouteIndex(route.infoIndex)
 			return true, allowedMethodSet{}, route.handler(ctx)
@@ -356,7 +374,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	captured := ctx.paramRangesScratch()
 	entry := r.lookupDynamicDispatch(method, path, needAllowed, captured)
 	if !caseSensitive && entry.route == nil {
-		if routes, ok := r.routes[method]; ok {
+		if routes := r.staticRoutesFor(method, methodMaskFor(method)); routes != nil {
 			if route := lookupStaticRouteLower(routes, originalPath, path); route != nil {
 				ctx.setRouteIndex(route.infoIndex)
 				return true, allowedMethodSet{}, route.handler(ctx)
@@ -682,8 +700,8 @@ func (r *Router) lookupStaticAllowedByScan(originalPath, path string, caseSensit
 		return allowedMethodSet{}
 	}
 	var allowed allowedMethodSet
-	for _, method := range routeMethods {
-		routes := r.routes[method]
+	for slot, method := range routeMethods {
+		routes := r.staticRoutes[slot]
 		if len(routes) == 0 {
 			continue
 		}
@@ -797,47 +815,54 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
-func collectRouteParams(path string) ([]string, bool, error) {
-	var names []string
-	dynamic := false
-	for i := 0; i < len(path); i++ {
+func (c *collectedRouteParams) add(name string) {
+	if c.count < len(c.inline) {
+		c.inline[c.count] = name
+		c.count++
+		return
+	}
+	c.extra = append(c.extra, name)
+	c.count++
+}
+
+func collectRouteParams(path string, startIndex int) (collectedRouteParams, error) {
+	var names collectedRouteParams
+	for i := startIndex; i < len(path); i++ {
 		switch path[i] {
 		case ParamIdentifier:
-			dynamic = true
 			start := i + 1
 			if start >= len(path) || path[start] == '/' {
-				return names, dynamic, fmt.Errorf("invalid parameter in path %q", path)
+				return names, fmt.Errorf("invalid parameter in path %q", path)
 			}
 			end := start
 			for end < len(path) && path[end] != '/' {
 				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, dynamic, fmt.Errorf("invalid parameter in path %q", path)
+					return names, fmt.Errorf("invalid parameter in path %q", path)
 				}
 				end++
 			}
-			names = append(names, path[start:end])
+			names.add(path[start:end])
 			i = end - 1
 		case WildcardIdentifier:
-			dynamic = true
 			start := i + 1
 			if start >= len(path) || path[start] == '/' {
-				return names, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
+				return names, fmt.Errorf("invalid wildcard in path %q", path)
 			}
 			end := start
 			for end < len(path) && path[end] != '/' {
 				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
+					return names, fmt.Errorf("invalid wildcard in path %q", path)
 				}
 				end++
 			}
 			if end != len(path) {
-				return names, dynamic, fmt.Errorf("wildcard must be final in path %q", path)
+				return names, fmt.Errorf("wildcard must be final in path %q", path)
 			}
-			names = append(names, "*")
-			return names, dynamic, nil
+			names.add("*")
+			return names, nil
 		}
 	}
-	return names, dynamic, nil
+	return names, nil
 }
 
 func commonPrefixLen(a, b string) int {
@@ -857,29 +882,29 @@ func nextSlash(path string) int {
 	return strings.IndexByte(path, '/')
 }
 
-func newRadixRoute(method string, handler HandlerFunc, infoIndex uint32, names []string) *radixRoute {
+func newRadixRoute(method string, handler HandlerFunc, infoIndex uint32, names collectedRouteParams) *radixRoute {
 	route := &radixRoute{
 		handler:    handler,
 		methodName: method,
 		infoIndex:  infoIndex,
 		method:     methodMaskFor(method),
 	}
-	count := len(names)
+	count := names.count
 	route.paramCount = uint16(count)
 	inlineCount := count
 	if inlineCount > len(route.inlineParamNames) {
 		inlineCount = len(route.inlineParamNames)
 	}
 	for i := 0; i < inlineCount; i++ {
-		route.inlineParamNames[i] = names[i]
+		route.inlineParamNames[i] = names.inline[i]
 	}
-	if count > len(route.inlineParamNames) {
-		route.extraParamNames = append([]string(nil), names[len(route.inlineParamNames):count]...)
+	if len(names.extra) != 0 {
+		route.extraParamNames = names.extra
 	}
 	if count >= indexedParamThreshold {
 		route.paramIndices = make(map[string]uint8, count)
-		for i, name := range names {
-			route.paramIndices[name] = uint8(i)
+		for i := 0; i < count; i++ {
+			route.paramIndices[route.paramNameAt(i)] = uint8(i)
 		}
 	}
 	return route
