@@ -222,10 +222,10 @@ func (c *Context) Status(code int) *Context {
 }
 
 func (c *Context) Param(name string) string {
-	if c.paramPath != "" && c.paramCount > 1 {
-		c.materializePathParams()
-	}
 	if route := c.paramRoute; route != nil {
+		if c.paramPath != "" && c.paramCount > 1 && len(route.paramIndices) > 0 {
+			c.materializePathParams()
+		}
 		if index, ok := route.paramIndex(name); ok {
 			if index >= c.paramCount {
 				return ""
@@ -235,9 +235,10 @@ func (c *Context) Param(name string) string {
 			}
 			return c.pathParamValueAt(index)
 		}
-		if len(route.paramIndices) > 0 {
-			return ""
-		}
+		return ""
+	}
+	if c.paramPath != "" && c.paramCount > 1 {
+		c.materializePathParams()
 	}
 	for i := 0; i < c.paramCount; i++ {
 		if c.PathParams[i].key == name {
@@ -382,8 +383,49 @@ func (c *Context) bodyBytes() ([]byte, error) {
 	if c.bodyRead {
 		return c.body, c.bodyErr
 	}
-	_, readErr, _ := c.readAndCacheBody(nil)
-	return c.body, readErr
+	return c.readAndCacheBodyBytes()
+}
+
+func (c *Context) readAndCacheBodyBytes() ([]byte, error) {
+	if c.bodyRead {
+		return c.body, c.bodyErr
+	}
+	c.bodyRead = true
+	if !requestHasBody(c.request) {
+		return nil, nil
+	}
+
+	reader := io.Reader(c.request.Body)
+	if c.app != nil && c.app.config.BodyLimit > 0 {
+		reader = io.LimitReader(reader, c.app.config.BodyLimit+1)
+	}
+
+	body, readErr := io.ReadAll(reader)
+	if readErr == nil && c.app != nil && c.app.config.BodyLimit > 0 && int64(len(body)) > c.app.config.BodyLimit {
+		readErr = ErrRequestEntityTooLarge
+		body = nil
+	}
+	if closeErr := c.request.Body.Close(); readErr == nil && closeErr != nil {
+		readErr = closeErr
+	}
+
+	c.body = body
+	c.bodyErr = readErr
+	if readErr == nil {
+		c.request.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	return body, readErr
+}
+
+func (c *Context) readAndCacheJSONBody(codec JSONCodec, v any) (int, error, error) {
+	body, readErr := c.readAndCacheBodyBytes()
+	if readErr != nil {
+		return len(body), readErr, nil
+	}
+	if len(body) == 0 {
+		return 0, nil, nil
+	}
+	return len(body), nil, decodeJSONBody(codec, body, v)
 }
 
 func (c *Context) readAndCacheBody(decode func(io.Reader) error) (int, error, error) {

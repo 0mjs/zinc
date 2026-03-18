@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,7 +68,9 @@ type Router struct {
 	cache             *RouteCache
 	config            *Config
 	routes            RouteMap
+	staticRoutes      [routeMethodCount]map[string]*Route
 	staticAllowed     map[string]allowedMethodSet
+	hasCustomStatic   bool
 	dynamicRoots      [routeMethodCount]*radixNode
 	dynamicTrees      dynamicMethodTrees
 	routeTree         *radixNode
@@ -107,12 +110,19 @@ type RouteCache struct {
 	size  int
 	keys  []routeCacheKey
 	count uint32
+	dirty uint32
 	hot   atomic.Pointer[routeCacheHotEntry]
 }
 
 type routeCacheHotEntry struct {
 	key   routeCacheKey
 	entry routeCacheEntry
+}
+
+type collectedRouteParams struct {
+	count  int
+	inline [2]string
+	extra  []string
 }
 
 func (trees dynamicMethodTrees) get(method string) *radixNode {
@@ -183,18 +193,16 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	if len(handlers) == 0 {
 		return fmt.Errorf("no handler provided for %s %s", method, path)
 	}
-	if r.cache != nil {
-		r.cache.clear()
-	}
 
 	path = r.normalizePath(path)
 	var (
-		paramNames []string
+		paramNames collectedRouteParams
 		isDynamic  bool
 		err        error
 	)
-	if strings.IndexAny(path, ":*") >= 0 {
-		paramNames, isDynamic, err = collectRouteParams(path)
+	if firstDynamic := strings.IndexAny(path, ":*"); firstDynamic >= 0 {
+		isDynamic = true
+		paramNames, err = collectRouteParams(path, firstDynamic)
 		if err != nil {
 			return err
 		}
@@ -212,18 +220,38 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 
 	infoIndex := uint32(len(r.routeInfos))
 	info := newRouteMeta(method, path, finalHandler)
+	mask := methodMaskFor(method)
 
 	if !isDynamic {
 		if r.routes == nil {
 			r.routes = make(map[string]map[string]*Route)
 		}
-		methodRoutes := r.routes[method]
+		if mask == 0 {
+			r.hasCustomStatic = true
+		}
+		methodRoutes := r.staticRoutesFor(method, mask)
 		if methodRoutes == nil {
 			methodRoutes = make(map[string]*Route)
+			if slot := singleBitIndex(mask); slot >= 0 {
+				r.staticRoutes[slot] = methodRoutes
+			}
 			r.routes[method] = methodRoutes
 		}
 		strictRouting := r.config != nil && r.config.StrictRouting
 		caseSensitive := r.config == nil || r.config.CaseSensitive
+		if staticRouteHasSingleCandidate(path, strictRouting, caseSensitive) {
+			if methodRoutes[path] != nil {
+				return fmt.Errorf("route already registered for %s", path)
+			}
+			route := &Route{
+				handler:   precomposed,
+				infoIndex: infoIndex,
+			}
+			methodRoutes[path] = route
+			r.routeInfos = append(r.routeInfos, info)
+			r.invalidateCache()
+			return nil
+		}
 		routeCandidates, routeCandidateCount := staticRouteCandidates(path, strictRouting, caseSensitive)
 		for i := 0; i < routeCandidateCount; i++ {
 			if methodRoutes[routeCandidates[i]] != nil {
@@ -240,22 +268,34 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 		for i := 0; i < routeCandidateCount; i++ {
 			candidate := routeCandidates[i]
 			methodRoutes[candidate] = route
-			allowed := r.staticAllowed[candidate]
-			allowed.addMethod(method)
-			r.staticAllowed[candidate] = allowed
+			r.staticAllowed[candidate] = addAllowedMethod(r.staticAllowed[candidate], method, mask)
 		}
 		r.routeInfos = append(r.routeInfos, info)
+		r.invalidateCache()
 		return nil
 	}
 
-	mask := methodMaskFor(method)
 	route := newRadixRoute(method, precomposed, infoIndex, paramNames)
 	if err := r.ensureDynamicTree(method, mask).add(path, route); err != nil {
 		return err
 	}
 	r.routeInfos = append(r.routeInfos, info)
 	r.dynamicRouteCount++
+	r.invalidateCache()
 	return nil
+}
+
+func (r *Router) staticRoutesFor(method string, mask methodMask) map[string]*Route {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		return r.staticRoutes[slot]
+	}
+	return r.routes[method]
+}
+
+func (r *Router) invalidateCache() {
+	if r.cache != nil {
+		r.cache.invalidate()
+	}
 }
 
 func (r *Router) Routes() []RouteInfo {
@@ -317,15 +357,24 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
-	if routes, ok := r.routes[method]; ok {
+	routes := r.staticRoutesFor(method, methodMaskFor(method))
+	dispatchCacheEnabled := r.dispatchCacheEnabled()
+	var key routeCacheKey
+	if dispatchCacheEnabled {
+		key = routeCacheKey{method: method, path: originalPath}
+	}
+	if dispatchCacheEnabled && routes != nil {
+		if entry, ok := r.cache.getHot(key); ok && entry.route == nil {
+			return false, entry.allowed, nil
+		}
+	}
+	if routes != nil {
 		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
 			ctx.setRouteIndex(route.infoIndex)
 			return true, allowedMethodSet{}, route.handler(ctx)
 		}
 	}
-	dispatchCacheEnabled := r.dispatchCacheEnabled()
 	if dispatchCacheEnabled {
-		key := routeCacheKey{method: method, path: originalPath}
 		if entry, ok := r.cache.get(key); ok {
 			if entry.route == nil {
 				return false, entry.allowed, nil
@@ -338,7 +387,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	captured := ctx.paramRangesScratch()
 	entry := r.lookupDynamicDispatch(method, path, needAllowed, captured)
 	if !caseSensitive && entry.route == nil {
-		if routes, ok := r.routes[method]; ok {
+		if routes := r.staticRoutesFor(method, methodMaskFor(method)); routes != nil {
 			if route := lookupStaticRouteLower(routes, originalPath, path); route != nil {
 				ctx.setRouteIndex(route.infoIndex)
 				return true, allowedMethodSet{}, route.handler(ctx)
@@ -587,10 +636,12 @@ func (r *Router) lookupAllowedInDynamicRoots(path, excludeMethod string) allowed
 }
 
 func (r *Router) lookupStaticAllowedMethods(originalPath, path string, caseSensitive bool) allowedMethodSet {
-	if len(r.staticAllowed) == 0 {
-		return allowedMethodSet{}
+	if len(r.staticAllowed) != 0 {
+		if allowed := lookupStaticAllowed(r.staticAllowed, originalPath, path, caseSensitive); !allowed.empty() {
+			return allowed
+		}
 	}
-	return lookupStaticAllowed(r.staticAllowed, originalPath, path, caseSensitive)
+	return r.lookupStaticAllowedByScan(originalPath, path, caseSensitive)
 }
 
 func lookupStaticRouteExact(methodRoutes map[string]*Route, originalPath, path string) *Route {
@@ -657,6 +708,53 @@ func lookupStaticAllowed(staticAllowed map[string]allowedMethodSet, originalPath
 	return allowedMethodSet{}
 }
 
+func (r *Router) lookupStaticAllowedByScan(originalPath, path string, caseSensitive bool) allowedMethodSet {
+	if len(r.routes) == 0 {
+		return allowedMethodSet{}
+	}
+	var allowed allowedMethodSet
+	for slot, method := range routeMethods {
+		routes := r.staticRoutes[slot]
+		if len(routes) == 0 {
+			continue
+		}
+		if lookupStaticRouteExact(routes, originalPath, path) != nil {
+			allowed.mask |= methodMaskFor(method)
+			continue
+		}
+		if !caseSensitive && lookupStaticRouteLower(routes, originalPath, path) != nil {
+			allowed.mask |= methodMaskFor(method)
+		}
+	}
+	if !r.hasCustomStatic {
+		return allowed
+	}
+	var custom []string
+	for method := range r.routes {
+		if methodMaskFor(method) == 0 {
+			custom = append(custom, method)
+		}
+	}
+	if len(custom) == 0 {
+		return allowed
+	}
+	sort.Strings(custom)
+	for _, method := range custom {
+		routes := r.routes[method]
+		if len(routes) == 0 {
+			continue
+		}
+		if lookupStaticRouteExact(routes, originalPath, path) != nil {
+			allowed.addMethod(method)
+			continue
+		}
+		if !caseSensitive && lookupStaticRouteLower(routes, originalPath, path) != nil {
+			allowed.addMethod(method)
+		}
+	}
+	return allowed
+}
+
 func staticRouteCandidates(path string, strictRouting, caseSensitive bool) ([4]string, int) {
 	var candidates [4]string
 	count := 0
@@ -689,6 +787,31 @@ func staticRouteCandidates(path string, strictRouting, caseSensitive bool) ([4]s
 	return candidates, count
 }
 
+func staticRouteHasSingleCandidate(path string, strictRouting, caseSensitive bool) bool {
+	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
+		return false
+	}
+	if caseSensitive {
+		return true
+	}
+	for i := 0; i < len(path); i++ {
+		c := path[i]
+		if (c >= 'A' && c <= 'Z') || c >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func addAllowedMethod(allowed allowedMethodSet, method string, mask methodMask) allowedMethodSet {
+	if mask != 0 {
+		allowed.mask |= mask
+		return allowed
+	}
+	allowed.addMethod(method)
+	return allowed
+}
+
 func (r *Router) normalizePath(path string) string {
 	if path == "" {
 		return "/"
@@ -705,47 +828,54 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
-func collectRouteParams(path string) ([]string, bool, error) {
-	var names []string
-	dynamic := false
-	for i := 0; i < len(path); i++ {
+func (c *collectedRouteParams) add(name string) {
+	if c.count < len(c.inline) {
+		c.inline[c.count] = name
+		c.count++
+		return
+	}
+	c.extra = append(c.extra, name)
+	c.count++
+}
+
+func collectRouteParams(path string, startIndex int) (collectedRouteParams, error) {
+	var names collectedRouteParams
+	for i := startIndex; i < len(path); i++ {
 		switch path[i] {
 		case ParamIdentifier:
-			dynamic = true
 			start := i + 1
 			if start >= len(path) || path[start] == '/' {
-				return names, dynamic, fmt.Errorf("invalid parameter in path %q", path)
+				return names, fmt.Errorf("invalid parameter in path %q", path)
 			}
 			end := start
 			for end < len(path) && path[end] != '/' {
 				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, dynamic, fmt.Errorf("invalid parameter in path %q", path)
+					return names, fmt.Errorf("invalid parameter in path %q", path)
 				}
 				end++
 			}
-			names = append(names, path[start:end])
+			names.add(path[start:end])
 			i = end - 1
 		case WildcardIdentifier:
-			dynamic = true
 			start := i + 1
 			if start >= len(path) || path[start] == '/' {
-				return names, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
+				return names, fmt.Errorf("invalid wildcard in path %q", path)
 			}
 			end := start
 			for end < len(path) && path[end] != '/' {
 				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, dynamic, fmt.Errorf("invalid wildcard in path %q", path)
+					return names, fmt.Errorf("invalid wildcard in path %q", path)
 				}
 				end++
 			}
 			if end != len(path) {
-				return names, dynamic, fmt.Errorf("wildcard must be final in path %q", path)
+				return names, fmt.Errorf("wildcard must be final in path %q", path)
 			}
-			names = append(names, "*")
-			return names, dynamic, nil
+			names.add("*")
+			return names, nil
 		}
 	}
-	return names, dynamic, nil
+	return names, nil
 }
 
 func commonPrefixLen(a, b string) int {
@@ -765,29 +895,29 @@ func nextSlash(path string) int {
 	return strings.IndexByte(path, '/')
 }
 
-func newRadixRoute(method string, handler HandlerFunc, infoIndex uint32, names []string) *radixRoute {
+func newRadixRoute(method string, handler HandlerFunc, infoIndex uint32, names collectedRouteParams) *radixRoute {
 	route := &radixRoute{
 		handler:    handler,
 		methodName: method,
 		infoIndex:  infoIndex,
 		method:     methodMaskFor(method),
 	}
-	count := len(names)
+	count := names.count
 	route.paramCount = uint16(count)
 	inlineCount := count
 	if inlineCount > len(route.inlineParamNames) {
 		inlineCount = len(route.inlineParamNames)
 	}
 	for i := 0; i < inlineCount; i++ {
-		route.inlineParamNames[i] = names[i]
+		route.inlineParamNames[i] = names.inline[i]
 	}
-	if count > len(route.inlineParamNames) {
-		route.extraParamNames = append([]string(nil), names[len(route.inlineParamNames):count]...)
+	if len(names.extra) != 0 {
+		route.extraParamNames = names.extra
 	}
 	if count >= indexedParamThreshold {
 		route.paramIndices = make(map[string]uint8, count)
-		for i, name := range names {
-			route.paramIndices[name] = uint8(i)
+		for i := 0; i < count; i++ {
+			route.paramIndices[route.paramNameAt(i)] = uint8(i)
 		}
 	}
 	return route
@@ -801,11 +931,29 @@ func (r *radixRoute) paramNameAt(index int) string {
 }
 
 func (r *radixRoute) paramIndex(name string) (int, bool) {
-	if r == nil || len(r.paramIndices) == 0 {
+	if r == nil {
 		return 0, false
 	}
-	index, ok := r.paramIndices[name]
-	return int(index), ok
+	if len(r.paramIndices) != 0 {
+		index, ok := r.paramIndices[name]
+		return int(index), ok
+	}
+	count := int(r.paramCount)
+	if count == 0 {
+		return 0, false
+	}
+	if count > 0 && r.inlineParamNames[0] == name {
+		return 0, true
+	}
+	if count > 1 && r.inlineParamNames[1] == name {
+		return 1, true
+	}
+	for i := 2; i < count; i++ {
+		if r.extraParamNames[i-len(r.inlineParamNames)] == name {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func singleBitIndex(mask methodMask) int {
@@ -1462,6 +1610,7 @@ func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 	if rc == nil {
 		return routeCacheEntry{}, false
 	}
+	rc.ensureFresh()
 	if hot := rc.hot.Load(); hot != nil && hot.key == key {
 		return hot.entry, true
 	}
@@ -1474,10 +1623,21 @@ func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
 	return entry, ok
 }
 
+func (rc *RouteCache) getHot(key routeCacheKey) (routeCacheEntry, bool) {
+	if rc == nil || atomic.LoadUint32(&rc.dirty) != 0 {
+		return routeCacheEntry{}, false
+	}
+	if hot := rc.hot.Load(); hot != nil && hot.key == key {
+		return hot.entry, true
+	}
+	return routeCacheEntry{}, false
+}
+
 func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	if rc == nil || rc.size <= 0 {
 		return
 	}
+	rc.ensureFresh()
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	if rc.cache == nil {
@@ -1499,10 +1659,19 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
 }
 
+func (rc *RouteCache) invalidate() {
+	if rc == nil {
+		return
+	}
+	atomic.StoreUint32(&rc.dirty, 1)
+	rc.hot.Store(nil)
+}
+
 func (rc *RouteCache) clear() {
 	if rc == nil || atomic.LoadUint32(&rc.count) == 0 {
 		if rc != nil {
 			rc.hot.Store(nil)
+			atomic.StoreUint32(&rc.dirty, 0)
 		}
 		return
 	}
@@ -1510,8 +1679,24 @@ func (rc *RouteCache) clear() {
 	rc.cache = nil
 	rc.keys = nil
 	atomic.StoreUint32(&rc.count, 0)
+	atomic.StoreUint32(&rc.dirty, 0)
 	rc.mu.Unlock()
 	rc.hot.Store(nil)
+}
+
+func (rc *RouteCache) ensureFresh() {
+	if rc == nil || atomic.LoadUint32(&rc.dirty) == 0 {
+		return
+	}
+	rc.mu.Lock()
+	if atomic.LoadUint32(&rc.dirty) != 0 {
+		rc.cache = nil
+		rc.keys = nil
+		atomic.StoreUint32(&rc.count, 0)
+		atomic.StoreUint32(&rc.dirty, 0)
+		rc.hot.Store(nil)
+	}
+	rc.mu.Unlock()
 }
 
 func lowercasePath(path string) (string, bool) {
