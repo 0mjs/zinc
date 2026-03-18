@@ -1,4 +1,4 @@
-_docs/*
+_/*
 .air.toml
 .DS_Store
 tmp/*
@@ -6,3 +6,4 @@ restricted/*
 vendor/*
 examples/*
 .vscode/*
+*.txt

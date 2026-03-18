@@ -2,6 +2,7 @@ package zinc
 
 import (
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -11,10 +12,11 @@ import (
 )
 
 type bindingPlan struct {
-	pathFields   []bindingField
-	queryFields  []bindingField
-	formFields   []bindingField
-	headerFields []bindingField
+	pathFields          []bindingField
+	queryFields         []bindingField
+	formFields          []bindingField
+	multipartFileFields []bindingField
+	headerFields        []bindingField
 }
 
 type bindingField struct {
@@ -22,6 +24,35 @@ type bindingField struct {
 	name   string
 	label  string
 	setter fieldSetter
+}
+
+type bindFieldError struct {
+	Source string
+	Field  string
+	Err    error
+}
+
+func (e *bindFieldError) Error() string {
+	if e == nil {
+		return ""
+	}
+	switch {
+	case e.Source != "" && e.Field != "":
+		return fmt.Sprintf("bind %s %s: %v", e.Source, e.Field, e.Err)
+	case e.Source != "":
+		return fmt.Sprintf("bind %s: %v", e.Source, e.Err)
+	case e.Field != "":
+		return fmt.Sprintf("bind %s: %v", e.Field, e.Err)
+	default:
+		return e.Err.Error()
+	}
+}
+
+func (e *bindFieldError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 type fieldSetter struct {
@@ -42,11 +73,18 @@ const (
 	fieldSetterFloat
 	fieldSetterSliceString
 	fieldSetterSliceInt
+	fieldSetterFileHeaderValue
+	fieldSetterFileHeaderPtr
+	fieldSetterSliceFileHeaderValue
+	fieldSetterSliceFileHeaderPtr
 	fieldSetterUnsupportedKind
 	fieldSetterUnsupportedSlice
 )
 
 var bindingPlanCache sync.Map
+
+var multipartFileHeaderType = reflect.TypeOf(multipart.FileHeader{})
+var multipartFileHeaderPtrType = reflect.TypeOf((*multipart.FileHeader)(nil))
 
 func bindTargetPlan(ptr any) (reflect.Value, *bindingPlan, error) {
 	if ptr == nil {
@@ -92,7 +130,11 @@ func compileBindingPlan(typ reflect.Type) *bindingPlan {
 			plan.queryFields = append(plan.queryFields, compiled)
 		}
 		if compiled, ok := compileBindingField(i, field, setter, "form"); ok {
-			plan.formFields = append(plan.formFields, compiled)
+			if setter.supportsFiles() {
+				plan.multipartFileFields = append(plan.multipartFileFields, compiled)
+			} else {
+				plan.formFields = append(plan.formFields, compiled)
+			}
 		}
 		if compiled, ok := compileBindingField(i, field, setter, "header"); ok {
 			plan.headerFields = append(plan.headerFields, compiled)
@@ -143,7 +185,21 @@ func compileFieldSetter(typ reflect.Type) fieldSetter {
 		return fieldSetter{kind: fieldSetterUint, bits: int(typ.Bits())}
 	case reflect.Float32, reflect.Float64:
 		return fieldSetter{kind: fieldSetterFloat, bits: int(typ.Bits())}
+	case reflect.Struct:
+		if typ == multipartFileHeaderType {
+			return fieldSetter{kind: fieldSetterFileHeaderValue}
+		}
+	case reflect.Pointer:
+		if typ == multipartFileHeaderPtrType {
+			return fieldSetter{kind: fieldSetterFileHeaderPtr}
+		}
 	case reflect.Slice:
+		if typ.Elem() == multipartFileHeaderType {
+			return fieldSetter{kind: fieldSetterSliceFileHeaderValue}
+		}
+		if typ.Elem() == multipartFileHeaderPtrType {
+			return fieldSetter{kind: fieldSetterSliceFileHeaderPtr}
+		}
 		switch typ.Elem().Kind() {
 		case reflect.String:
 			return fieldSetter{kind: fieldSetterSliceString}
@@ -154,6 +210,16 @@ func compileFieldSetter(typ reflect.Type) fieldSetter {
 		}
 	default:
 		return fieldSetter{kind: fieldSetterUnsupportedKind, unsupportedKind: typ.Kind()}
+	}
+	return fieldSetter{kind: fieldSetterUnsupportedKind, unsupportedKind: typ.Kind()}
+}
+
+func (s fieldSetter) supportsFiles() bool {
+	switch s.kind {
+	case fieldSetterFileHeaderValue, fieldSetterFileHeaderPtr, fieldSetterSliceFileHeaderValue, fieldSetterSliceFileHeaderPtr:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -167,7 +233,7 @@ func bindFieldsFromValues(val reflect.Value, fields []bindingField, values url.V
 			continue
 		}
 		if err := field.setter.set(val.Field(field.index), inputs); err != nil {
-			return fmt.Errorf("bind %s: %w", field.label, err)
+			return &bindFieldError{Field: field.label, Err: err}
 		}
 	}
 	return nil
@@ -183,7 +249,23 @@ func bindFieldsFromHeader(val reflect.Value, fields []bindingField, header http.
 			continue
 		}
 		if err := field.setter.set(val.Field(field.index), inputs); err != nil {
-			return fmt.Errorf("bind %s: %w", field.label, err)
+			return &bindFieldError{Field: field.label, Err: err}
+		}
+	}
+	return nil
+}
+
+func bindFieldsFromMultipartFiles(val reflect.Value, fields []bindingField, files map[string][]*multipart.FileHeader) error {
+	if len(fields) == 0 || len(files) == 0 {
+		return nil
+	}
+	for _, field := range fields {
+		inputs := files[field.name]
+		if len(inputs) == 0 {
+			continue
+		}
+		if err := field.setter.setFiles(val.Field(field.index), inputs); err != nil {
+			return &bindFieldError{Source: "form", Field: field.label, Err: err}
 		}
 	}
 	return nil
@@ -200,7 +282,7 @@ func bindFieldsFromPath(val reflect.Value, fields []bindingField, c *Context) er
 		}
 		single := [1]string{input}
 		if err := field.setter.set(val.Field(field.index), single[:]); err != nil {
-			return fmt.Errorf("bind %s: %w", field.label, err)
+			return &bindFieldError{Source: "path", Field: field.label, Err: err}
 		}
 	}
 	return nil
@@ -254,10 +336,40 @@ func (s fieldSetter) set(value reflect.Value, inputs []string) error {
 			slice.Index(i).SetInt(parsed)
 		}
 		value.Set(slice)
+	case fieldSetterFileHeaderValue, fieldSetterFileHeaderPtr, fieldSetterSliceFileHeaderValue, fieldSetterSliceFileHeaderPtr:
+		return fmt.Errorf("multipart files must be bound from multipart file data")
 	case fieldSetterUnsupportedSlice:
 		return fmt.Errorf("unsupported slice element type %s", s.unsupportedSlice)
 	case fieldSetterUnsupportedKind:
 		return fmt.Errorf("unsupported kind %s", s.unsupportedKind)
+	}
+	return nil
+}
+
+func (s fieldSetter) setFiles(value reflect.Value, files []*multipart.FileHeader) error {
+	if !value.CanSet() || len(files) == 0 {
+		return nil
+	}
+
+	switch s.kind {
+	case fieldSetterFileHeaderValue:
+		value.Set(reflect.ValueOf(*files[0]).Convert(value.Type()))
+	case fieldSetterFileHeaderPtr:
+		value.Set(reflect.ValueOf(files[0]))
+	case fieldSetterSliceFileHeaderValue:
+		slice := reflect.MakeSlice(value.Type(), len(files), len(files))
+		for i, file := range files {
+			slice.Index(i).Set(reflect.ValueOf(*file).Convert(value.Type().Elem()))
+		}
+		value.Set(slice)
+	case fieldSetterSliceFileHeaderPtr:
+		slice := reflect.MakeSlice(value.Type(), len(files), len(files))
+		for i, file := range files {
+			slice.Index(i).Set(reflect.ValueOf(file))
+		}
+		value.Set(slice)
+	default:
+		return fmt.Errorf("unsupported multipart file target")
 	}
 	return nil
 }

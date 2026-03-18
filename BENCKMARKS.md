@@ -1,205 +1,196 @@
 # Zinc Benchmarks
 
-Latest full benchmark snapshot from the March 18, 2026 rerun. Row tables focus on Zinc's direct framework peers: `Gin`, `Echo`, and `Chi`. The raw harness also runs `HttpRouter` and `ServeMux`; those are summarized in a separate all-framework scorecard where directly comparable.
+Latest full peer-only benchmark snapshot from the March 18, 2026 rerun. The suite now compares Zinc directly against `Gin`, `Echo`, and `Chi` only.
 
 ## Run Info
 
 - Date: `2026-03-18`
 - Machine: `Apple M1 Pro`
 - OS / Arch: `darwin / arm64`
-- Commands:
-  - Non-throughput cross-framework suite: `env GOCACHE=/tmp/zinc-go-build go test -run=^$ -bench 'Benchmark(HelloWorld|StaticRoute|StaticRouteCold|RouterParam|RouterParamCold|JSONResponse|QueryParams|MiddlewareChain|NotFound|LargeRouteSetStatic|LargeRouteSetStaticMixed|LargeRouteSetNotFound|LargeRouteSetMethodMismatch|LargeRouteSetParam|LargeRouteSetParamMixed|RouteRegistrationStatic|RouteRegistrationParam|APIParamQueryJSON|APIHappyPath|APIBindJSONHappyPath|Param5|Param10|NestedGroupStatic|NestedGroupParam|NestedGroupNotFound|NestedGroupMethodMismatch|WildcardTail|WildcardTailNotFound|ScenarioRouteSet(Build|Static|Param|NotFound|MethodMismatch|All)|ParallelStaticRoute|ParallelRouterParam|ParallelMiddlewareChain|ParallelAPIHappyPath|APIBindHeaderQueryJSON|APIBindInvalidJSON|APIBindValidationFailure|APIBindMultipartHappyPath|LargeJSONResponse|LargeJSONBind|StaticFileHit|StaticFileNotFound|NestedGroupMiddlewareAPI|APIUnauthorizedReject)$' -benchmem -count=1`
-  - Throughput suite: `env GOCACHE=/tmp/zinc-go-build go test -run=^$ -bench 'BenchmarkRequestsPerSecond(Focused)?$' -benchmem -count=1`
+- Command: `cd benchmarks && env GOCACHE=/tmp/zinc-go-build go test -run=^$ -bench . -benchmem -count=1`
 - Units: lower is better for latency rows; higher is better for `reqs/s`.
 
 ## Headline
 
-- Peer-only score: Zinc wins `70/85` comparable rows overall.
-- Excluding throughput, Zinc wins `69/77` rows.
-- Throughput only, Zinc wins `1/8` rows.
-- All-framework directly comparable rows: Zinc wins `11/41`, `HttpRouter` wins `29/41`, and `Gin` wins `1/41`.
+- Peer-only score: Zinc wins `65/85` comparable rows overall.
+- Excluding throughput, Zinc wins `65/77` rows.
+- Throughput only, Zinc wins `0/8` rows.
 
 ## Peer Scorecard
 
 | Framework | Wins | 2nd Place | Top-3 Finishes |
 |---|---:|---:|---:|
-| `Zinc` | `70` | `8` | `79` |
-| `Gin` | `6` | `58` | `79` |
-| `Echo` | `3` | `13` | `58` |
-| `Chi` | `6` | `6` | `39` |
-
-## All-Framework Scorecard
-
-| Framework | Wins | 2nd Place | Top-3 Finishes |
-|---|---:|---:|---:|
-| `Zinc` | `11` | `22` | `38` |
-| `ServeMux` | `0` | `5` | `12` |
-| `HttpRouter` | `29` | `2` | `36` |
-| `Chi` | `0` | `2` | `6` |
-| `Echo` | `0` | `0` | `5` |
-| `Gin` | `1` | `10` | `26` |
+| `Zinc` | `65` | `12` | `83` |
+| `Gin` | `13` | `52` | `73` |
+| `Echo` | `2` | `12` | `59` |
+| `Chi` | `5` | `9` | `40` |
 
 ## Remaining Peer Gaps
 
 | Benchmark | Winner | Zinc Gap |
 |---|---|---:|
-| `StaticFileNotFound` | `Gin` | `48.3% slower` |
-| `APIBindInvalidJSON` | `Gin` | `34.4% slower` |
-| `RouterParamCold` | `Gin` | `24.1% slower` |
-| `LargeRouteSetMethodMismatch` | `Gin` | `8.6% slower` |
-| `APIBindValidationFailure` | `Echo` | `1.3% slower` |
-| `ScenarioAll/ParamsAny24` | `Gin` | `1.2% slower` |
-| `APIBindMultipartHappyPath` | `Gin` | `1.0% slower` |
-| `LargeJSONResponse` | `Echo` | `0.1% slower` |
-| `RequestsPerSecond/Concurrency8` | `Chi` | `15.0% lower req/s` |
-| `RequestsPerSecondFocused/Concurrency1` | `Chi` | `13.7% lower req/s` |
-| `RequestsPerSecond/Concurrency32` | `Chi` | `6.8% lower req/s` |
-| `RequestsPerSecondFocused/Concurrency32` | `Chi` | `1.9% lower req/s` |
-| `RequestsPerSecondFocused/Concurrency8` | `Chi` | `1.9% lower req/s` |
-| `RequestsPerSecondFocused/Concurrency128` | `Chi` | `1.0% lower req/s` |
-| `RequestsPerSecond/Concurrency128` | `Echo` | `0.7% lower req/s` |
+| `StaticFileNotFound` | `Gin` | `63.5% slower` |
+| `APIBindInvalidJSON` | `Gin` | `32.2% slower` |
+| `RouterParamCold` | `Gin` | `23.0% slower` |
+| `RouteRegistrationParam` | `Gin` | `21.0% slower` |
+| `RequestsPerSecondFocused/Concurrency128` | `Echo` | `12.6% lower req/s` |
+| `LargeRouteSetMethodMismatch` | `Gin` | `10.8% slower` |
+| `ScenarioBuild/ParamsAny24` | `Gin` | `7.4% slower` |
+| `ScenarioAll/ParamsAny24` | `Gin` | `5.4% slower` |
+| `RequestsPerSecondFocused/Concurrency1` | `Chi` | `5.1% lower req/s` |
+| `RequestsPerSecond/Concurrency1` | `Chi` | `3.9% lower req/s` |
+| `LargeRouteSetNotFound` | `Gin` | `3.5% slower` |
+| `NotFound` | `Gin` | `3.4% slower` |
+| `RequestsPerSecondFocused/Concurrency8` | `Gin` | `2.9% lower req/s` |
+| `RequestsPerSecondFocused/Concurrency32` | `Echo` | `2.3% lower req/s` |
+| `ScenarioNotFound/ParamsAny24` | `Gin` | `2.2% slower` |
+| `RequestsPerSecond/Concurrency32` | `Chi` | `2.1% lower req/s` |
+| `RequestsPerSecond/Concurrency8` | `Chi` | `1.4% lower req/s` |
+| `RequestsPerSecond/Concurrency128` | `Chi` | `1.2% lower req/s` |
+| `APIBindMultipartHappyPath` | `Gin` | `0.5% slower` |
+| `Scenario405/Static157` | `Gin` | `0.4% slower` |
 
 ## Core Runtime
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `HelloWorld` | `62.7 ns` | `94.7 ns` | `125.7 ns` | `183.4 ns` | 🥇 `Zinc` |
-| `StaticRoute` | `61.5 ns` | `89.5 ns` | `126.3 ns` | `182.6 ns` | 🥇 `Zinc` |
-| `StaticRouteCold` | `67.5 ns` | `115.3 ns` | `154.4 ns` | `241.9 ns` | 🥇 `Zinc` |
-| `RouterParam` | `78.3 ns` | `95.0 ns` | `132.8 ns` | `369.3 ns` | 🥇 `Zinc` |
-| `RouterParamCold` | `123.0 ns` | `99.1 ns` | `135.6 ns` | `228.2 ns` | 🥇 `Gin` |
-| `JSONResponse` | `335.6 ns` | `389.3 ns` | `384.8 ns` | `510.6 ns` | 🥇 `Zinc` |
-| `QueryParams` | `407.7 ns` | `439.1 ns` | `472.1 ns` | `562.8 ns` | 🥇 `Zinc` |
-| `MiddlewareChain` | `363.9 ns` | `425.0 ns` | `544.6 ns` | `890.8 ns` | 🥇 `Zinc` |
-| `NotFound` | `60.7 ns` | `69.9 ns` | `615.4 ns` | `340.6 ns` | 🥇 `Zinc` |
-| `LargeRouteSetStatic` | `66.4 ns` | `104.1 ns` | `145.5 ns` | `220.4 ns` | 🥇 `Zinc` |
-| `LargeRouteSetStaticMixed` | `71.7 ns` | `122.1 ns` | `157.3 ns` | `263.6 ns` | 🥇 `Zinc` |
-| `LargeRouteSetNotFound` | `60.8 ns` | `72.5 ns` | `631.3 ns` | `357.8 ns` | 🥇 `Zinc` |
-| `LargeRouteSetMethodMismatch` | `110.0 ns` | `101.3 ns` | `864.9 ns` | `316.4 ns` | 🥇 `Gin` |
-| `LargeRouteSetParam` | `79.6 ns` | `113.5 ns` | `152.6 ns` | `391.9 ns` | 🥇 `Zinc` |
-| `LargeRouteSetParamMixed` | `125.6 ns` | `130.0 ns` | `170.1 ns` | `297.7 ns` | 🥇 `Zinc` |
-| `APIParamQueryJSON` | `869.7 ns` | `2.70 µs` | `1.80 µs` | `1.02 µs` | 🥇 `Zinc` |
-| `APIHappyPath` | `1.23 µs` | `3.05 µs` | `2.21 µs` | `1.71 µs` | 🥇 `Zinc` |
-| `APIBindJSONHappyPath` | `2.45 µs` | `4.45 µs` | `2.55 µs` | `2.93 µs` | 🥇 `Zinc` |
+| `HelloWorld` | `61.82 ns` | `88.21 ns` | `127.2 ns` | `178.8 ns` | 🥇 `Zinc` |
+| `StaticRoute` | `61.15 ns` | `89.03 ns` | `129.1 ns` | `177.0 ns` | 🥇 `Zinc` |
+| `StaticRouteCold` | `72.05 ns` | `113.9 ns` | `154.6 ns` | `232.3 ns` | 🥇 `Zinc` |
+| `RouterParam` | `77.54 ns` | `94.03 ns` | `134.9 ns` | `336.8 ns` | 🥇 `Zinc` |
+| `RouterParamCold` | `122.9 ns` | `99.93 ns` | `135.6 ns` | `360.0 ns` | 🥇 `Gin` |
+| `JSONResponse` | `331.2 ns` | `372.9 ns` | `377.2 ns` | `489.2 ns` | 🥇 `Zinc` |
+| `QueryParams` | `396.6 ns` | `422.0 ns` | `466.8 ns` | `507.0 ns` | 🥇 `Zinc` |
+| `MiddlewareChain` | `358.3 ns` | `407.9 ns` | `518.5 ns` | `863.4 ns` | 🥇 `Zinc` |
+| `NotFound` | `60.30 ns` | `58.30 ns` | `598.6 ns` | `323.6 ns` | 🥇 `Gin` |
+| `LargeRouteSetStatic` | `68.48 ns` | `101.0 ns` | `145.3 ns` | `210.9 ns` | 🥇 `Zinc` |
+| `LargeRouteSetStaticMixed` | `71.18 ns` | `120.1 ns` | `156.5 ns` | `248.2 ns` | 🥇 `Zinc` |
+| `LargeRouteSetNotFound` | `65.68 ns` | `63.43 ns` | `605.8 ns` | `336.5 ns` | 🥇 `Gin` |
+| `LargeRouteSetMethodMismatch` | `110.6 ns` | `99.85 ns` | `830.4 ns` | `301.2 ns` | 🥇 `Gin` |
+| `LargeRouteSetParam` | `78.32 ns` | `107.7 ns` | `150.5 ns` | `376.3 ns` | 🥇 `Zinc` |
+| `LargeRouteSetParamMixed` | `124.4 ns` | `129.2 ns` | `168.1 ns` | `422.9 ns` | 🥇 `Zinc` |
+| `APIParamQueryJSON` | `853.7 ns` | `2.69 µs` | `1.79 µs` | `938.7 ns` | 🥇 `Zinc` |
+| `APIHappyPath` | `1.25 µs` | `3.02 µs` | `2.19 µs` | `1.66 µs` | 🥇 `Zinc` |
+| `APIBindJSONHappyPath` | `2.41 µs` | `4.41 µs` | `2.52 µs` | `2.81 µs` | 🥇 `Zinc` |
 
 ## Routing Realism
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `Param5` | `135.1 ns` | `154.5 ns` | `215.0 ns` | `574.9 ns` | 🥇 `Zinc` |
-| `Param10` | `241.6 ns` | `325.0 ns` | `378.3 ns` | `1.26 µs` | 🥇 `Zinc` |
-| `NestedGroupStatic` | `66.9 ns` | `187.4 ns` | `145.8 ns` | `881.9 ns` | 🥇 `Zinc` |
-| `NestedGroupParam` | `142.2 ns` | `148.9 ns` | `192.8 ns` | `1.17 µs` | 🥇 `Zinc` |
-| `NestedGroupNotFound` | `68.9 ns` | `117.2 ns` | `177.8 ns` | `1.07 µs` | 🥇 `Zinc` |
-| `NestedGroupMethodMismatch` | `116.2 ns` | `164.4 ns` | `439.4 ns` | `1.12 µs` | 🥇 `Zinc` |
-| `WildcardTail` | `80.5 ns` | `105.0 ns` | `135.3 ns` | `406.1 ns` | 🥇 `Zinc` |
-| `WildcardTailNotFound` | `74.2 ns` | `101.2 ns` | `135.6 ns` | `208.3 ns` | 🥇 `Zinc` |
+| `Param5` | `135.4 ns` | `153.0 ns` | `216.2 ns` | `555.4 ns` | 🥇 `Zinc` |
+| `Param10` | `243.7 ns` | `321.2 ns` | `383.5 ns` | `1.24 µs` | 🥇 `Zinc` |
+| `NestedGroupStatic` | `70.14 ns` | `190.1 ns` | `148.0 ns` | `885.7 ns` | 🥇 `Zinc` |
+| `NestedGroupParam` | `140.1 ns` | `145.0 ns` | `193.8 ns` | `1.15 µs` | 🥇 `Zinc` |
+| `NestedGroupNotFound` | `68.69 ns` | `117.1 ns` | `179.2 ns` | `1.03 µs` | 🥇 `Zinc` |
+| `NestedGroupMethodMismatch` | `117.1 ns` | `157.9 ns` | `435.4 ns` | `1.12 µs` | 🥇 `Zinc` |
+| `WildcardTail` | `81.39 ns` | `105.5 ns` | `135.3 ns` | `402.3 ns` | 🥇 `Zinc` |
+| `WildcardTailNotFound` | `71.99 ns` | `102.8 ns` | `135.4 ns` | `198.1 ns` | 🥇 `Zinc` |
 
 ## Feature Paths
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `APIBindHeaderQueryJSON` | `2.60 µs` | `5.79 µs` | `3.02 µs` | `2.78 µs` | 🥇 `Zinc` |
-| `APIBindInvalidJSON` | `926.9 ns` | `689.9 ns` | `834.6 ns` | `843.8 ns` | 🥇 `Gin` |
-| `APIBindValidationFailure` | `908.2 ns` | `963.9 ns` | `896.2 ns` | `1.00 µs` | 🥇 `Echo` |
-| `APIBindMultipartHappyPath` | `11.6 µs` | `11.5 µs` | `11.6 µs` | `12.1 µs` | 🥇 `Gin` |
-| `LargeJSONResponse` | `29.7 µs` | `32.9 µs` | `29.7 µs` | `29.8 µs` | 🥇 `Echo` |
-| `LargeJSONBind` | `244.1 µs` | `249.5 µs` | `251.5 µs` | `248.6 µs` | 🥇 `Zinc` |
-| `StaticFileHit` | `14.5 µs` | `25.9 µs` | `26.6 µs` | `15.0 µs` | 🥇 `Zinc` |
-| `StaticFileNotFound` | `1.55 µs` | `1.04 µs` | `1.80 µs` | `2.04 µs` | 🥇 `Gin` |
-| `NestedGroupMiddlewareAPI` | `1.24 µs` | `3.22 µs` | `2.29 µs` | `2.76 µs` | 🥇 `Zinc` |
-| `APIUnauthorizedReject` | `41.1 ns` | `49.5 ns` | `76.0 ns` | `198.9 ns` | 🥇 `Zinc` |
+| `APIBindHeaderQueryJSON` | `2.73 µs` | `5.96 µs` | `3.12 µs` | `2.83 µs` | 🥇 `Zinc` |
+| `APIBindInvalidJSON` | `967.7 ns` | `732.1 ns` | `857.1 ns` | `906.1 ns` | 🥇 `Gin` |
+| `APIBindValidationFailure` | `883.8 ns` | `970.4 ns` | `921.9 ns` | `1.06 µs` | 🥇 `Zinc` |
+| `APIBindMultipartHappyPath` | `11.71 µs` | `11.65 µs` | `11.80 µs` | `12.48 µs` | 🥇 `Gin` |
+| `LargeJSONResponse` | `28.97 µs` | `33.54 µs` | `30.12 µs` | `29.63 µs` | 🥇 `Zinc` |
+| `LargeJSONBind` | `255.4 µs` | `269.5 µs` | `314.6 µs` | `273.9 µs` | 🥇 `Zinc` |
+| `StaticFileHit` | `15.64 µs` | `32.85 µs` | `26.95 µs` | `15.97 µs` | 🥇 `Zinc` |
+| `StaticFileNotFound` | `1.75 µs` | `1.07 µs` | `1.83 µs` | `2.08 µs` | 🥇 `Gin` |
+| `NestedGroupMiddlewareAPI` | `1.26 µs` | `3.44 µs` | `2.18 µs` | `2.98 µs` | 🥇 `Zinc` |
+| `APIUnauthorizedReject` | `42.07 ns` | `48.59 ns` | `75.17 ns` | `212.9 ns` | 🥇 `Zinc` |
 
 ## Build-Time Highlights
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `RouteRegistrationStatic` | `50.1 µs` | `75.5 µs` | `344.4 µs` | `88.5 µs` | 🥇 `Zinc` |
-| `RouteRegistrationParam` | `49.0 µs` | `52.0 µs` | `166.0 µs` | `70.4 µs` | 🥇 `Zinc` |
+| `RouteRegistrationStatic` | `57.88 µs` | `76.33 µs` | `337.4 µs` | `85.04 µs` | 🥇 `Zinc` |
+| `RouteRegistrationParam` | `61.97 µs` | `51.20 µs` | `154.9 µs` | `67.29 µs` | 🥇 `Gin` |
 
 ## Scenario Build
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioBuild/Static157` | `39.5 µs` | `84.8 µs` | `179.7 µs` | `75.4 µs` | 🥇 `Zinc` |
-| `ScenarioBuild/GitHubAPI203` | `97.1 µs` | `139.5 µs` | `340.6 µs` | `176.8 µs` | 🥇 `Zinc` |
-| `ScenarioBuild/GPlusAPI13` | `6.81 µs` | `8.60 µs` | `16.2 µs` | `11.2 µs` | 🥇 `Zinc` |
-| `ScenarioBuild/ParseAPI26` | `11.1 µs` | `14.8 µs` | `24.1 µs` | `15.5 µs` | 🥇 `Zinc` |
-| `ScenarioBuild/NestedAPI36` | `17.0 µs` | `23.1 µs` | `37.3 µs` | `24.5 µs` | 🥇 `Zinc` |
-| `ScenarioBuild/ParamsAny24` | `20.5 µs` | `23.9 µs` | `42.2 µs` | `27.0 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/Static157` | `52.78 µs` | `85.59 µs` | `179.8 µs` | `75.80 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/GitHubAPI203` | `127.2 µs` | `134.0 µs` | `329.1 µs` | `172.4 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/GPlusAPI13` | `8.31 µs` | `8.87 µs` | `18.07 µs` | `10.75 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/ParseAPI26` | `14.80 µs` | `14.91 µs` | `23.56 µs` | `15.60 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/NestedAPI36` | `21.97 µs` | `22.96 µs` | `36.24 µs` | `25.36 µs` | 🥇 `Zinc` |
+| `ScenarioBuild/ParamsAny24` | `25.14 µs` | `23.41 µs` | `39.94 µs` | `26.84 µs` | 🥇 `Gin` |
 
 ## Scenario Static
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioStatic/Static157` | `70.1 ns` | `118.5 ns` | `170.3 ns` | `272.9 ns` | 🥇 `Zinc` |
-| `ScenarioStatic/GitHubAPI203` | `67.1 ns` | `106.8 ns` | `146.6 ns` | `245.9 ns` | 🥇 `Zinc` |
-| `ScenarioStatic/GPlusAPI13` | `63.2 ns` | `195.4 ns` | `144.6 ns` | `243.2 ns` | 🥇 `Zinc` |
-| `ScenarioStatic/ParseAPI26` | `63.1 ns` | `103.3 ns` | `144.2 ns` | `240.8 ns` | 🥇 `Zinc` |
-| `ScenarioStatic/NestedAPI36` | `62.7 ns` | `103.1 ns` | `150.1 ns` | `251.0 ns` | 🥇 `Zinc` |
-| `ScenarioStatic/ParamsAny24` | `64.4 ns` | `106.4 ns` | `137.4 ns` | `242.0 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/Static157` | `69.10 ns` | `119.8 ns` | `164.3 ns` | `259.0 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/GitHubAPI203` | `72.15 ns` | `104.5 ns` | `144.7 ns` | `232.4 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/GPlusAPI13` | `64.90 ns` | `185.2 ns` | `140.8 ns` | `227.1 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/ParseAPI26` | `70.04 ns` | `100.3 ns` | `143.9 ns` | `231.4 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/NestedAPI36` | `63.71 ns` | `99.58 ns` | `146.4 ns` | `236.7 ns` | 🥇 `Zinc` |
+| `ScenarioStatic/ParamsAny24` | `64.76 ns` | `101.3 ns` | `135.4 ns` | `228.7 ns` | 🥇 `Zinc` |
 
 ## Scenario Param
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioParam/GitHubAPI203` | `137.6 ns` | `166.6 ns` | `230.4 ns` | `417.9 ns` | 🥇 `Zinc` |
-| `ScenarioParam/GPlusAPI13` | `110.8 ns` | `125.3 ns` | `171.6 ns` | `307.4 ns` | 🥇 `Zinc` |
-| `ScenarioParam/ParseAPI26` | `104.7 ns` | `125.9 ns` | `163.8 ns` | `307.8 ns` | 🥇 `Zinc` |
-| `ScenarioParam/NestedAPI36` | `121.5 ns` | `142.9 ns` | `192.1 ns` | `369.7 ns` | 🥇 `Zinc` |
-| `ScenarioParam/ParamsAny24` | `141.9 ns` | `168.5 ns` | `214.0 ns` | `580.7 ns` | 🥇 `Zinc` |
+| `ScenarioParam/GitHubAPI203` | `134.2 ns` | `161.3 ns` | `221.5 ns` | `560.3 ns` | 🥇 `Zinc` |
+| `ScenarioParam/GPlusAPI13` | `109.1 ns` | `121.7 ns` | `168.3 ns` | `446.6 ns` | 🥇 `Zinc` |
+| `ScenarioParam/ParseAPI26` | `105.4 ns` | `122.0 ns` | `164.0 ns` | `459.4 ns` | 🥇 `Zinc` |
+| `ScenarioParam/NestedAPI36` | `120.6 ns` | `139.9 ns` | `190.1 ns` | `506.2 ns` | 🥇 `Zinc` |
+| `ScenarioParam/ParamsAny24` | `140.1 ns` | `166.1 ns` | `217.5 ns` | `555.1 ns` | 🥇 `Zinc` |
 
 ## Scenario Not Found
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioNotFound/Static157` | `60.3 ns` | `69.3 ns` | `667.2 ns` | `396.5 ns` | 🥇 `Zinc` |
-| `ScenarioNotFound/GitHubAPI203` | `60.8 ns` | `129.3 ns` | `657.6 ns` | `390.2 ns` | 🥇 `Zinc` |
-| `ScenarioNotFound/GPlusAPI13` | `60.1 ns` | `73.2 ns` | `662.8 ns` | `391.5 ns` | 🥇 `Zinc` |
-| `ScenarioNotFound/ParseAPI26` | `60.1 ns` | `118.0 ns` | `667.7 ns` | `390.6 ns` | 🥇 `Zinc` |
-| `ScenarioNotFound/NestedAPI36` | `60.3 ns` | `129.6 ns` | `663.9 ns` | `390.1 ns` | 🥇 `Zinc` |
-| `ScenarioNotFound/ParamsAny24` | `60.3 ns` | `83.0 ns` | `667.6 ns` | `407.2 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/Static157` | `63.43 ns` | `75.32 ns` | `711.3 ns` | `376.4 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/GitHubAPI203` | `63.09 ns` | `137.0 ns` | `673.0 ns` | `431.1 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/GPlusAPI13` | `80.57 ns` | `80.73 ns` | `703.8 ns` | `440.2 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/ParseAPI26` | `74.77 ns` | `123.6 ns` | `716.2 ns` | `396.0 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/NestedAPI36` | `86.53 ns` | `130.1 ns` | `669.7 ns` | `413.0 ns` | 🥇 `Zinc` |
+| `ScenarioNotFound/ParamsAny24` | `78.81 ns` | `77.10 ns` | `667.2 ns` | `395.6 ns` | 🥇 `Gin` |
 
 ## Scenario 405
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `Scenario405/Static157` | `111.1 ns` | `113.4 ns` | `956.7 ns` | `377.9 ns` | 🥇 `Zinc` |
-| `Scenario405/GitHubAPI203` | `103.2 ns` | `175.9 ns` | `932.3 ns` | `346.1 ns` | 🥇 `Zinc` |
-| `Scenario405/GPlusAPI13` | `111.2 ns` | `200.6 ns` | `952.3 ns` | `469.1 ns` | 🥇 `Zinc` |
-| `Scenario405/ParseAPI26` | `103.3 ns` | `169.7 ns` | `935.0 ns` | `340.6 ns` | 🥇 `Zinc` |
-| `Scenario405/NestedAPI36` | `112.5 ns` | `191.7 ns` | `948.6 ns` | `353.5 ns` | 🥇 `Zinc` |
-| `Scenario405/ParamsAny24` | `111.3 ns` | `119.1 ns` | `931.2 ns` | `354.1 ns` | 🥇 `Zinc` |
+| `Scenario405/Static157` | `113.6 ns` | `113.1 ns` | `1.01 µs` | `379.6 ns` | 🥇 `Gin` |
+| `Scenario405/GitHubAPI203` | `102.9 ns` | `180.5 ns` | `976.8 ns` | `340.2 ns` | 🥇 `Zinc` |
+| `Scenario405/GPlusAPI13` | `111.9 ns` | `196.5 ns` | `931.8 ns` | `478.0 ns` | 🥇 `Zinc` |
+| `Scenario405/ParseAPI26` | `113.7 ns` | `197.4 ns` | `1.01 µs` | `357.8 ns` | 🥇 `Zinc` |
+| `Scenario405/NestedAPI36` | `118.6 ns` | `186.7 ns` | `919.9 ns` | `342.6 ns` | 🥇 `Zinc` |
+| `Scenario405/ParamsAny24` | `109.8 ns` | `116.1 ns` | `863.6 ns` | `315.1 ns` | 🥇 `Zinc` |
 
 ## Scenario Mixed
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ScenarioAll/Static157` | `72.7 ns` | `137.8 ns` | `177.5 ns` | `307.3 ns` | 🥇 `Zinc` |
-| `ScenarioAll/GitHubAPI203` | `152.6 ns` | `162.5 ns` | `205.7 ns` | `392.1 ns` | 🥇 `Zinc` |
-| `ScenarioAll/GPlusAPI13` | `124.9 ns` | `191.7 ns` | `173.5 ns` | `300.9 ns` | 🥇 `Zinc` |
-| `ScenarioAll/ParseAPI26` | `117.0 ns` | `125.3 ns` | `159.3 ns` | `300.7 ns` | 🥇 `Zinc` |
-| `ScenarioAll/NestedAPI36` | `125.8 ns` | `135.1 ns` | `171.9 ns` | `315.2 ns` | 🥇 `Zinc` |
-| `ScenarioAll/ParamsAny24` | `152.6 ns` | `150.8 ns` | `189.3 ns` | `521.3 ns` | 🥇 `Gin` |
+| `ScenarioAll/Static157` | `74.32 ns` | `134.1 ns` | `176.2 ns` | `291.1 ns` | 🥇 `Zinc` |
+| `ScenarioAll/GitHubAPI203` | `150.5 ns` | `160.1 ns` | `207.6 ns` | `499.3 ns` | 🥇 `Zinc` |
+| `ScenarioAll/GPlusAPI13` | `125.3 ns` | `182.7 ns` | `168.3 ns` | `418.1 ns` | 🥇 `Zinc` |
+| `ScenarioAll/ParseAPI26` | `118.2 ns` | `120.9 ns` | `155.4 ns` | `370.9 ns` | 🥇 `Zinc` |
+| `ScenarioAll/NestedAPI36` | `126.6 ns` | `131.0 ns` | `168.9 ns` | `422.3 ns` | 🥇 `Zinc` |
+| `ScenarioAll/ParamsAny24` | `155.0 ns` | `147.0 ns` | `186.2 ns` | `484.3 ns` | 🥇 `Gin` |
 
 ## Parallel In-Process
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `ParallelStaticRoute` | `11.8 ns` | `47.6 ns` | `58.3 ns` | `160.4 ns` | 🥇 `Zinc` |
-| `ParallelRouterParam` | `14.9 ns` | `54.0 ns` | `61.3 ns` | `307.2 ns` | 🥇 `Zinc` |
-| `ParallelMiddlewareChain` | `64.0 ns` | `193.6 ns` | `264.5 ns` | `908.5 ns` | 🥇 `Zinc` |
-| `ParallelAPIHappyPath` | `340.2 ns` | `863.6 ns` | `641.0 ns` | `1.33 µs` | 🥇 `Zinc` |
+| `ParallelStaticRoute` | `10.98 ns` | `45.09 ns` | `56.55 ns` | `151.3 ns` | 🥇 `Zinc` |
+| `ParallelRouterParam` | `15.92 ns` | `71.04 ns` | `64.60 ns` | `319.4 ns` | 🥇 `Zinc` |
+| `ParallelMiddlewareChain` | `74.24 ns` | `209.2 ns` | `265.0 ns` | `885.2 ns` | 🥇 `Zinc` |
+| `ParallelAPIHappyPath` | `344.7 ns` | `863.6 ns` | `623.0 ns` | `1.25 µs` | 🥇 `Zinc` |
 
 ## Throughput
 
 | Benchmark | Zinc | Gin | Echo | Chi | Winner |
 |---|---:|---:|---:|---:|---|
-| `RequestsPerSecond/Concurrency1` | `15,665` | `15,319` | `13,113` | `15,158` | 🥇 `Zinc` |
-| `RequestsPerSecond/Concurrency8` | `53,148` | `59,637` | `59,921` | `61,121` | 🥇 `Chi` |
-| `RequestsPerSecond/Concurrency32` | `82,895` | `86,221` | `86,337` | `88,545` | 🥇 `Chi` |
-| `RequestsPerSecond/Concurrency128` | `98,355` | `97,575` | `98,999` | `87,675` | 🥇 `Echo` |
-| `RequestsPerSecondFocused/Concurrency1` | `16,692` | `18,131` | `18,670` | `18,986` | 🥇 `Chi` |
-| `RequestsPerSecondFocused/Concurrency8` | `59,894` | `60,256` | `59,928` | `61,030` | 🥇 `Chi` |
-| `RequestsPerSecondFocused/Concurrency32` | `87,672` | `87,997` | `89,145` | `89,340` | 🥇 `Chi` |
-| `RequestsPerSecondFocused/Concurrency128` | `99,100` | `98,425` | `94,459` | `100,072` | 🥇 `Chi` |
+| `RequestsPerSecond/Concurrency1` | `19,134` | `19,253` | `19,565` | `19,918` | 🥇 `Chi` |
+| `RequestsPerSecond/Concurrency8` | `58,651` | `57,048` | `58,662` | `59,501` | 🥇 `Chi` |
+| `RequestsPerSecond/Concurrency32` | `88,112` | `88,183` | `87,854` | `89,971` | 🥇 `Chi` |
+| `RequestsPerSecond/Concurrency128` | `100,526` | `85,485` | `99,570` | `101,749` | 🥇 `Chi` |
+| `RequestsPerSecondFocused/Concurrency1` | `18,479` | `18,333` | `19,100` | `19,469` | 🥇 `Chi` |
+| `RequestsPerSecondFocused/Concurrency8` | `59,579` | `61,337` | `59,540` | `59,814` | 🥇 `Gin` |
+| `RequestsPerSecondFocused/Concurrency32` | `88,535` | `79,992` | `90,587` | `90,547` | 🥇 `Echo` |
+| `RequestsPerSecondFocused/Concurrency128` | `86,669` | `78,637` | `99,163` | `96,368` | 🥇 `Echo` |

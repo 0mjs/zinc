@@ -81,6 +81,10 @@ func (a *App) dispatch(ctx *Context) error {
 		return nil
 	}
 
+	if handled, err := a.handleRouteNotFound(ctx); handled {
+		return err
+	}
+
 	allowedHeader := allowed.header(a.config.AutoHead, a.config.AutoOptions)
 	if method == MethodOptions && a.config.AutoOptions && allowedHeader != "" {
 		ctx.SetHeader(HeaderAllow, allowedHeader)
@@ -126,6 +130,24 @@ func (a *App) dispatch(ctx *Context) error {
 		return ctx.String(http.StatusText(StatusNotFound))
 	}
 	return ErrNotFound
+}
+
+func (a *App) handleRouteNotFound(ctx *Context) (bool, error) {
+	if a == nil || a.notFoundRoutes == nil || ctx == nil {
+		return false, nil
+	}
+	handler := a.notFoundRoutes.findInto(MethodGet, ctx.Path(), ctx)
+	if handler == nil {
+		return false, nil
+	}
+	ctx.Status(StatusNotFound)
+	if err := handler(ctx); err != nil {
+		return true, err
+	}
+	if !ctx.written {
+		return true, ctx.String(http.StatusText(StatusNotFound))
+	}
+	return true, nil
 }
 
 func (a *App) handleError(ctx *Context, err error) {

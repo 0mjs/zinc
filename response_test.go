@@ -60,12 +60,22 @@ func TestResponseHelpers(t *testing.T) {
 		mustDo(t, app.Get("/data", func(c *Context) error { return c.Data("application/custom", []byte("data")) }))
 		mustDo(t, app.Get("/json", func(c *Context) error { return c.JSONPretty(Map{"ok": true}, "  ") }))
 		mustDo(t, app.Get("/xml", func(c *Context) error { return c.XML(xmlPayload{Value: "x"}) }))
+		mustDo(t, app.Get("/yaml", func(c *Context) error { return c.YAML(Map{"ok": true}) }))
+		mustDo(t, app.Get("/toml", func(c *Context) error { return c.TOML(Map{"ok": true}) }))
 		mustDo(t, app.Get("/html", func(c *Context) error { return c.HTML("<p>x</p>") }))
 		mustDo(t, app.Get("/stream", func(c *Context) error { return c.Stream("text/plain", strings.NewReader("stream")) }))
 		mustDo(t, app.Get("/send-nil", func(c *Context) error { return c.Send(nil) }))
 		mustDo(t, app.Get("/send-bytes", func(c *Context) error { return c.Send([]byte("bytes")) }))
 
-		cases := map[string]string{"/data": "data", "/xml": "<value>x</value>", "/html": "<p>x</p>", "/stream": "stream", "/send-bytes": "bytes"}
+		cases := map[string]string{
+			"/data":       "data",
+			"/xml":        "<value>x</value>",
+			"/yaml":       "ok: true",
+			"/toml":       "ok = true",
+			"/html":       "<p>x</p>",
+			"/stream":     "stream",
+			"/send-bytes": "bytes",
+		}
 		for path, expected := range cases {
 			resp := performRequest(t, app, http.MethodGet, path, nil, nil)
 			if !strings.Contains(resp.Body.String(), expected) {
@@ -126,6 +136,7 @@ func TestResponseHelpers(t *testing.T) {
 		mustDo(t, os.WriteFile(path, []byte("attachment"), 0o644))
 		mustDo(t, app.Get("/file", func(c *Context) error { return c.File(path) }))
 		mustDo(t, app.Get("/download", func(c *Context) error { return c.Download(path) }))
+		mustDo(t, app.Get("/download-named", func(c *Context) error { return c.Download(path, "custom-name.txt") }))
 		attachApp := New()
 		mustDo(t, attachApp.Get("/attach", func(c *Context) error { return c.Attachment(path, "download.txt") }))
 
@@ -136,6 +147,10 @@ func TestResponseHelpers(t *testing.T) {
 		download := performRequest(t, app, http.MethodGet, "/download", nil, nil)
 		if disposition := download.Header().Get(HeaderContentDisposition); disposition == "" {
 			t.Fatal("download disposition missing")
+		}
+		downloadNamed := performRequest(t, app, http.MethodGet, "/download-named", nil, nil)
+		if disposition := downloadNamed.Header().Get(HeaderContentDisposition); !strings.Contains(disposition, "custom-name.txt") {
+			t.Fatalf("named download disposition=%q", disposition)
 		}
 		attach := performRequest(t, attachApp, http.MethodGet, "/attach", nil, nil)
 		if disposition := attach.Header().Get(HeaderContentDisposition); !strings.Contains(disposition, "download.txt") {

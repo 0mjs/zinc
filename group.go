@@ -1,6 +1,7 @@
 package zinc
 
 import (
+	"errors"
 	"io/fs"
 	"net/http"
 	"path"
@@ -51,11 +52,30 @@ func (g *Group) Mount(prefix string, h http.Handler) {
 }
 
 func (g *Group) Add(method, routePath string, handlers ...HandlerFunc) error {
+	return g.add(method, routePath, "", handlers...)
+}
+
+func (g *Group) add(method, routePath, name string, handlers ...HandlerFunc) error {
 	fullPath := joinPaths(g.prefix, routePath)
 	allHandlers := make([]HandlerFunc, 0, len(g.middleware)+len(handlers))
 	allHandlers = append(allHandlers, g.middleware...)
 	allHandlers = append(allHandlers, handlers...)
-	return g.app.Add(method, fullPath, allHandlers...)
+	return g.app.router.AddNamed(method, fullPath, name, allHandlers...)
+}
+
+func (g *Group) Handle(spec RouteSpec) error {
+	if spec.Handler == nil {
+		return errors.New("route handler is nil")
+	}
+	return g.add(spec.Method, spec.Path, spec.Name, spec.Handler)
+}
+
+func (g *Group) RouteNotFound(routePath string, handlers ...HandlerFunc) error {
+	fullPath := joinPaths(g.prefix, routePath)
+	allHandlers := make([]HandlerFunc, 0, len(g.middleware)+len(handlers))
+	allHandlers = append(allHandlers, g.middleware...)
+	allHandlers = append(allHandlers, handlers...)
+	return g.app.RouteNotFound(fullPath, allHandlers...)
 }
 
 func (g *Group) Get(path string, handlers ...any) error {

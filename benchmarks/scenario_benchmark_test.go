@@ -12,7 +12,6 @@ import (
 	. "github.com/0mjs/zinc"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
-	"github.com/julienschmidt/httprouter"
 	"github.com/labstack/echo/v5"
 )
 
@@ -38,23 +37,15 @@ type benchmarkScenario struct {
 	paramRequest          *http.Request
 	notFoundRequest       *http.Request
 	methodMismatchRequest *http.Request
-	withServeMux          bool
-	withHTTPRouter        bool
 }
 
 var scenarioBenchmarks = []benchmarkScenario{
-	scenarioWithRouters(newBenchmarkScenario("Static157", staticRouteScenarioSpecs(), 157), true, true),
-	scenarioWithRouters(newBenchmarkScenario("GitHubAPI203", gitHubRouteScenarioSpecs(), 203), true, false),
-	scenarioWithRouters(newBenchmarkScenario("GPlusAPI13", gplusRouteScenarioSpecs(), 13), true, false),
-	scenarioWithRouters(newBenchmarkScenario("ParseAPI26", parseRouteScenarioSpecs(), 26), true, true),
-	scenarioWithRouters(newBenchmarkScenario("NestedAPI36", nestedAPIRouteScenarioSpecs(), 36), true, true),
-	scenarioWithRouters(newBenchmarkScenario("ParamsAny24", paramsAnyRouteScenarioSpecs(), 24), false, true),
-}
-
-func scenarioWithRouters(scenario benchmarkScenario, withServeMux, withHTTPRouter bool) benchmarkScenario {
-	scenario.withServeMux = withServeMux
-	scenario.withHTTPRouter = withHTTPRouter
-	return scenario
+	newBenchmarkScenario("Static157", staticRouteScenarioSpecs(), 157),
+	newBenchmarkScenario("GitHubAPI203", gitHubRouteScenarioSpecs(), 203),
+	newBenchmarkScenario("GPlusAPI13", gplusRouteScenarioSpecs(), 13),
+	newBenchmarkScenario("ParseAPI26", parseRouteScenarioSpecs(), 26),
+	newBenchmarkScenario("NestedAPI36", nestedAPIRouteScenarioSpecs(), 36),
+	newBenchmarkScenario("ParamsAny24", paramsAnyRouteScenarioSpecs(), 24),
 }
 
 func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) benchmarkScenario {
@@ -243,20 +234,6 @@ func scenarioGinPattern(pattern string) string {
 	return strings.Join(segments, "/")
 }
 
-func scenarioHTTPRouterPattern(pattern string) string {
-	if !strings.Contains(pattern, "*") {
-		return pattern
-	}
-
-	segments := strings.Split(pattern, "/")
-	for i, segment := range segments {
-		if segment == "*" {
-			segments[i] = "*tail"
-		}
-	}
-	return strings.Join(segments, "/")
-}
-
 func scenarioWildcardSampleValue(pattern string) string {
 	switch {
 	case strings.Contains(pattern, "artifacts"), strings.Contains(pattern, "archive"):
@@ -362,15 +339,6 @@ func scenarioParamScoreZinc(names []string, c *Context) int {
 	return score
 }
 
-func scenarioParamScoreServeMux(names []string, r *http.Request) int {
-	score := 0
-	for _, name := range names {
-		score += len(r.PathValue(name))
-	}
-	benchmarkSinkInt = score
-	return score
-}
-
 func scenarioParamScoreChi(names []string, req *http.Request) int {
 	score := 0
 	for _, name := range names {
@@ -402,19 +370,6 @@ func scenarioParamScoreGin(names []string, c *gin.Context) int {
 	return score
 }
 
-func scenarioParamScoreHTTPRouter(names []string, ps httprouter.Params) int {
-	score := 0
-	for _, name := range names {
-		if name == "*" {
-			score += len(strings.TrimPrefix(ps.ByName("tail"), "/"))
-			continue
-		}
-		score += len(ps.ByName(name))
-	}
-	benchmarkSinkInt = score
-	return score
-}
-
 func buildZincScenarioHandler(routes []scenarioRoute) http.Handler {
 	app := New()
 	for _, route := range routes {
@@ -425,18 +380,6 @@ func buildZincScenarioHandler(routes []scenarioRoute) http.Handler {
 		}))
 	}
 	return app
-}
-
-func buildServeMuxScenarioHandler(routes []scenarioRoute) http.Handler {
-	mux := http.NewServeMux()
-	for _, route := range routes {
-		route := route
-		mux.HandleFunc(route.method+" "+scenarioBracePattern(route.pattern), func(w http.ResponseWriter, r *http.Request) {
-			scenarioParamScoreServeMux(route.paramNames, r)
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return mux
 }
 
 func buildChiScenarioHandler(routes []scenarioRoute) http.Handler {
@@ -475,33 +418,13 @@ func buildGinScenarioHandler(routes []scenarioRoute) http.Handler {
 	return r
 }
 
-func buildHTTPRouterScenarioHandler(routes []scenarioRoute) http.Handler {
-	r := httprouter.New()
-	for _, route := range routes {
-		route := route
-		r.Handle(route.method, scenarioHTTPRouterPattern(route.pattern), func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
-			scenarioParamScoreHTTPRouter(route.paramNames, ps)
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return r
-}
-
 func scenarioCases(scenario benchmarkScenario) []benchmarkCase {
 	cases := []benchmarkCase{
 		{name: "Zinc", build: func() http.Handler { return buildZincScenarioHandler(scenario.routes) }},
+		{name: "Chi", build: func() http.Handler { return buildChiScenarioHandler(scenario.routes) }},
+		{name: "Echo", build: func() http.Handler { return buildEchoScenarioHandler(scenario.routes) }},
+		{name: "Gin", build: func() http.Handler { return buildGinScenarioHandler(scenario.routes) }},
 	}
-	if scenario.withServeMux {
-		cases = append(cases, benchmarkCase{name: "ServeMux", build: func() http.Handler { return buildServeMuxScenarioHandler(scenario.routes) }})
-	}
-	if scenario.withHTTPRouter {
-		cases = append(cases, benchmarkCase{name: "HttpRouter", build: func() http.Handler { return buildHTTPRouterScenarioHandler(scenario.routes) }})
-	}
-	cases = append(cases,
-		benchmarkCase{name: "Chi", build: func() http.Handler { return buildChiScenarioHandler(scenario.routes) }},
-		benchmarkCase{name: "Echo", build: func() http.Handler { return buildEchoScenarioHandler(scenario.routes) }},
-		benchmarkCase{name: "Gin", build: func() http.Handler { return buildGinScenarioHandler(scenario.routes) }},
-	)
 	return cases
 }
 
@@ -1010,6 +933,5 @@ Notes:
 - These route corpora are benchmark-oriented recreations inspired by the classic Go HTTP router benchmark shapes.
 - The scenario suite is intentionally separate from comp_benchmark_test.go so micro and scenario results stay comparable over time.
 - NestedAPI36 adds three-level grouped routing with real miss and 405 paths; ParamsAny24 adds wildcard and param-plus-static-suffix coverage.
-- HttpRouter is excluded from the overlapping GitHub and GPlus corpora because it rejects those static-vs-param branches at registration time.
 `)
 }

@@ -18,7 +18,6 @@ import (
 	. "github.com/0mjs/zinc"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
-	"github.com/julienschmidt/httprouter"
 	"github.com/labstack/echo/v5"
 )
 
@@ -332,10 +331,6 @@ func largeParamPatternBrace(i int) string {
 	return "/teams/" + strconv.Itoa(i) + "/users/{id}"
 }
 
-func largeParamPatternServeMux(i int) string {
-	return "GET " + largeParamPatternBrace(i)
-}
-
 func coldParamTargets(count int) []string {
 	targets := make([]string, count)
 	for i := 0; i < count; i++ {
@@ -425,14 +420,6 @@ func buildZincHelloHandler() http.Handler {
 	return app
 }
 
-func buildServeMuxHelloHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return mux
-}
-
 func buildChiHelloHandler() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -457,28 +444,12 @@ func buildGinHelloHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterHelloHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return r
-}
-
 func buildZincStaticHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/hello", func(c *Context) error {
 		return c.String(benchmarkHelloResponse)
 	}))
 	return app
-}
-
-func buildServeMuxStaticHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return mux
 }
 
 func buildChiStaticHandler() http.Handler {
@@ -505,14 +476,6 @@ func buildGinStaticHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterStaticHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/hello", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return r
-}
-
 func buildZincStaticColdHandler() http.Handler {
 	app := New()
 	for i := 0; i < staticColdRouteCount; i++ {
@@ -522,17 +485,6 @@ func buildZincStaticColdHandler() http.Handler {
 		}))
 	}
 	return app
-}
-
-func buildServeMuxStaticColdHandler() http.Handler {
-	mux := http.NewServeMux()
-	for i := 0; i < staticColdRouteCount; i++ {
-		path := staticColdPath(i)
-		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return mux
 }
 
 func buildChiStaticColdHandler() http.Handler {
@@ -568,17 +520,6 @@ func buildGinStaticColdHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterStaticColdHandler() http.Handler {
-	r := httprouter.New()
-	for i := 0; i < staticColdRouteCount; i++ {
-		path := staticColdPath(i)
-		r.GET(path, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return r
-}
-
 func buildZincParamHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/hello/:name", func(c *Context) error {
@@ -586,15 +527,6 @@ func buildZincParamHandler() http.Handler {
 		return c.String(benchmarkHelloResponse)
 	}))
 	return app
-}
-
-func buildServeMuxParamHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /hello/{name}", func(w http.ResponseWriter, r *http.Request) {
-		benchmarkSinkString = r.PathValue("name")
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return mux
 }
 
 func buildChiParamHandler() http.Handler {
@@ -624,30 +556,12 @@ func buildGinParamHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterParamHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/hello/:name", func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		benchmarkSinkString = ps.ByName("name")
-		_, _ = io.WriteString(w, benchmarkHelloResponse)
-	})
-	return r
-}
-
 func buildZincJSONHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/json", func(c *Context) error {
 		return c.JSON(benchmarkJSONData)
 	}))
 	return app
-}
-
-func buildServeMuxJSONHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkJSONData)
-	})
-	return mux
 }
 
 func buildChiJSONHandler() http.Handler {
@@ -675,15 +589,6 @@ func buildGinJSONHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterJSONHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/json", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkJSONData)
-	})
-	return r
-}
-
 func buildZincQueryHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/query", func(c *Context) error {
@@ -691,16 +596,6 @@ func buildZincQueryHandler() http.Handler {
 		return c.String(benchmarkOKResponse)
 	}))
 	return app
-}
-
-func buildServeMuxQueryHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /query", func(w http.ResponseWriter, r *http.Request) {
-		values := r.URL.Query()
-		benchmarkSinkBool = values.Get("name") != "" && values.Get("age") != "" && values.Get("city") != ""
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return mux
 }
 
 func buildChiQueryHandler() http.Handler {
@@ -731,16 +626,6 @@ func buildGinQueryHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterQueryHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/query", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		values := r.URL.Query()
-		benchmarkSinkBool = values.Get("name") != "" && values.Get("age") != "" && values.Get("city") != ""
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return r
-}
-
 func buildZincMiddlewareHandler() http.Handler {
 	app := New()
 	app.Use(
@@ -760,27 +645,6 @@ func buildZincMiddlewareHandler() http.Handler {
 		return c.String(benchmarkOKResponse)
 	}))
 	return app
-}
-
-func buildServeMuxMiddlewareHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /middleware", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		benchmarkSinkBool = ctx.Value(middlewareKey1) != nil &&
-			ctx.Value(middlewareKey2) != nil &&
-			ctx.Value(middlewareKey3) != nil &&
-			ctx.Value(middlewareKey4) != nil &&
-			ctx.Value(middlewareKey5) != nil
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-
-	var handler http.Handler = mux
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
 }
 
 func buildChiMiddlewareHandler() http.Handler {
@@ -843,41 +707,12 @@ func buildGinMiddlewareHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterMiddlewareHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/middleware", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		ctx := r.Context()
-		benchmarkSinkBool = ctx.Value(middlewareKey1) != nil &&
-			ctx.Value(middlewareKey2) != nil &&
-			ctx.Value(middlewareKey3) != nil &&
-			ctx.Value(middlewareKey4) != nil &&
-			ctx.Value(middlewareKey5) != nil
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-
-	var handler http.Handler = r
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
-}
-
 func buildZincNotFoundHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/found", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
 	}))
 	return app
-}
-
-func buildServeMuxNotFoundHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /found", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return mux
 }
 
 func buildChiNotFoundHandler() http.Handler {
@@ -904,14 +739,6 @@ func buildGinNotFoundHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterNotFoundHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/found", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return r
-}
-
 func buildZincLargeStaticHandler() http.Handler {
 	app := New()
 	for i := 0; i < largeStaticRouteCount; i++ {
@@ -921,17 +748,6 @@ func buildZincLargeStaticHandler() http.Handler {
 		}))
 	}
 	return app
-}
-
-func buildServeMuxLargeStaticHandler() http.Handler {
-	mux := http.NewServeMux()
-	for i := 0; i < largeStaticRouteCount; i++ {
-		path := largeStaticPath(i)
-		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return mux
 }
 
 func buildChiLargeStaticHandler() http.Handler {
@@ -967,17 +783,6 @@ func buildGinLargeStaticHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterLargeStaticHandler() http.Handler {
-	r := httprouter.New()
-	for i := 0; i < largeStaticRouteCount; i++ {
-		path := largeStaticPath(i)
-		r.GET(path, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return r
-}
-
 func buildZincLargeParamHandler() http.Handler {
 	app := New()
 	for i := 0; i < largeParamRouteCount; i++ {
@@ -988,18 +793,6 @@ func buildZincLargeParamHandler() http.Handler {
 		}))
 	}
 	return app
-}
-
-func buildServeMuxLargeParamHandler() http.Handler {
-	mux := http.NewServeMux()
-	for i := 0; i < largeParamRouteCount; i++ {
-		pattern := largeParamPatternServeMux(i)
-		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			benchmarkSinkString = r.PathValue("id")
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return mux
 }
 
 func buildChiLargeParamHandler() http.Handler {
@@ -1038,32 +831,12 @@ func buildGinLargeParamHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterLargeParamHandler() http.Handler {
-	r := httprouter.New()
-	for i := 0; i < largeParamRouteCount; i++ {
-		path := largeParamPatternColon(i)
-		r.GET(path, func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-			benchmarkSinkString = ps.ByName("id")
-			_, _ = io.WriteString(w, benchmarkOKResponse)
-		})
-	}
-	return r
-}
-
 func buildZincRPSHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/rps", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
 	}))
 	return app
-}
-
-func buildServeMuxRPSHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /rps", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return mux
 }
 
 func buildChiRPSHandler() http.Handler {
@@ -1086,14 +859,6 @@ func buildGinRPSHandler() http.Handler {
 	r := newGinBenchmarkRouter()
 	r.GET("/rps", func(c *gin.Context) {
 		c.String(http.StatusOK, benchmarkOKResponse)
-	})
-	return r
-}
-
-func buildHttpRouterRPSHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/rps", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		_, _ = io.WriteString(w, benchmarkOKResponse)
 	})
 	return r
 }
@@ -1146,21 +911,6 @@ func buildZincAPIParamQueryJSONHandler() http.Handler {
 	return app
 }
 
-func buildServeMuxAPIParamQueryJSONHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
-			UserID: parseBenchmarkInt(r.PathValue("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, r)
-		consumeBenchmarkAPIInput(input)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-	return mux
-}
-
 func buildChiAPIParamQueryJSONHandler() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/teams/{teamID}/users/{userID}", func(w http.ResponseWriter, req *http.Request) {
@@ -1207,21 +957,6 @@ func buildGinAPIParamQueryJSONHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterAPIParamQueryJSONHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
-			UserID: parseBenchmarkInt(ps.ByName("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, req)
-		consumeBenchmarkAPIInput(input)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-	return r
-}
-
 func buildZincAPIHappyPathHandler() http.Handler {
 	app := New()
 	app.Use(
@@ -1241,29 +976,6 @@ func buildZincAPIHappyPathHandler() http.Handler {
 		return c.JSON(benchmarkAPIResponseFrom(input))
 	}))
 	return app
-}
-
-func buildServeMuxAPIHappyPathHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
-			UserID: parseBenchmarkInt(r.PathValue("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, r)
-		consumeBenchmarkAPIInput(input)
-		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(r)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-
-	var handler http.Handler = mux
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
 }
 
 func buildChiAPIHappyPathHandler() http.Handler {
@@ -1334,29 +1046,6 @@ func buildGinAPIHappyPathHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterAPIHappyPathHandler() http.Handler {
-	r := httprouter.New()
-	r.GET("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
-			UserID: parseBenchmarkInt(ps.ByName("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, req)
-		consumeBenchmarkAPIInput(input)
-		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-
-	var handler http.Handler = r
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
-}
-
 func buildZincAPIBindJSONHappyPathHandler() http.Handler {
 	app := New()
 	app.Use(
@@ -1376,33 +1065,6 @@ func buildZincAPIBindJSONHappyPathHandler() http.Handler {
 		return c.JSON(benchmarkAPIResponseFrom(input))
 	}))
 	return app
-}
-
-func buildServeMuxAPIBindJSONHappyPathHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /teams/{teamID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(r.PathValue("teamID")),
-			UserID: parseBenchmarkInt(r.PathValue("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, r)
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		consumeBenchmarkAPIInput(input)
-		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(r)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-
-	var handler http.Handler = mux
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
 }
 
 func buildChiAPIBindJSONHappyPathHandler() http.Handler {
@@ -1481,38 +1143,9 @@ func buildGinAPIBindJSONHappyPathHandler() http.Handler {
 	return r
 }
 
-func buildHttpRouterAPIBindJSONHappyPathHandler() http.Handler {
-	r := httprouter.New()
-	r.POST("/teams/:teamID/users/:userID", func(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
-		input := benchmarkAPIBindInput{
-			TeamID: parseBenchmarkInt(ps.ByName("teamID")),
-			UserID: parseBenchmarkInt(ps.ByName("userID")),
-		}
-		fillBenchmarkAPIQuery(&input, req)
-		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		consumeBenchmarkAPIInput(input)
-		benchmarkSinkBool = benchmarkSinkBool && requestContextMiddlewareSatisfied(req)
-		w.Header().Set(HeaderContentType, "application/json")
-		_ = json.NewEncoder(w).Encode(benchmarkAPIResponseFrom(input))
-	})
-
-	var handler http.Handler = r
-	handler = stdMiddleware(handler, middlewareKey5)
-	handler = stdMiddleware(handler, middlewareKey4)
-	handler = stdMiddleware(handler, middlewareKey3)
-	handler = stdMiddleware(handler, middlewareKey2)
-	handler = stdMiddleware(handler, middlewareKey1)
-	return handler
-}
-
 func helloWorldCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincHelloHandler},
-		{name: "ServeMux", build: buildServeMuxHelloHandler},
-		{name: "HttpRouter", build: buildHttpRouterHelloHandler},
 		{name: "Chi", build: buildChiHelloHandler},
 		{name: "Echo", build: buildEchoHelloHandler},
 		{name: "Gin", build: buildGinHelloHandler},
@@ -1522,8 +1155,6 @@ func helloWorldCases() []benchmarkCase {
 func staticRouteCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincStaticHandler},
-		{name: "ServeMux", build: buildServeMuxStaticHandler},
-		{name: "HttpRouter", build: buildHttpRouterStaticHandler},
 		{name: "Chi", build: buildChiStaticHandler},
 		{name: "Echo", build: buildEchoStaticHandler},
 		{name: "Gin", build: buildGinStaticHandler},
@@ -1533,8 +1164,6 @@ func staticRouteCases() []benchmarkCase {
 func staticColdCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincStaticColdHandler},
-		{name: "ServeMux", build: buildServeMuxStaticColdHandler},
-		{name: "HttpRouter", build: buildHttpRouterStaticColdHandler},
 		{name: "Chi", build: buildChiStaticColdHandler},
 		{name: "Echo", build: buildEchoStaticColdHandler},
 		{name: "Gin", build: buildGinStaticColdHandler},
@@ -1544,8 +1173,6 @@ func staticColdCases() []benchmarkCase {
 func paramCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincParamHandler},
-		{name: "ServeMux", build: buildServeMuxParamHandler},
-		{name: "HttpRouter", build: buildHttpRouterParamHandler},
 		{name: "Chi", build: buildChiParamHandler},
 		{name: "Echo", build: buildEchoParamHandler},
 		{name: "Gin", build: buildGinParamHandler},
@@ -1555,8 +1182,6 @@ func paramCases() []benchmarkCase {
 func jsonCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincJSONHandler},
-		{name: "ServeMux", build: buildServeMuxJSONHandler},
-		{name: "HttpRouter", build: buildHttpRouterJSONHandler},
 		{name: "Chi", build: buildChiJSONHandler},
 		{name: "Echo", build: buildEchoJSONHandler},
 		{name: "Gin", build: buildGinJSONHandler},
@@ -1566,8 +1191,6 @@ func jsonCases() []benchmarkCase {
 func queryCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincQueryHandler},
-		{name: "ServeMux", build: buildServeMuxQueryHandler},
-		{name: "HttpRouter", build: buildHttpRouterQueryHandler},
 		{name: "Chi", build: buildChiQueryHandler},
 		{name: "Echo", build: buildEchoQueryHandler},
 		{name: "Gin", build: buildGinQueryHandler},
@@ -1577,8 +1200,6 @@ func queryCases() []benchmarkCase {
 func middlewareCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincMiddlewareHandler},
-		{name: "ServeMux", build: buildServeMuxMiddlewareHandler},
-		{name: "HttpRouter", build: buildHttpRouterMiddlewareHandler},
 		{name: "Chi", build: buildChiMiddlewareHandler},
 		{name: "Echo", build: buildEchoMiddlewareHandler},
 		{name: "Gin", build: buildGinMiddlewareHandler},
@@ -1588,8 +1209,6 @@ func middlewareCases() []benchmarkCase {
 func notFoundCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincNotFoundHandler},
-		{name: "ServeMux", build: buildServeMuxNotFoundHandler},
-		{name: "HttpRouter", build: buildHttpRouterNotFoundHandler},
 		{name: "Chi", build: buildChiNotFoundHandler},
 		{name: "Echo", build: buildEchoNotFoundHandler},
 		{name: "Gin", build: buildGinNotFoundHandler},
@@ -1599,8 +1218,6 @@ func notFoundCases() []benchmarkCase {
 func largeStaticCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincLargeStaticHandler},
-		{name: "ServeMux", build: buildServeMuxLargeStaticHandler},
-		{name: "HttpRouter", build: buildHttpRouterLargeStaticHandler},
 		{name: "Chi", build: buildChiLargeStaticHandler},
 		{name: "Echo", build: buildEchoLargeStaticHandler},
 		{name: "Gin", build: buildGinLargeStaticHandler},
@@ -1610,8 +1227,6 @@ func largeStaticCases() []benchmarkCase {
 func largeParamCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincLargeParamHandler},
-		{name: "ServeMux", build: buildServeMuxLargeParamHandler},
-		{name: "HttpRouter", build: buildHttpRouterLargeParamHandler},
 		{name: "Chi", build: buildChiLargeParamHandler},
 		{name: "Echo", build: buildEchoLargeParamHandler},
 		{name: "Gin", build: buildGinLargeParamHandler},
@@ -1621,8 +1236,6 @@ func largeParamCases() []benchmarkCase {
 func apiParamQueryJSONCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincAPIParamQueryJSONHandler},
-		{name: "ServeMux", build: buildServeMuxAPIParamQueryJSONHandler},
-		{name: "HttpRouter", build: buildHttpRouterAPIParamQueryJSONHandler},
 		{name: "Chi", build: buildChiAPIParamQueryJSONHandler},
 		{name: "Echo", build: buildEchoAPIParamQueryJSONHandler},
 		{name: "Gin", build: buildGinAPIParamQueryJSONHandler},
@@ -1632,8 +1245,6 @@ func apiParamQueryJSONCases() []benchmarkCase {
 func apiHappyPathCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincAPIHappyPathHandler},
-		{name: "ServeMux", build: buildServeMuxAPIHappyPathHandler},
-		{name: "HttpRouter", build: buildHttpRouterAPIHappyPathHandler},
 		{name: "Chi", build: buildChiAPIHappyPathHandler},
 		{name: "Echo", build: buildEchoAPIHappyPathHandler},
 		{name: "Gin", build: buildGinAPIHappyPathHandler},
@@ -1643,8 +1254,6 @@ func apiHappyPathCases() []benchmarkCase {
 func apiBindJSONHappyPathCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincAPIBindJSONHappyPathHandler},
-		{name: "ServeMux", build: buildServeMuxAPIBindJSONHappyPathHandler},
-		{name: "HttpRouter", build: buildHttpRouterAPIBindJSONHappyPathHandler},
 		{name: "Chi", build: buildChiAPIBindJSONHappyPathHandler},
 		{name: "Echo", build: buildEchoAPIBindJSONHappyPathHandler},
 		{name: "Gin", build: buildGinAPIBindJSONHappyPathHandler},
@@ -1654,8 +1263,6 @@ func apiBindJSONHappyPathCases() []benchmarkCase {
 func rpsCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "Zinc", build: buildZincRPSHandler},
-		{name: "ServeMux", build: buildServeMuxRPSHandler},
-		{name: "HttpRouter", build: buildHttpRouterRPSHandler},
 		{name: "Chi", build: buildChiRPSHandler},
 		{name: "Echo", build: buildEchoRPSHandler},
 		{name: "Gin", build: buildGinRPSHandler},
@@ -1844,7 +1451,7 @@ To run the end-to-end throughput benchmark from benchmarks/:
 Notes:
 - The request/response harness now reuses requests and a discard response writer to reduce benchmark noise.
 - Body-consuming endpoint benches reset request bodies between iterations instead of charging full request construction cost to the handler path.
-- The suite includes ServeMux and HttpRouter as additional net/http-based baselines.
+- The suite focuses on Zinc versus Gin, Echo, and Chi.
 - BenchmarkHelloWorld exercises Zinc's special-case root fast path, while BenchmarkStaticRoute measures a normal non-root static route.
 - The cold route benchmarks rotate request paths to avoid flattering Zinc's route cache.
 - The throughput benchmark uses a real loopback listener with a concurrency sweep; run it with -count=3 or higher and compare reqs/s, not ns/op.

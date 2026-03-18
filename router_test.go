@@ -48,6 +48,41 @@ func TestRouterConflictsAndNormalization(t *testing.T) {
 	}
 }
 
+func TestRouterRegexConstrainedParams(t *testing.T) {
+	router := &Router{config: &DefaultConfig}
+	mustDo(t, router.Add(MethodGet, "/users/:slug", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/users/:id<\\d+>", func(*Context) error { return nil }))
+
+	ctxDigits := &Context{}
+	if handler := router.findInto(MethodGet, "/users/42", ctxDigits); handler == nil {
+		t.Fatal("expected regex-constrained route to match")
+	}
+	if ctxDigits.Route().Path != "/users/:id<\\d+>" || ctxDigits.Param("id") != "42" {
+		t.Fatalf("digits route=%+v param=%q", ctxDigits.Route(), ctxDigits.Param("id"))
+	}
+
+	ctxAlpha := &Context{}
+	if handler := router.findInto(MethodGet, "/users/matt", ctxAlpha); handler == nil {
+		t.Fatal("expected plain param route to match")
+	}
+	if ctxAlpha.Route().Path != "/users/:slug" || ctxAlpha.Param("slug") != "matt" {
+		t.Fatalf("alpha route=%+v param=%q", ctxAlpha.Route(), ctxAlpha.Param("slug"))
+	}
+
+	params, err := collectRouteParams("/users/:id<\\d+>", strings.IndexAny("/users/:id<\\d+>", ":*"))
+	mustDo(t, err)
+	if got := params.slice(); !reflect.DeepEqual(got, []string{"id"}) {
+		t.Fatalf("params=%v", got)
+	}
+
+	if _, err := parseDynamicSegment(":id<"); err == nil || !strings.Contains(err.Error(), "invalid regex constraint") {
+		t.Fatalf("err=%v", err)
+	}
+	if err := router.Add(MethodGet, "/bad/:id<[0-9+>", func(*Context) error { return nil }); err == nil || !strings.Contains(err.Error(), "invalid regex constraint") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestGroupHelpers(t *testing.T) {
 	app := New()
 	api := app.Group("/api", func(c *Context) error {

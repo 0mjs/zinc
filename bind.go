@@ -2,12 +2,17 @@ package zinc
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"reflect"
+
+	toml "github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Binder interface {
@@ -27,6 +32,33 @@ type Renderer interface {
 	Render(w io.Writer, name string, data any, c *Context) error
 }
 
+type Binding struct {
+	c *Context
+}
+
+type BindError struct {
+	Source string
+	Field  string
+	Err    error
+}
+
+func (e *BindError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Field != "" {
+		return fmt.Sprintf("bind %s %s: %v", e.Source, e.Field, e.Err)
+	}
+	return fmt.Sprintf("bind %s: %v", e.Source, e.Err)
+}
+
+func (e *BindError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 type JSONCodec interface {
 	Encode(w io.Writer, v any, indent string) error
 	Decode(r io.Reader, v any) error
@@ -41,57 +73,73 @@ type jsonBytesDecoder interface {
 }
 
 func (b defaultBinder) Bind(c *Context, v any) error {
+	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
+	if mediaType == "text/plain" {
+		return bindPlainTextBody(c, v, false)
+	}
+	if isYAMLMediaType(mediaType) {
+		return bindYAMLBody(c, v, false)
+	}
+	if isTOMLMediaType(mediaType) {
+		return bindTOMLBody(c, v, false)
+	}
+
 	val, plan, err := bindTargetPlan(v)
 	if err != nil {
 		return err
 	}
 	if err := bindFieldsFromPath(val, plan.pathFields, c); err != nil {
-		return err
+		return wrapBindError("path", err)
 	}
 	req := c.Request()
 	if len(plan.queryFields) > 0 && req != nil && req.URL != nil && req.URL.RawQuery != "" {
 		if err := bindFieldsFromValues(val, plan.queryFields, c.QueryValues()); err != nil {
-			return err
+			return wrapBindError("query", err)
 		}
 	}
 	if req == nil || req.Body == nil {
 		return c.Validate(v)
 	}
-	mediaType := requestMediaType(c.GetHeader(HeaderContentType))
 	switch mediaType {
 	case "", "application/json":
 		bodyLen, readErr, decodeErr := c.readAndCacheJSONBody(b.codec, v)
 		if readErr != nil {
-			return readErr
+			return wrapBindError("body", readErr)
 		}
 		if bodyLen == 0 {
 			return c.Validate(v)
 		}
 		if decodeErr != nil {
-			return fmt.Errorf("bind body: %w", decodeErr)
+			return wrapBindError("body", decodeErr)
 		}
 	case "application/xml", "text/xml":
 		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
 			return xml.NewDecoder(r).Decode(v)
 		})
 		if readErr != nil {
-			return readErr
+			return wrapBindError("body", readErr)
 		}
 		if bodyLen == 0 {
 			return c.Validate(v)
 		}
 		if decodeErr != nil {
-			return fmt.Errorf("bind body: %w", decodeErr)
+			return wrapBindError("body", decodeErr)
 		}
-	case "application/x-www-form-urlencoded", "multipart/form-data":
+	case "application/x-www-form-urlencoded":
 		if err := req.ParseForm(); err != nil {
-			return fmt.Errorf("parse form: %w", err)
+			return wrapBindError("form", fmt.Errorf("parse form: %w", err))
 		}
 		if err := bindFieldsFromValues(val, plan.formFields, req.Form); err != nil {
-			return err
+			return wrapBindError("form", err)
 		}
+	case "multipart/form-data":
+		if err := bindMultipartForm(val, plan, req); err != nil {
+			return wrapBindError("form", err)
+		}
+	case "text/plain":
+		return bindPlainTextBody(c, v, false)
 	default:
-		return fmt.Errorf("unsupported content type: %s", mediaType)
+		return wrapBindError("body", fmt.Errorf("unsupported content type: %s", mediaType))
 	}
 	return c.Validate(v)
 }
@@ -102,31 +150,39 @@ func (b defaultBinder) BindBody(c *Context, v any) error {
 	case "", "application/json":
 		bodyLen, readErr, decodeErr := c.readAndCacheJSONBody(b.codec, v)
 		if readErr != nil {
-			return readErr
+			return wrapBindError("body", readErr)
 		}
 		if bodyLen == 0 {
-			return errors.New("request body is empty")
+			return wrapBindError("body", errors.New("request body is empty"))
 		}
 		if decodeErr != nil {
-			return fmt.Errorf("bind body: %w", decodeErr)
+			return wrapBindError("body", decodeErr)
 		}
 	case "application/xml", "text/xml":
 		bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
 			return xml.NewDecoder(r).Decode(v)
 		})
 		if readErr != nil {
-			return readErr
+			return wrapBindError("body", readErr)
 		}
 		if bodyLen == 0 {
-			return errors.New("request body is empty")
+			return wrapBindError("body", errors.New("request body is empty"))
 		}
 		if decodeErr != nil {
-			return fmt.Errorf("bind body: %w", decodeErr)
+			return wrapBindError("body", decodeErr)
 		}
 	case "application/x-www-form-urlencoded", "multipart/form-data":
 		return b.BindForm(c, v)
+	case "text/plain":
+		return bindPlainTextBody(c, v, true)
 	default:
-		return fmt.Errorf("unsupported content type: %s", mediaType)
+		if isYAMLMediaType(mediaType) {
+			return bindYAMLBody(c, v, true)
+		}
+		if isTOMLMediaType(mediaType) {
+			return bindTOMLBody(c, v, true)
+		}
+		return wrapBindError("body", fmt.Errorf("unsupported content type: %s", mediaType))
 	}
 	return c.Validate(v)
 }
@@ -137,21 +193,33 @@ func (b defaultBinder) BindQuery(c *Context, v any) error {
 		return err
 	}
 	if err := bindFieldsFromValues(val, plan.queryFields, c.QueryValues()); err != nil {
-		return err
+		return wrapBindError("query", err)
 	}
 	return c.Validate(v)
 }
 
 func (b defaultBinder) BindForm(c *Context, v any) error {
-	if err := c.Request().ParseForm(); err != nil {
-		return fmt.Errorf("parse form: %w", err)
-	}
 	val, plan, err := bindTargetPlan(v)
 	if err != nil {
 		return err
 	}
-	if err := bindFieldsFromValues(val, plan.formFields, c.Request().Form); err != nil {
-		return err
+
+	req := c.Request()
+	if req == nil {
+		return wrapBindError("form", errors.New("request is nil"))
+	}
+	if requestMediaType(c.GetHeader(HeaderContentType)) == "multipart/form-data" {
+		if err := bindMultipartForm(val, plan, req); err != nil {
+			return wrapBindError("form", err)
+		}
+		return c.Validate(v)
+	}
+
+	if err := req.ParseForm(); err != nil {
+		return wrapBindError("form", fmt.Errorf("parse form: %w", err))
+	}
+	if err := bindFieldsFromValues(val, plan.formFields, req.Form); err != nil {
+		return wrapBindError("form", err)
 	}
 	return c.Validate(v)
 }
@@ -162,7 +230,7 @@ func (b defaultBinder) BindHeader(c *Context, v any) error {
 		return err
 	}
 	if err := bindFieldsFromHeader(val, plan.headerFields, c.Request().Header); err != nil {
-		return err
+		return wrapBindError("header", err)
 	}
 	return c.Validate(v)
 }
@@ -173,17 +241,100 @@ func (b defaultBinder) BindPath(c *Context, v any) error {
 		return err
 	}
 	if err := bindFieldsFromPath(val, plan.pathFields, c); err != nil {
-		return err
+		return wrapBindError("path", err)
 	}
 	return c.Validate(v)
 }
 
 func (c *Context) Bind(v any) error {
-	return c.app.config.Binder.Bind(c, v)
+	return c.Binding().All(v)
+}
+
+func (c *Context) Binding() *Binding {
+	return &Binding{c: c}
+}
+
+func (b *Binding) All(v any) error {
+	return b.c.app.config.Binder.Bind(b.c, v)
+}
+
+func (b *Binding) Body(v any) error {
+	return b.c.app.config.Binder.BindBody(b.c, v)
+}
+
+func (b *Binding) JSON(v any) error {
+	if b == nil || b.c == nil {
+		return errors.New("context is nil")
+	}
+	codec := b.c.app.config.JSONCodec
+	bodyLen, readErr, decodeErr := b.c.readAndCacheJSONBody(codec, v)
+	if readErr != nil {
+		return wrapBindError("body", readErr)
+	}
+	if bodyLen == 0 {
+		return wrapBindError("body", errors.New("request body is empty"))
+	}
+	if decodeErr != nil {
+		return wrapBindError("body", decodeErr)
+	}
+	return b.c.Validate(v)
+}
+
+func (b *Binding) Text(v any) error {
+	if b == nil || b.c == nil {
+		return errors.New("context is nil")
+	}
+	return bindPlainTextBody(b.c, v, true)
+}
+
+func (b *Binding) YAML(v any) error {
+	if b == nil || b.c == nil {
+		return errors.New("context is nil")
+	}
+	return bindYAMLBody(b.c, v, true)
+}
+
+func (b *Binding) TOML(v any) error {
+	if b == nil || b.c == nil {
+		return errors.New("context is nil")
+	}
+	return bindTOMLBody(b.c, v, true)
+}
+
+func (b *Binding) XML(v any) error {
+	return b.c.BindXML(v)
+}
+
+func (b *Binding) Form(v any) error {
+	return b.c.app.config.Binder.BindForm(b.c, v)
+}
+
+func (b *Binding) Query(v any) error {
+	return b.c.app.config.Binder.BindQuery(b.c, v)
+}
+
+func (b *Binding) Header(v any) error {
+	return b.c.app.config.Binder.BindHeader(b.c, v)
+}
+
+func (b *Binding) Path(v any) error {
+	return b.c.app.config.Binder.BindPath(b.c, v)
 }
 
 func (c *Context) BindJSON(v any) error {
-	return c.app.config.Binder.BindBody(c, v)
+	return c.Binding().JSON(v)
+}
+
+func (c *Context) BindText(v any) error {
+	return c.Binding().Text(v)
+}
+
+func (c *Context) BindYAML(v any) error {
+	return c.Binding().YAML(v)
+}
+
+func (c *Context) BindTOML(v any) error {
+	return c.Binding().TOML(v)
 }
 
 func (c *Context) BindXML(v any) error {
@@ -203,19 +354,19 @@ func (c *Context) BindXML(v any) error {
 }
 
 func (c *Context) BindForm(v any) error {
-	return c.app.config.Binder.BindForm(c, v)
+	return c.Binding().Form(v)
 }
 
 func (c *Context) BindQuery(v any) error {
-	return c.app.config.Binder.BindQuery(c, v)
+	return c.Binding().Query(v)
 }
 
 func (c *Context) BindHeader(v any) error {
-	return c.app.config.Binder.BindHeader(c, v)
+	return c.Binding().Header(v)
 }
 
 func (c *Context) BindPath(v any) error {
-	return c.app.config.Binder.BindPath(c, v)
+	return c.Binding().Path(v)
 }
 
 func (c *Context) Validate(v any) error {
@@ -272,4 +423,156 @@ func decodeJSONBody(codec JSONCodec, body []byte, v any) error {
 		return decoder.DecodeBytes(body, v)
 	}
 	return codec.Decode(bytes.NewReader(body), v)
+}
+
+func bindPlainTextBody(c *Context, v any, requireBody bool) error {
+	if c == nil {
+		return errors.New("context is nil")
+	}
+
+	body, readErr := c.readAndCacheBodyBytes()
+	if readErr != nil {
+		return wrapBindError("body", readErr)
+	}
+	if len(body) == 0 {
+		if requireBody {
+			return wrapBindError("body", errors.New("request body is empty"))
+		}
+		return c.Validate(v)
+	}
+	if err := decodeTextBody(v, body); err != nil {
+		return wrapBindError("body", err)
+	}
+	return c.Validate(v)
+}
+
+func bindYAMLBody(c *Context, v any, requireBody bool) error {
+	body, readErr := readRequiredBody(c, requireBody)
+	if readErr != nil {
+		return wrapBindError("body", readErr)
+	}
+	if len(body) == 0 {
+		return c.Validate(v)
+	}
+	if err := yaml.Unmarshal(body, v); err != nil {
+		return wrapBindError("body", err)
+	}
+	return c.Validate(v)
+}
+
+func bindTOMLBody(c *Context, v any, requireBody bool) error {
+	body, readErr := readRequiredBody(c, requireBody)
+	if readErr != nil {
+		return wrapBindError("body", readErr)
+	}
+	if len(body) == 0 {
+		return c.Validate(v)
+	}
+	if err := toml.Unmarshal(body, v); err != nil {
+		return wrapBindError("body", err)
+	}
+	return c.Validate(v)
+}
+
+func readRequiredBody(c *Context, requireBody bool) ([]byte, error) {
+	if c == nil {
+		return nil, errors.New("context is nil")
+	}
+	body, readErr := c.readAndCacheBodyBytes()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if len(body) == 0 && requireBody {
+		return nil, errors.New("request body is empty")
+	}
+	return body, nil
+}
+
+func decodeTextBody(v any, body []byte) error {
+	if v == nil {
+		return errors.New("binding target must not be nil")
+	}
+	if unmarshaler, ok := v.(encoding.TextUnmarshaler); ok {
+		return unmarshaler.UnmarshalText(body)
+	}
+
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Pointer || val.IsNil() {
+		return errors.New("binding target must be a pointer")
+	}
+
+	elem := val.Elem()
+	if elem.Kind() == reflect.Slice && elem.Type().Elem().Kind() == reflect.Uint8 {
+		copied := append([]byte(nil), body...)
+		elem.Set(reflect.ValueOf(copied).Convert(elem.Type()))
+		return nil
+	}
+	if elem.Kind() == reflect.String {
+		elem.SetString(string(body))
+		return nil
+	}
+
+	return setFieldValue(elem, []string{string(body)})
+}
+
+func isYAMLMediaType(mediaType string) bool {
+	switch mediaType {
+	case "application/x-yaml", "application/yaml", "text/yaml":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTOMLMediaType(mediaType string) bool {
+	switch mediaType {
+	case "application/toml", "text/toml":
+		return true
+	default:
+		return false
+	}
+}
+
+func bindMultipartForm(val reflect.Value, plan *bindingPlan, req *http.Request) error {
+	if err := req.ParseMultipartForm(32 << 20); err != nil {
+		return fmt.Errorf("parse multipart form: %w", err)
+	}
+	form := req.MultipartForm
+	if form == nil {
+		return nil
+	}
+	if err := bindFieldsFromValues(val, plan.formFields, form.Value); err != nil {
+		return err
+	}
+	if err := bindFieldsFromMultipartFiles(val, plan.multipartFileFields, form.File); err != nil {
+		return err
+	}
+	return nil
+}
+
+func wrapBindError(source string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var bindErr *BindError
+	if errors.As(err, &bindErr) {
+		return err
+	}
+	return &BindError{
+		Source: source,
+		Field:  bindErrorField(err),
+		Err:    err,
+	}
+}
+
+func bindErrorField(err error) string {
+	var fieldErr *bindFieldError
+	if errors.As(err, &fieldErr) {
+		return fieldErr.Field
+	}
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return typeErr.Field
+	}
+	return ""
 }

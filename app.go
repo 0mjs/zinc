@@ -3,8 +3,10 @@ package zinc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -19,29 +21,93 @@ type RouteHandler = HandlerFunc
 type Middleware = HandlerFunc
 
 type RouteInfo struct {
+	Name    string
 	Method  string
 	Path    string
+	Params  []string
+	Mounted bool
 	Handler string
 }
 
+type RouteSpec struct {
+	Name    string
+	Method  string
+	Path    string
+	Handler HandlerFunc
+}
+
 type routeMeta struct {
+	name      string
 	method    string
 	path      string
+	params    []string
+	mounted   bool
 	handlerPC uintptr
 }
 
 func (m routeMeta) export() RouteInfo {
 	return RouteInfo{
+		Name:    m.name,
 		Method:  m.method,
 		Path:    m.path,
+		Params:  append([]string(nil), m.params...),
+		Mounted: m.mounted,
 		Handler: handlerNameFromPC(m.handlerPC),
 	}
 }
 
-func newRouteMeta(method, path string, handler HandlerFunc) routeMeta {
+func (m routeMeta) url(values []string) (string, error) {
+	if len(m.params) != len(values) {
+		return "", fmt.Errorf("route %q expects %d params, got %d", m.name, len(m.params), len(values))
+	}
+	if len(m.params) == 0 {
+		return m.path, nil
+	}
+
+	var builder strings.Builder
+	valueIndex := 0
+	for i := 0; i < len(m.path); i++ {
+		switch m.path[i] {
+		case ParamIdentifier:
+			start := i + 1
+			end := start
+			for end < len(m.path) && m.path[end] != '/' && m.path[end] != '<' {
+				end++
+			}
+			builder.WriteString(url.PathEscape(values[valueIndex]))
+			valueIndex++
+			if end < len(m.path) && m.path[end] == '<' {
+				constraintEnd, _, err := parseParamConstraint(m.path, end)
+				if err != nil {
+					return "", err
+				}
+				i = constraintEnd - 1
+			} else {
+				i = end - 1
+			}
+		case WildcardIdentifier:
+			start := i + 1
+			end := start
+			for end < len(m.path) && m.path[end] != '/' {
+				end++
+			}
+			builder.WriteString(values[valueIndex])
+			valueIndex++
+			i = end - 1
+		default:
+			builder.WriteByte(m.path[i])
+		}
+	}
+	return builder.String(), nil
+}
+
+func newRouteMeta(method, path, name string, handler HandlerFunc, params []string, mounted bool) routeMeta {
 	return routeMeta{
+		name:      name,
 		method:    method,
 		path:      path,
+		params:    append([]string(nil), params...),
+		mounted:   mounted,
 		handlerPC: handlerPC(handler),
 	}
 }
@@ -61,6 +127,7 @@ type mountedHandler struct {
 type App struct {
 	config           Config
 	router           *Router
+	notFoundRoutes   *Router
 	middleware       []HandlerFunc
 	middlewareChain  []HandlerFunc
 	prefixMiddleware []prefixMiddleware
@@ -92,7 +159,7 @@ func NewWithConfig(cfg Config) *App {
 			cache:  cache,
 			config: &cfg,
 		},
-		middleware: make([]HandlerFunc, 0),
+		middleware:    make([]HandlerFunc, 0),
 		defaultErrors: defaultErrors,
 	}
 	if cfg.ServerHeader != "" {
@@ -236,7 +303,7 @@ func (a *App) Mount(prefix string, h http.Handler) {
 		prefix:     storedPrefix(prefix, a.config.CaseSensitive),
 		prefixPath: prefix,
 		handler:    h,
-		info:       newRouteMeta(methodUse, prefix, Wrap(h)),
+		info:       newRouteMeta(methodUse, prefix, "", Wrap(h), nil, true),
 	}
 	a.mounts = append(a.mounts, entry)
 	sort.SliceStable(a.mounts, func(i, j int) bool {
@@ -244,8 +311,31 @@ func (a *App) Mount(prefix string, h http.Handler) {
 	})
 }
 
+func (a *App) AcquireContext(w http.ResponseWriter, r *http.Request) *Context {
+	ctx := NewContext(w, r)
+	ctx.app = a
+	return ctx
+}
+
+func (a *App) ReleaseContext(c *Context) {
+	if c == nil {
+		return
+	}
+	c.release()
+}
+
 func (a *App) NotFound(handler HandlerFunc) {
 	a.notFound = handler
+}
+
+func (a *App) RouteNotFound(path string, handlers ...HandlerFunc) error {
+	if len(handlers) == 0 {
+		return errors.New("route handler is nil")
+	}
+	if a.notFoundRoutes == nil {
+		a.notFoundRoutes = &Router{config: &a.config}
+	}
+	return a.notFoundRoutes.Add(MethodGet, path, handlers...)
 }
 
 func (a *App) MethodNotAllowed(handler HandlerFunc) {
@@ -261,6 +351,63 @@ func (a *App) Routes() []RouteInfo {
 	out = append(out, routes...)
 	for _, mount := range a.mounts {
 		out = append(out, mount.info.export())
+	}
+	return out
+}
+
+func (a *App) Handle(spec RouteSpec) error {
+	if spec.Handler == nil {
+		return errors.New("route handler is nil")
+	}
+	return a.router.AddNamed(spec.Method, spec.Path, spec.Name, spec.Handler)
+}
+
+func (a *App) RouteByName(name string) (RouteInfo, bool) {
+	meta, ok := a.router.routeMetaByName(name)
+	if !ok {
+		return RouteInfo{}, false
+	}
+	return meta.export(), true
+}
+
+func (a *App) URL(name string, params ...string) (string, error) {
+	meta, ok := a.router.routeMetaByName(name)
+	if !ok {
+		return "", fmt.Errorf("route %q not found", name)
+	}
+	return meta.url(params)
+}
+
+func (a *App) FindRoute(method, path string) (RouteInfo, bool) {
+	_, ctx := a.router.Find(method, path)
+	if ctx != nil {
+		return ctx.Route(), true
+	}
+	if mount := a.matchMount(path); mount != nil {
+		return mount.info.export(), true
+	}
+	return RouteInfo{}, false
+}
+
+func (a *App) RoutesByMethod(method string) []RouteInfo {
+	routes := a.Routes()
+	out := make([]RouteInfo, 0, len(routes))
+	for _, route := range routes {
+		if route.Method == method {
+			out = append(out, route)
+		}
+	}
+	return out
+}
+
+func (a *App) RoutesByPrefix(prefix string) []RouteInfo {
+	prefix = normalizeRegisteredPrefix(prefix)
+	routes := a.Routes()
+	out := make([]RouteInfo, 0, len(routes))
+	for _, route := range routes {
+		if strings.HasPrefix(route.Path, prefix) {
+			out = append(out, route)
+		}
 	}
 	return out
 }

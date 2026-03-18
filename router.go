@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/bits"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -33,6 +34,7 @@ const (
 	radixRoot radixNodeKind = iota
 	radixStatic
 	radixParam
+	radixRegexp
 	radixCatchAll
 )
 
@@ -50,6 +52,8 @@ type radixRoute struct {
 type radixNode struct {
 	kind           radixNodeKind
 	prefix         string
+	regexpRaw      string
+	regexp         *regexp.Regexp
 	route          *radixRoute
 	routeMethod    methodMask
 	routesByMethod *[routeMethodCount]*radixRoute
@@ -60,6 +64,7 @@ type radixNode struct {
 	indices        []byte
 	indexTable     *[256]uint16
 	children       []*radixNode
+	regexpChildren []*radixNode
 	paramChild     *radixNode
 	catchAllChild  *radixNode
 }
@@ -68,6 +73,7 @@ type Router struct {
 	cache             *RouteCache
 	config            *Config
 	routes            RouteMap
+	namedRoutes       map[string]uint32
 	staticRoutes      [routeMethodCount]map[string]*Route
 	staticAllowed     map[string]allowedMethodSet
 	hasCustomStatic   bool
@@ -123,6 +129,13 @@ type collectedRouteParams struct {
 	count  int
 	inline [2]string
 	extra  []string
+}
+
+type parsedDynamicSegment struct {
+	kind  radixNodeKind
+	name  string
+	expr  string
+	width int
 }
 
 func (trees dynamicMethodTrees) get(method string) *radixNode {
@@ -190,8 +203,21 @@ func NewRouteCache(size int) *RouteCache {
 }
 
 func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
+	return r.add(method, path, "", handlers...)
+}
+
+func (r *Router) AddNamed(method, path, name string, handlers ...HandlerFunc) error {
+	return r.add(method, path, name, handlers...)
+}
+
+func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 	if len(handlers) == 0 {
 		return fmt.Errorf("no handler provided for %s %s", method, path)
+	}
+	if name != "" {
+		if _, exists := r.namedRoutes[name]; exists {
+			return fmt.Errorf("route name already registered: %s", name)
+		}
 	}
 
 	path = r.normalizePath(path)
@@ -219,7 +245,7 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 	}
 
 	infoIndex := uint32(len(r.routeInfos))
-	info := newRouteMeta(method, path, finalHandler)
+	info := newRouteMeta(method, path, name, finalHandler, paramNames.slice(), false)
 	mask := methodMaskFor(method)
 
 	if !isDynamic {
@@ -249,6 +275,7 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 			}
 			methodRoutes[path] = route
 			r.routeInfos = append(r.routeInfos, info)
+			r.recordNamedRoute(name, infoIndex)
 			r.invalidateCache()
 			return nil
 		}
@@ -271,15 +298,17 @@ func (r *Router) Add(method, path string, handlers ...HandlerFunc) error {
 			r.staticAllowed[candidate] = addAllowedMethod(r.staticAllowed[candidate], method, mask)
 		}
 		r.routeInfos = append(r.routeInfos, info)
+		r.recordNamedRoute(name, infoIndex)
 		r.invalidateCache()
 		return nil
 	}
 
 	route := newRadixRoute(method, precomposed, infoIndex, paramNames)
-	if err := r.ensureDynamicTree(method, mask).add(path, route); err != nil {
+	if err := r.ensureDynamicTree(method, mask).addWithCase(path, route, r.config == nil || !r.config.CaseSensitive); err != nil {
 		return err
 	}
 	r.routeInfos = append(r.routeInfos, info)
+	r.recordNamedRoute(name, infoIndex)
 	r.dynamicRouteCount++
 	r.invalidateCache()
 	return nil
@@ -290,6 +319,16 @@ func (r *Router) staticRoutesFor(method string, mask methodMask) map[string]*Rou
 		return r.staticRoutes[slot]
 	}
 	return r.routes[method]
+}
+
+func (r *Router) recordNamedRoute(name string, index uint32) {
+	if name == "" {
+		return
+	}
+	if r.namedRoutes == nil {
+		r.namedRoutes = make(map[string]uint32)
+	}
+	r.namedRoutes[name] = index
 }
 
 func (r *Router) invalidateCache() {
@@ -304,6 +343,17 @@ func (r *Router) Routes() []RouteInfo {
 		out[i] = info.export()
 	}
 	return out
+}
+
+func (r *Router) routeMetaByName(name string) (routeMeta, bool) {
+	if r.namedRoutes == nil {
+		return routeMeta{}, false
+	}
+	index, ok := r.namedRoutes[name]
+	if !ok {
+		return routeMeta{}, false
+	}
+	return r.routeMetaAt(index), true
 }
 
 func (r *Router) Find(method, path string) (HandlerFunc, *Context) {
@@ -841,41 +891,96 @@ func (c *collectedRouteParams) add(name string) {
 func collectRouteParams(path string, startIndex int) (collectedRouteParams, error) {
 	var names collectedRouteParams
 	for i := startIndex; i < len(path); i++ {
-		switch path[i] {
-		case ParamIdentifier:
-			start := i + 1
-			if start >= len(path) || path[start] == '/' {
-				return names, fmt.Errorf("invalid parameter in path %q", path)
-			}
-			end := start
-			for end < len(path) && path[end] != '/' {
-				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, fmt.Errorf("invalid parameter in path %q", path)
-				}
-				end++
-			}
-			names.add(path[start:end])
-			i = end - 1
-		case WildcardIdentifier:
-			start := i + 1
-			if start >= len(path) || path[start] == '/' {
-				return names, fmt.Errorf("invalid wildcard in path %q", path)
-			}
-			end := start
-			for end < len(path) && path[end] != '/' {
-				if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
-					return names, fmt.Errorf("invalid wildcard in path %q", path)
-				}
-				end++
-			}
-			if end != len(path) {
-				return names, fmt.Errorf("wildcard must be final in path %q", path)
-			}
+		if path[i] != ParamIdentifier && path[i] != WildcardIdentifier {
+			continue
+		}
+		segment, err := parseDynamicSegment(path[i:])
+		if err != nil {
+			return names, fmt.Errorf("%w in path %q", err, path)
+		}
+		switch segment.kind {
+		case radixParam, radixRegexp:
+			names.add(segment.name)
+		case radixCatchAll:
 			names.add("*")
 			return names, nil
 		}
+		i += segment.width - 1
 	}
 	return names, nil
+}
+
+func parseDynamicSegment(path string) (parsedDynamicSegment, error) {
+	if path == "" {
+		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
+	}
+	switch path[0] {
+	case ParamIdentifier:
+		start := 1
+		if start >= len(path) || path[start] == '/' {
+			return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
+		}
+		end := start
+		for end < len(path) && path[end] != '/' && path[end] != '<' {
+			if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+				return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
+			}
+			end++
+		}
+		if end == start {
+			return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
+		}
+		segment := parsedDynamicSegment{
+			kind:  radixParam,
+			name:  path[start:end],
+			width: end,
+		}
+		if end < len(path) && path[end] == '<' {
+			constraintEnd, expr, err := parseParamConstraint(path, end)
+			if err != nil {
+				return parsedDynamicSegment{}, err
+			}
+			segment.kind = radixRegexp
+			segment.expr = expr
+			segment.width = constraintEnd
+		}
+		return segment, nil
+	case WildcardIdentifier:
+		start := 1
+		if start >= len(path) || path[start] == '/' {
+			return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
+		}
+		end := start
+		for end < len(path) && path[end] != '/' {
+			if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+				return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
+			}
+			end++
+		}
+		if end != len(path) {
+			return parsedDynamicSegment{}, fmt.Errorf("wildcard must be final")
+		}
+		return parsedDynamicSegment{kind: radixCatchAll, width: end}, nil
+	default:
+		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
+	}
+}
+
+func parseParamConstraint(path string, start int) (int, string, error) {
+	if start >= len(path) || path[start] != '<' {
+		return 0, "", fmt.Errorf("invalid regex constraint")
+	}
+	end := start + 1
+	for end < len(path) && path[end] != '>' {
+		if path[end] == '/' {
+			return 0, "", fmt.Errorf("invalid regex constraint")
+		}
+		end++
+	}
+	if end >= len(path) || end == start+1 {
+		return 0, "", fmt.Errorf("invalid regex constraint")
+	}
+	return end + 1, path[start+1 : end], nil
 }
 
 func commonPrefixLen(a, b string) int {
@@ -893,6 +998,22 @@ func commonPrefixLen(a, b string) int {
 
 func nextSlash(path string) int {
 	return strings.IndexByte(path, '/')
+}
+
+func (c collectedRouteParams) slice() []string {
+	if c.count == 0 {
+		return nil
+	}
+	out := make([]string, 0, c.count)
+	inlineCount := c.count
+	if inlineCount > len(c.inline) {
+		inlineCount = len(c.inline)
+	}
+	out = append(out, c.inline[:inlineCount]...)
+	if len(c.extra) > 0 {
+		out = append(out, c.extra...)
+	}
+	return out
 }
 
 func newRadixRoute(method string, handler HandlerFunc, infoIndex uint32, names collectedRouteParams) *radixRoute {
@@ -1096,6 +1217,10 @@ func cloneParamRangesForCache(values paramRanges, count int) paramRanges {
 }
 
 func (n *radixNode) add(path string, route *radixRoute) error {
+	return n.addWithCase(path, route, false)
+}
+
+func (n *radixNode) addWithCase(path string, route *radixRoute, caseInsensitive bool) error {
 	current := n
 	remaining := path
 	for len(remaining) > 0 {
@@ -1109,27 +1234,24 @@ func (n *radixNode) add(path string, route *radixRoute) error {
 			current = current.addStaticPath(remaining[:wildIndex])
 			remaining = remaining[wildIndex:]
 		}
-		switch remaining[0] {
-		case ParamIdentifier:
-			end := 1
-			for end < len(remaining) && remaining[end] != '/' {
-				end++
-			}
+		segment, err := parseDynamicSegment(remaining)
+		if err != nil {
+			return fmt.Errorf("%w in path %q", err, path)
+		}
+		switch segment.kind {
+		case radixParam:
 			current = current.addParamChild()
-			remaining = remaining[end:]
-		case WildcardIdentifier:
-			end := 1
-			for end < len(remaining) && remaining[end] != '/' {
-				end++
+		case radixRegexp:
+			current, err = current.addRegexpChild(segment.expr, caseInsensitive)
+			if err != nil {
+				return fmt.Errorf("%w in path %q", err, path)
 			}
-			if end != len(remaining) {
-				return fmt.Errorf("wildcard must be final in path %q", path)
-			}
+		case radixCatchAll:
 			current = current.addCatchAllChild()
-			remaining = ""
 		default:
 			return fmt.Errorf("invalid route segment in path %q", path)
 		}
+		remaining = remaining[segment.width:]
 	}
 	if !current.trySetRoute(route) {
 		return fmt.Errorf("route already registered for %s", path)
@@ -1207,6 +1329,8 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 		existing := &radixNode{
 			kind:           radixStatic,
 			prefix:         child.prefix[common:],
+			regexpRaw:      child.regexpRaw,
+			regexp:         child.regexp,
 			route:          child.route,
 			routeMethod:    child.routeMethod,
 			routesByMethod: child.routesByMethod,
@@ -1217,10 +1341,13 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 			indices:        child.indices,
 			indexTable:     child.indexTable,
 			children:       child.children,
+			regexpChildren: child.regexpChildren,
 			paramChild:     child.paramChild,
 			catchAllChild:  child.catchAllChild,
 		}
 		child.prefix = child.prefix[:common]
+		child.regexpRaw = ""
+		child.regexp = nil
 		child.route = nil
 		child.routeMethod = 0
 		child.routesByMethod = nil
@@ -1231,6 +1358,7 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 		child.indices = nil
 		child.indexTable = nil
 		child.children = nil
+		child.regexpChildren = nil
 		child.paramChild = nil
 		child.catchAllChild = nil
 		child.addStaticChild(existing)
@@ -1251,6 +1379,29 @@ func (n *radixNode) addParamChild() *radixNode {
 	child := &radixNode{kind: radixParam}
 	n.paramChild = child
 	return child
+}
+
+func (n *radixNode) addRegexpChild(expr string, caseInsensitive bool) (*radixNode, error) {
+	for _, child := range n.regexpChildren {
+		if child.regexpRaw == expr {
+			return child, nil
+		}
+	}
+	pattern := "^(?:" + expr + ")$"
+	if caseInsensitive {
+		pattern = "(?i)" + pattern
+	}
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex constraint %q: %w", expr, err)
+	}
+	child := &radixNode{
+		kind:      radixRegexp,
+		regexpRaw: expr,
+		regexp:    compiled,
+	}
+	n.regexpChildren = append(n.regexpChildren, child)
+	return child, nil
 }
 
 func (n *radixNode) addCatchAllChild() *radixNode {
@@ -1317,6 +1468,24 @@ func (n *radixNode) lookup(path string, offset int, values *paramRanges, capture
 		captured++
 		offset += end
 		path = path[end:]
+	case radixRegexp:
+		if len(path) == 0 || path[0] == '/' {
+			return nil
+		}
+		end := nextSlash(path)
+		if end < 0 {
+			end = len(path)
+		}
+		if n.regexp == nil || !n.regexp.MatchString(path[:end]) {
+			return nil
+		}
+		values.set(captured, paramRange{
+			start: uint32(offset),
+			end:   uint32(offset + end),
+		})
+		captured++
+		offset += end
+		path = path[end:]
 	case radixCatchAll:
 		start := offset
 		if len(path) > 0 && path[0] == '/' {
@@ -1334,6 +1503,11 @@ func (n *radixNode) lookup(path string, offset int, values *paramRanges, capture
 	}
 	if idx := n.staticChildIndex(path[0]); idx >= 0 {
 		if matched := n.children[idx].lookup(path, offset, values, captured); matched != nil {
+			return matched
+		}
+	}
+	for _, child := range n.regexpChildren {
+		if matched := child.lookup(path, offset, values, captured); matched != nil {
 			return matched
 		}
 	}
@@ -1393,6 +1567,11 @@ func (n *radixNode) lookupByMethod(path string, offset int, values *paramRanges,
 			return matched
 		}
 	}
+	for _, child := range n.regexpChildren {
+		if matched := child.lookupByMethod(path, offset, values, captured, methodName, method); matched != nil {
+			return matched
+		}
+	}
 	if n.paramChild != nil {
 		if matched := n.paramChild.lookupByMethod(path, offset, values, captured, methodName, method); matched != nil {
 			return matched
@@ -1423,6 +1602,19 @@ func (n *radixNode) matchesPath(path string, captured int) bool {
 		}
 		captured++
 		path = path[end:]
+	case radixRegexp:
+		if len(path) == 0 || path[0] == '/' {
+			return false
+		}
+		end := nextSlash(path)
+		if end < 0 {
+			end = len(path)
+		}
+		if n.regexp == nil || !n.regexp.MatchString(path[:end]) {
+			return false
+		}
+		captured++
+		path = path[end:]
 	case radixCatchAll:
 		captured++
 		return n.hasPathRoute(captured)
@@ -1436,6 +1628,11 @@ func (n *radixNode) matchesPath(path string, captured int) bool {
 	}
 	if idx := n.staticChildIndex(path[0]); idx >= 0 && n.children[idx].matchesPath(path, captured) {
 		return true
+	}
+	for _, child := range n.regexpChildren {
+		if child.matchesPath(path, captured) {
+			return true
+		}
 	}
 	if n.paramChild != nil && n.paramChild.matchesPath(path, captured) {
 		return true
@@ -1463,6 +1660,19 @@ func (n *radixNode) lookupAllowed(path string, captured int) allowedMethodSet {
 		}
 		captured++
 		path = path[end:]
+	case radixRegexp:
+		if len(path) == 0 || path[0] == '/' {
+			return allowedMethodSet{}
+		}
+		end := nextSlash(path)
+		if end < 0 {
+			end = len(path)
+		}
+		if n.regexp == nil || !n.regexp.MatchString(path[:end]) {
+			return allowedMethodSet{}
+		}
+		captured++
+		path = path[end:]
 	case radixCatchAll:
 		captured++
 		return n.allowedPathMethods(captured)
@@ -1473,6 +1683,11 @@ func (n *radixNode) lookupAllowed(path string, captured int) allowedMethodSet {
 	}
 	if idx := n.staticChildIndex(path[0]); idx >= 0 {
 		if allowed := n.children[idx].lookupAllowed(path, captured); !allowed.empty() {
+			return allowed
+		}
+	}
+	for _, child := range n.regexpChildren {
+		if allowed := child.lookupAllowed(path, captured); !allowed.empty() {
 			return allowed
 		}
 	}
@@ -1664,23 +1879,6 @@ func (rc *RouteCache) invalidate() {
 		return
 	}
 	atomic.StoreUint32(&rc.dirty, 1)
-	rc.hot.Store(nil)
-}
-
-func (rc *RouteCache) clear() {
-	if rc == nil || atomic.LoadUint32(&rc.count) == 0 {
-		if rc != nil {
-			rc.hot.Store(nil)
-			atomic.StoreUint32(&rc.dirty, 0)
-		}
-		return
-	}
-	rc.mu.Lock()
-	rc.cache = nil
-	rc.keys = nil
-	atomic.StoreUint32(&rc.count, 0)
-	atomic.StoreUint32(&rc.dirty, 0)
-	rc.mu.Unlock()
 	rc.hot.Store(nil)
 }
 

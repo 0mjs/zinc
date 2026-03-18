@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 )
 
 var ErrResponseAlreadySent = errors.New("response already sent")
@@ -19,6 +22,8 @@ const (
 	contentType = "Content-Type"
 	jsonType    = "application/json; charset=utf-8"
 	xmlType     = "application/xml; charset=utf-8"
+	yamlType    = "application/yaml; charset=utf-8"
+	tomlType    = "application/toml; charset=utf-8"
 	plainText   = "text/plain; charset=utf-8"
 	htmlType    = "text/html; charset=utf-8"
 	octetStream = "application/octet-stream"
@@ -187,6 +192,46 @@ func (c *Context) XML(v any) error {
 	})
 }
 
+func (c *Context) YAML(v any) error {
+	if v == nil {
+		return c.writeResponse(yamlType, func() error {
+			_, err := c.Writer().Write(nullBytes)
+			return err
+		})
+	}
+
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	if err := encoder.Encode(v); err != nil {
+		return err
+	}
+	if err := encoder.Close(); err != nil {
+		return err
+	}
+	return c.writeResponse(yamlType, func() error {
+		_, err := c.Writer().Write(buf.Bytes())
+		return err
+	})
+}
+
+func (c *Context) TOML(v any) error {
+	if v == nil {
+		return c.writeResponse(tomlType, func() error {
+			_, err := c.Writer().Write(nullBytes)
+			return err
+		})
+	}
+
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(v); err != nil {
+		return err
+	}
+	return c.writeResponse(tomlType, func() error {
+		_, err := c.Writer().Write(buf.Bytes())
+		return err
+	})
+}
+
 func (c *Context) HTML(data string) error {
 	return c.writeResponse(htmlType, func() error {
 		_, err := io.WriteString(c.Writer(), data)
@@ -268,8 +313,7 @@ func (c *Context) Attachment(filePath string, name ...string) error {
 	if len(name) > 0 && name[0] != "" {
 		downloadName = name[0]
 	}
-	c.SetHeader(HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", downloadName))
-	return c.File(filePath)
+	return c.serveFile(filePath, nil, downloadName)
 }
 
 func (c *Context) Download(filePath string, name ...string) error {
@@ -379,6 +423,9 @@ func (c *Context) serveFile(filePath string, filesystem fs.FS, downloadName stri
 		return ErrResponseAlreadySent
 	}
 	c.written = true
+	if downloadName != "" {
+		c.SetHeader(HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", downloadName))
+	}
 
 	if filesystem == nil {
 		http.ServeFile(c.Writer(), c.Request(), filePath)

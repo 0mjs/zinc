@@ -231,6 +231,9 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 		foundMount := false
 		for _, route := range routes {
 			if route.Method == methodUse && route.Path == "/sub" {
+				if !route.Mounted {
+					t.Fatalf("mount route should be marked mounted: %+v", route)
+				}
 				foundMount = true
 			}
 		}
@@ -383,6 +386,219 @@ func TestStaticAndFileRoutes(t *testing.T) {
 	single := performRequest(t, app, http.MethodGet, "/single", nil, nil)
 	if single.Body.String() != "world" {
 		t.Fatalf("body=%q", single.Body.String())
+	}
+}
+
+func TestNamedRoutesAndURLGeneration(t *testing.T) {
+	app := New()
+	api := app.Group("/api")
+
+	mustDo(t, api.Handle(RouteSpec{
+		Name:   "users.show",
+		Method: MethodGet,
+		Path:   "/users/:id",
+		Handler: func(c *Context) error {
+			info := c.Route()
+			return c.JSON(Map{
+				"name":  info.Name,
+				"path":  info.Path,
+				"param": info.Params[0],
+				"id":    c.Param("id"),
+			})
+		},
+	}))
+
+	route, ok := app.RouteByName("users.show")
+	if !ok {
+		t.Fatal("expected named route")
+	}
+	if route.Name != "users.show" || route.Path != "/api/users/:id" || len(route.Params) != 1 || route.Params[0] != "id" {
+		t.Fatalf("route=%+v", route)
+	}
+
+	url, err := app.URL("users.show", "42")
+	mustDo(t, err)
+	if url != "/api/users/42" {
+		t.Fatalf("url=%q", url)
+	}
+
+	resp := performRequest(t, app, http.MethodGet, "/api/users/42", nil, nil)
+	body := resp.Body.String()
+	for _, fragment := range []string{`"name":"users.show"`, `"path":"/api/users/:id"`, `"param":"id"`, `"id":"42"`} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("body missing %q: %s", fragment, body)
+		}
+	}
+}
+
+func TestNamedRouteWildcardAndDuplicateName(t *testing.T) {
+	app := New()
+
+	mustDo(t, app.Handle(RouteSpec{
+		Name:    "files.show",
+		Method:  MethodGet,
+		Path:    "/files/*rest",
+		Handler: func(c *Context) error { return c.String("ok") },
+	}))
+
+	url, err := app.URL("files.show", "a/b/c.txt")
+	mustDo(t, err)
+	if url != "/files/a/b/c.txt" {
+		t.Fatalf("url=%q", url)
+	}
+
+	if _, err := app.URL("files.show"); err == nil {
+		t.Fatal("expected param count error")
+	}
+
+	err = app.Handle(RouteSpec{
+		Name:    "files.show",
+		Method:  MethodPost,
+		Path:    "/files",
+		Handler: func(c *Context) error { return c.String("dup") },
+	})
+	if err == nil || !strings.Contains(err.Error(), "route name already registered") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestRegexConstrainedParams(t *testing.T) {
+	app := New()
+	mustDo(t, app.Get("/users/:slug", func(c *Context) error {
+		return c.String("slug:" + c.Param("slug"))
+	}))
+	mustDo(t, app.Handle(RouteSpec{
+		Name:   "users.numeric",
+		Method: MethodGet,
+		Path:   "/users/:id<\\d+>",
+		Handler: func(c *Context) error {
+			return c.String("id:" + c.Param("id"))
+		},
+	}))
+
+	digits := performRequest(t, app, http.MethodGet, "/users/42", nil, nil)
+	if digits.Code != http.StatusOK || digits.Body.String() != "id:42" {
+		t.Fatalf("digits=%d %q", digits.Code, digits.Body.String())
+	}
+
+	alpha := performRequest(t, app, http.MethodGet, "/users/matt", nil, nil)
+	if alpha.Code != http.StatusOK || alpha.Body.String() != "slug:matt" {
+		t.Fatalf("alpha=%d %q", alpha.Code, alpha.Body.String())
+	}
+
+	route, ok := app.FindRoute(MethodGet, "/users/42")
+	if !ok || route.Path != "/users/:id<\\d+>" || len(route.Params) != 1 || route.Params[0] != "id" {
+		t.Fatalf("route=%+v ok=%v", route, ok)
+	}
+
+	url, err := app.URL("users.numeric", "77")
+	mustDo(t, err)
+	if url != "/users/77" {
+		t.Fatalf("url=%q", url)
+	}
+}
+
+func TestRouteIntrospectionHelpers(t *testing.T) {
+	app := New()
+	api := app.Group("/api")
+	mustDo(t, api.Handle(RouteSpec{
+		Name:    "users.show",
+		Method:  MethodGet,
+		Path:    "/users/:id",
+		Handler: func(c *Context) error { return c.String("ok") },
+	}))
+	mustDo(t, app.Post("/submit", func(c *Context) error { return c.String("ok") }))
+
+	found, ok := app.FindRoute(MethodGet, "/api/users/17")
+	if !ok {
+		t.Fatal("expected route match")
+	}
+	if found.Name != "users.show" || found.Path != "/api/users/:id" {
+		t.Fatalf("found=%+v", found)
+	}
+
+	getRoutes := app.RoutesByMethod(MethodGet)
+	if len(getRoutes) != 1 || getRoutes[0].Name != "users.show" {
+		t.Fatalf("get routes=%v", getRoutes)
+	}
+
+	apiRoutes := app.RoutesByPrefix("/api")
+	if len(apiRoutes) != 1 || apiRoutes[0].Name != "users.show" {
+		t.Fatalf("api routes=%v", apiRoutes)
+	}
+}
+
+func TestMountedRouteIntrospection(t *testing.T) {
+	app := New()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	app.Mount("/sub", mux)
+
+	found, ok := app.FindRoute(MethodGet, "/sub/hello")
+	if !ok {
+		t.Fatal("expected mounted route match")
+	}
+	if !found.Mounted || found.Path != "/sub" || found.Method != methodUse {
+		t.Fatalf("found=%+v", found)
+	}
+
+	routes := app.RoutesByPrefix("/sub")
+	if len(routes) != 1 || !routes[0].Mounted {
+		t.Fatalf("routes=%v", routes)
+	}
+}
+
+func TestRouteNotFoundPatterns(t *testing.T) {
+	app := New()
+	api := app.Group("/api", func(c *Context) error {
+		c.Set("mw", "group")
+		return c.Next()
+	})
+
+	mustDo(t, app.RouteNotFound("/docs", func(c *Context) error {
+		return c.String("docs")
+	}))
+	mustDo(t, api.RouteNotFound("/users/:id", func(c *Context) error {
+		if got, _ := c.Get("mw"); got != "group" {
+			t.Fatalf("mw=%v", got)
+		}
+		return c.String("user:" + c.Param("id"))
+	}))
+	mustDo(t, app.RouteNotFound("/files/*path", func(c *Context) error {
+		return c.String("file:" + c.Param("*"))
+	}))
+	mustDo(t, app.RouteNotFound("/silent", func(c *Context) error {
+		return nil
+	}))
+	app.NotFound(func(c *Context) error {
+		return c.String("global")
+	})
+
+	docs := performRequest(t, app, http.MethodGet, "/docs", nil, nil)
+	if docs.Code != http.StatusNotFound || docs.Body.String() != "docs" {
+		t.Fatalf("docs=%d %q", docs.Code, docs.Body.String())
+	}
+
+	user := performRequest(t, app, http.MethodGet, "/api/users/42", nil, nil)
+	if user.Code != http.StatusNotFound || user.Body.String() != "user:42" {
+		t.Fatalf("user=%d %q", user.Code, user.Body.String())
+	}
+
+	file := performRequest(t, app, http.MethodGet, "/files/a/b/c.txt", nil, nil)
+	if file.Code != http.StatusNotFound || file.Body.String() != "file:a/b/c.txt" {
+		t.Fatalf("file=%d %q", file.Code, file.Body.String())
+	}
+
+	silent := performRequest(t, app, http.MethodGet, "/silent", nil, nil)
+	if silent.Code != http.StatusNotFound || strings.TrimSpace(silent.Body.String()) != http.StatusText(http.StatusNotFound) {
+		t.Fatalf("silent=%d %q", silent.Code, silent.Body.String())
+	}
+
+	other := performRequest(t, app, http.MethodGet, "/missing", nil, nil)
+	if other.Code != http.StatusNotFound || other.Body.String() != "global" {
+		t.Fatalf("other=%d %q", other.Code, other.Body.String())
 	}
 }
 
@@ -640,5 +856,58 @@ func TestDefaultErrorHandlerBranches(t *testing.T) {
 	defaultErrorHandler(ctx4, errors.New("boom"))
 	if rec4.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d", rec4.Code)
+	}
+
+	ctx5, rec5 := newRecorderContext(t, req)
+	defer ctx5.release()
+	httpErr := NewError(http.StatusUnauthorized).
+		WithMessage("denied").
+		WithHeader("X-Reason", "auth").
+		WithCause(errors.New("root cause")).
+		WithMeta("kind", "auth")
+	defaultErrorHandler(ctx5, httpErr)
+	if rec5.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d", rec5.Code)
+	}
+	if rec5.Header().Get("X-Reason") != "auth" {
+		t.Fatalf("x-reason=%q", rec5.Header().Get("X-Reason"))
+	}
+	if !errors.Is(httpErr, httpErr.Cause) {
+		t.Fatal("expected cause to unwrap")
+	}
+	if httpErr.Meta["kind"] != "auth" {
+		t.Fatalf("meta=%v", httpErr.Meta)
+	}
+}
+
+func TestHTTPErrorHelpersCloneGlobalsAndAbortHelpers(t *testing.T) {
+	base := ErrNotFound
+	updated := base.WithMessage("custom").WithHeader("X-Test", "ok")
+	if base.Message != "" {
+		t.Fatalf("base message=%q", base.Message)
+	}
+	if base.Headers != nil {
+		t.Fatalf("base headers=%v", base.Headers)
+	}
+	if updated.Message != "custom" || updated.Headers.Get("X-Test") != "ok" {
+		t.Fatalf("updated=%+v", updated)
+	}
+
+	app := New()
+	mustDo(t, app.Get("/abort", func(c *Context) error {
+		return c.AbortWithStatus(http.StatusForbidden)
+	}))
+	mustDo(t, app.Get("/abort-json", func(c *Context) error {
+		return c.AbortWithJSON(http.StatusCreated, Map{"ok": true})
+	}))
+
+	abortResp := performRequest(t, app, http.MethodGet, "/abort", nil, nil)
+	if abortResp.Code != http.StatusForbidden {
+		t.Fatalf("status=%d", abortResp.Code)
+	}
+
+	jsonResp := performRequest(t, app, http.MethodGet, "/abort-json", nil, nil)
+	if jsonResp.Code != http.StatusCreated || !strings.Contains(jsonResp.Body.String(), `"ok":true`) {
+		t.Fatalf("json resp=%d %q", jsonResp.Code, jsonResp.Body.String())
 	}
 }

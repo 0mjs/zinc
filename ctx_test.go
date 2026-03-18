@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,17 @@ type bindPayload struct {
 	Auth  string   `header:"x-auth"`
 	Tags  []string `form:"tags"`
 	Ready bool     `query:"ready"`
+}
+
+type textInt int
+
+func (i *textInt) UnmarshalText(text []byte) error {
+	parsed, err := strconv.Atoi(string(text))
+	if err != nil {
+		return err
+	}
+	*i = textInt(parsed)
+	return nil
 }
 
 func TestContextRequestHelpersAndMetadata(t *testing.T) {
@@ -118,6 +130,81 @@ func TestContextRequestHelpersAndMetadata(t *testing.T) {
 	}
 }
 
+func TestContextAcquireReleaseAndCopy(t *testing.T) {
+	app := New()
+
+	acquiredReq := httptest.NewRequest(http.MethodGet, "/acquire?x=1", nil)
+	acquired := app.AcquireContext(httptest.NewRecorder(), acquiredReq)
+	if acquired.app != app {
+		t.Fatal("AcquireContext should attach app")
+	}
+	if acquired.Path() != "/acquire" {
+		t.Fatalf("path=%q", acquired.Path())
+	}
+	app.ReleaseContext(acquired)
+
+	var copied *Context
+	mustDo(t, app.Post("/users/:id", func(c *Context) error {
+		c.Set("trace", "abc")
+		_, err := c.BodyBytes()
+		mustDo(t, err)
+		copied = c.Copy()
+		return c.String("ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/users/42?page=3", strings.NewReader(`{"name":"matt"}`))
+	req.Header.Set(HeaderContentType, "application/json")
+	resp := httptest.NewRecorder()
+	app.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d", resp.Code)
+	}
+	if copied == nil {
+		t.Fatal("expected copied context")
+	}
+	defer app.ReleaseContext(copied)
+
+	if copied.app != app {
+		t.Fatal("copied app missing")
+	}
+	if copied.Request() == req {
+		t.Fatal("copied request should be cloned")
+	}
+	if copied.Path() != "/users/42" {
+		t.Fatalf("path=%q", copied.Path())
+	}
+	if copied.Query("page") != "3" {
+		t.Fatalf("query=%q", copied.Query("page"))
+	}
+	if copied.Param("id") != "42" {
+		t.Fatalf("param=%q", copied.Param("id"))
+	}
+	if copied.FullPath() != "/users/:id" {
+		t.Fatalf("fullPath=%q", copied.FullPath())
+	}
+	if route := copied.Route(); route.Path != "/users/:id" || route.Method != http.MethodPost {
+		t.Fatalf("route=%+v", route)
+	}
+	if got, ok := copied.Get("trace"); !ok || got != "abc" {
+		t.Fatalf("store=%v %v", got, ok)
+	}
+	copied.Set("trace", "clone")
+
+	body, err := copied.BodyString()
+	mustDo(t, err)
+	if body != `{"name":"matt"}` {
+		t.Fatalf("body=%q", body)
+	}
+	cloneBody, err := io.ReadAll(copied.Request().Body)
+	mustDo(t, err)
+	if string(cloneBody) != `{"name":"matt"}` {
+		t.Fatalf("request body=%q", string(cloneBody))
+	}
+	if copied.Request().URL == req.URL {
+		t.Fatal("copied URL should be cloned")
+	}
+}
+
 func TestContextBodyBindingAndUploads(t *testing.T) {
 	t.Run("body bytes and bind", func(t *testing.T) {
 		app := NewWithConfig(Config{Validator: validatingStub{}})
@@ -146,6 +233,12 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		mustDo(t, ctx.BindHeader(&payload))
 		if payload.ID != 7 || payload.Page != 2 || payload.Name != "matt" || payload.Auth != "secret" || !payload.Ready {
 			t.Fatalf("payload=%+v", payload)
+		}
+
+		var builderPayload bindPayload
+		mustDo(t, ctx.Binding().JSON(&builderPayload))
+		if builderPayload.Name != "matt" {
+			t.Fatalf("builder payload=%+v", builderPayload)
 		}
 		bodyAgain, err := ctx.BodyBytes()
 		mustDo(t, err)
@@ -181,6 +274,12 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		if formPayload.Name != "mia" || len(formPayload.Tags) != 2 {
 			t.Fatalf("form payload=%+v", formPayload)
 		}
+
+		var builderFormPayload bindPayload
+		mustDo(t, formCtx.Binding().Form(&builderFormPayload))
+		if builderFormPayload.Name != "mia" || len(builderFormPayload.Tags) != 2 {
+			t.Fatalf("builder form payload=%+v", builderFormPayload)
+		}
 	})
 
 	t.Run("validator failure", func(t *testing.T) {
@@ -197,11 +296,16 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 	})
 
 	t.Run("multipart upload helpers", func(t *testing.T) {
+		app := New()
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 		part, err := writer.CreateFormFile("file", "hello.txt")
 		mustDo(t, err)
 		_, err = part.Write([]byte("upload"))
+		mustDo(t, err)
+		part2, err := writer.CreateFormFile("file", "hello-2.txt")
+		mustDo(t, err)
+		_, err = part2.Write([]byte("upload-2"))
 		mustDo(t, err)
 		mustDo(t, writer.WriteField("name", "doc"))
 		mustDo(t, writer.Close())
@@ -210,6 +314,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		req.Header.Set(HeaderContentType, writer.FormDataContentType())
 		ctx, _ := newRecorderContext(t, req)
 		defer ctx.release()
+		ctx.app = app
 
 		file, err := ctx.FormFile("file")
 		mustDo(t, err)
@@ -217,7 +322,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		mustDo(t, err)
 		form, err := ctx.MultipartForm()
 		mustDo(t, err)
-		if form.Value["name"][0] != "doc" || len(files) != 1 || file.Filename != "hello.txt" {
+		if form.Value["name"][0] != "doc" || len(files) != 2 || file.Filename != "hello.txt" {
 			t.Fatal("multipart helpers failed")
 		}
 
@@ -227,6 +332,32 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		mustDo(t, err)
 		if string(data) != "upload" {
 			t.Fatalf("saved file=%q", string(data))
+		}
+
+		var uploadPayload struct {
+			Name      string                  `form:"name"`
+			File      *multipart.FileHeader   `form:"file"`
+			Files     []*multipart.FileHeader `form:"file"`
+			FileValue multipart.FileHeader    `form:"file"`
+			FileList  []multipart.FileHeader  `form:"file"`
+		}
+		mustDo(t, ctx.BindForm(&uploadPayload))
+		if uploadPayload.Name != "doc" ||
+			uploadPayload.File == nil ||
+			uploadPayload.File.Filename != "hello.txt" ||
+			len(uploadPayload.Files) != 2 ||
+			uploadPayload.FileValue.Filename != "hello.txt" ||
+			len(uploadPayload.FileList) != 2 {
+			t.Fatalf("upload payload=%+v", uploadPayload)
+		}
+
+		var builderUploadPayload struct {
+			Name string                `form:"name"`
+			File *multipart.FileHeader `form:"file"`
+		}
+		mustDo(t, ctx.Binding().Form(&builderUploadPayload))
+		if builderUploadPayload.Name != "doc" || builderUploadPayload.File == nil || builderUploadPayload.File.Filename != "hello.txt" {
+			t.Fatalf("builder upload payload=%+v", builderUploadPayload)
 		}
 	})
 }
@@ -452,6 +583,34 @@ func TestDefaultBinderBindAndBindBodyBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("Bind text plain into string", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("hello"))
+		req.Header.Set(HeaderContentType, "text/plain; charset=utf-8")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got string
+		mustDo(t, binder.Bind(ctx, &got))
+		if got != "hello" {
+			t.Fatalf("got=%q", got)
+		}
+	})
+
+	t.Run("Bind YAML into struct", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("name: lin\n"))
+		req.Header.Set(HeaderContentType, "application/x-yaml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			Name string `yaml:"name"`
+		}
+		mustDo(t, binder.Bind(ctx, &got))
+		if got.Name != "lin" {
+			t.Fatalf("got=%+v", got)
+		}
+	})
+
 	t.Run("BindBody empty body", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 		req.Header.Set(HeaderContentType, "application/json")
@@ -459,6 +618,46 @@ func TestDefaultBinderBindAndBindBodyBranches(t *testing.T) {
 		defer ctx.release()
 
 		err := binder.BindBody(ctx, &struct{}{})
+		if err == nil || !strings.Contains(err.Error(), "request body is empty") {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("BindBody text plain into bytes", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("hello"))
+		req.Header.Set(HeaderContentType, "text/plain")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got []byte
+		mustDo(t, binder.BindBody(ctx, &got))
+		if string(got) != "hello" {
+			t.Fatalf("got=%q", string(got))
+		}
+	})
+
+	t.Run("BindBody TOML into struct", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("name = 'lin'\n"))
+		req.Header.Set(HeaderContentType, "application/toml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			Name string `toml:"name"`
+		}
+		mustDo(t, binder.BindBody(ctx, &got))
+		if got.Name != "lin" {
+			t.Fatalf("got=%+v", got)
+		}
+	})
+
+	t.Run("BindBody text plain empty body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
+		req.Header.Set(HeaderContentType, "text/plain")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		err := binder.BindBody(ctx, new(string))
 		if err == nil || !strings.Contains(err.Error(), "request body is empty") {
 			t.Fatalf("err=%v", err)
 		}
@@ -553,6 +752,92 @@ func TestBindXMLAndValidateBranches(t *testing.T) {
 	}
 }
 
+func TestBindTextAndBindingText(t *testing.T) {
+	t.Run("Context BindText supports TextUnmarshaler", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("42"))
+		req.Header.Set(HeaderContentType, "text/plain")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got textInt
+		mustDo(t, ctx.BindText(&got))
+		if got != 42 {
+			t.Fatalf("got=%d", got)
+		}
+	})
+
+	t.Run("Binding Text rejects unsupported target", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("hello"))
+		req.Header.Set(HeaderContentType, "text/plain")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		err := ctx.Binding().Text(&struct{}{})
+		if err == nil || !strings.Contains(err.Error(), "unsupported kind struct") {
+			t.Fatalf("err=%v", err)
+		}
+	})
+}
+
+func TestBindYAMLAndBindTOML(t *testing.T) {
+	t.Run("Context BindYAML", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("name: lin\n"))
+		req.Header.Set(HeaderContentType, "application/yaml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			Name string `yaml:"name"`
+		}
+		mustDo(t, ctx.BindYAML(&got))
+		if got.Name != "lin" {
+			t.Fatalf("got=%+v", got)
+		}
+	})
+
+	t.Run("Binding TOML", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("count = 7\n"))
+		req.Header.Set(HeaderContentType, "application/toml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			Count int `toml:"count"`
+		}
+		mustDo(t, ctx.Binding().TOML(&got))
+		if got.Count != 7 {
+			t.Fatalf("got=%+v", got)
+		}
+	})
+
+	t.Run("BindYAML empty body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
+		req.Header.Set(HeaderContentType, "application/yaml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		err := ctx.BindYAML(&struct{}{})
+		if err == nil || !strings.Contains(err.Error(), "request body is empty") {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("BindTOML decode error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("count = ["))
+		req.Header.Set(HeaderContentType, "application/toml")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		var got struct {
+			Count int `toml:"count"`
+		}
+		err := ctx.BindTOML(&got)
+		if err == nil {
+			t.Fatal("expected TOML decode error")
+		}
+	})
+}
+
 func TestBinderAdditionalErrorBranches(t *testing.T) {
 	binder := defaultBinder{codec: defaultJSONCodec{}}
 
@@ -571,6 +856,13 @@ func TestBinderAdditionalErrorBranches(t *testing.T) {
 		err := binder.Bind(ctx, &payload)
 		if err == nil {
 			t.Fatal("expected bind error from invalid path/query data")
+		}
+		var bindErr *BindError
+		if !errors.As(err, &bindErr) {
+			t.Fatalf("err=%T", err)
+		}
+		if bindErr.Source != "path" || bindErr.Field != "ID" {
+			t.Fatalf("bind err=%+v", bindErr)
 		}
 	})
 
