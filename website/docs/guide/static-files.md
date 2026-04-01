@@ -1,6 +1,6 @@
 ---
 id: static-files
-title: Static Files
+title: 📁 Static Files
 description: Serve directories, single files, and custom filesystem-backed assets.
 sidebar_position: 6
 ---

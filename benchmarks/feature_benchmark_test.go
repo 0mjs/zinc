@@ -197,16 +197,16 @@ func buildZincAPIBindHeaderQueryJSONHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkHeaderQueryJSONInput
-		if err := c.BindPath(&input); err != nil {
+		if err := c.Bind().Path(&input); err != nil {
 			return err
 		}
-		if err := c.BindQuery(&input); err != nil {
+		if err := c.Bind().Query(&input); err != nil {
 			return err
 		}
-		if err := c.BindHeader(&input); err != nil {
+		if err := c.Bind().Header(&input); err != nil {
 			return err
 		}
-		if err := c.BindJSON(&input); err != nil {
+		if err := c.Bind().JSON(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkHeaderQueryInput(input)
@@ -311,7 +311,7 @@ func buildZincAPIBindInvalidJSONHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/payload", func(c *Context) error {
 		var input benchmarkValidationInput
-		if err := c.BindJSON(&input); err != nil {
+		if err := c.Bind().JSON(&input); err != nil {
 			return c.Status(http.StatusBadRequest).NoContent()
 		}
 		benchmarkSinkBool = false
@@ -365,7 +365,7 @@ func buildZincAPIBindValidationFailureHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/validate", func(c *Context) error {
 		var input benchmarkValidationInput
-		if err := c.BindJSON(&input); err != nil {
+		if err := c.Bind().JSON(&input); err != nil {
 			return c.Status(http.StatusBadRequest).NoContent()
 		}
 		if !validateBenchmarkInput(input) {
@@ -516,7 +516,7 @@ func buildZincLargeJSONBindHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/bulk", func(c *Context) error {
 		var input benchmarkLargeJSONEnvelope
-		if err := c.BindJSON(&input); err != nil {
+		if err := c.Bind().JSON(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkLargeJSONEnvelope(input)
@@ -598,7 +598,7 @@ func buildZincNestedGroupMiddlewareAPIHandler() http.Handler {
 	admin := v1.Group("/admin", zincMiddleware("mw4"), zincMiddleware("mw5"))
 	mustNoErr(admin.Get("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkAPIBindInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkAPIInput(input)

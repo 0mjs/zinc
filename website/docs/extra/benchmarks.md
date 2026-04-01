@@ -1,6 +1,6 @@
 ---
 id: benchmarks
-title: Benchmarks
+title: ⚡ Benchmarks
 description: What Zinc measures, what the current peer-only suite says, and where to find the full data.
 sidebar_position: 1
 ---

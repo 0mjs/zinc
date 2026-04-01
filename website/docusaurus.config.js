@@ -7,7 +7,7 @@ const config = {
   tagline: "Fast, explicit API docs for a fast, explicit Go framework.",
   favicon: "img/logo.svg",
 
-  url: "https://zinc.carbonsoft.com",
+  url: "https://zinc.carbonsoft.sh",
   baseUrl: "/",
 
   organizationName: "0mjs",
@@ -47,9 +47,7 @@ const config = {
         src: "img/logo.svg",
       },
       items: [
-        { type: "docSidebar", sidebarId: "docs", position: "left", label: "Docs" },
-        { to: "/api/app", label: "API", position: "left" },
-        { to: "/extra/benchmarks", label: "Benchmarks", position: "left" },
+        { to: "/", label: "Home", position: "left" },
         { href: "https://pkg.go.dev/github.com/0mjs/zinc", label: "pkg.go.dev", position: "right" },
         { href: "https://github.com/0mjs/zinc", label: "GitHub", position: "right" },
       ],
@@ -64,6 +62,7 @@ const config = {
             { label: "Routing", to: "/guide/routing" },
             { label: "Binding", to: "/guide/binding" },
             { label: "App API", to: "/api/app" },
+            { label: "Cookbook", to: "/cookbook" },
           ],
         },
         {

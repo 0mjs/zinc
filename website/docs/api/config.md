@@ -1,6 +1,6 @@
 ---
 id: config
-title: Config
+title: ⚙️ Config
 description: Routing behavior, server limits, proxy handling, and extension points.
 sidebar_position: 5
 ---
@@ -36,7 +36,7 @@ Important defaults include:
 | `BodyLimit` | Maximum request body size |
 | `ReadTimeout`, `WriteTimeout`, `IdleTimeout` | Server timeouts |
 | `ProxyHeader`, `TrustedProxies` | Proxy-aware client IP behavior |
-| `Binder`, `Validator`, `Renderer`, `JSONCodec`, `ErrorHandler` | Extension points |
+| `RequestBinder`, `Validator`, `Renderer`, `JSONCodec`, `ErrorHandler` | Extension points |
 | `RouteCacheSize` | Router cache size |
 
 Use `NewWithConfig` whenever your application needs more than Zinc’s defaults.

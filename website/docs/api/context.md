@@ -1,6 +1,6 @@
 ---
 id: context
-title: Context API
+title: 🧠 Context
 description: The request-scoped API surface for handlers and middleware.
 sidebar_position: 3
 ---
@@ -36,22 +36,10 @@ sidebar_position: 3
 
 ## Binding
 
-Use either:
+Primary binding entry point:
 
-- `Bind(...)`
-- `Binding().JSON(...)`, `Binding().Query(...)`, and related explicit helpers
-
-Context also exposes source-specific bind helpers such as:
-
-- `BindJSON`
-- `BindXML`
-- `BindYAML`
-- `BindTOML`
-- `BindText`
-- `BindForm`
-- `BindHeader`
-- `BindQuery`
-- `BindPath`
+- `Bind().All(...)`
+- `Bind().JSON(...)`, `Bind().Query(...)`, and related explicit helpers
 
 ## Responses
 

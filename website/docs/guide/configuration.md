@@ -1,6 +1,6 @@
 ---
 id: configuration
-title: Configuration
+title: ⚙️ Configuration
 description: Understand Zinc’s routing, server, proxy, and extensibility settings.
 sidebar_position: 8
 ---
@@ -51,7 +51,7 @@ These affect how client IP helpers behave.
 
 Plug in application-specific behavior with:
 
-- `Binder`
+- `RequestBinder`
 - `Validator`
 - `Renderer`
 - `JSONCodec`

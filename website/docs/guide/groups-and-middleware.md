@@ -1,6 +1,6 @@
 ---
 id: groups-and-middleware
-title: Groups and Middleware
+title: 🧩 Groups and Middleware
 description: Compose app-wide, prefix-scoped, and group-scoped behavior cleanly.
 sidebar_position: 2
 ---

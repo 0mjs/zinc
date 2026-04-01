@@ -1,6 +1,6 @@
 ---
 id: routing
-title: Routing
+title: 🧭 Routing
 description: Register routes, use params and wildcards, group APIs, and generate URLs from named routes.
 sidebar_position: 1
 toc_max_heading_level: 4

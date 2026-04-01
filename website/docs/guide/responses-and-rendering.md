@@ -1,6 +1,6 @@
 ---
 id: responses-and-rendering
-title: Responses and Rendering
+title: 📤 Responses and Rendering
 description: Return JSON, XML, YAML, TOML, HTML, templates, files, downloads, streams, and redirects.
 sidebar_position: 5
 ---

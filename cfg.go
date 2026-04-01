@@ -20,11 +20,11 @@ type Config struct {
 	ProxyHeader    string
 	TrustedProxies []string
 
-	Binder       Binder
-	Validator    Validator
-	Renderer     Renderer
-	JSONCodec    JSONCodec
-	ErrorHandler ErrorHandler
+	RequestBinder RequestBinder
+	Validator     Validator
+	Renderer      Renderer
+	JSONCodec     JSONCodec
+	ErrorHandler  ErrorHandler
 
 	RouteCacheSize int
 }

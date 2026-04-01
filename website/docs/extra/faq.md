@@ -1,6 +1,6 @@
 ---
 id: faq
-title: FAQ
+title: ❓ FAQ
 description: Common Zinc questions about performance, compatibility, and framework shape.
 sidebar_position: 2
 ---

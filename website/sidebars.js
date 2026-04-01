@@ -1,12 +1,57 @@
 module.exports = {
   docs: [
-    "intro",
+    {
+      type: "doc",
+      id: "intro",
+      label: "👋 Welcome",
+    },
     {
       type: "category",
-      label: "Guide",
+      label: "🛠️ API",
       link: {
         type: "generated-index",
-        title: "Guide",
+        title: "🛠️ API",
+        description: "Reference pages for Zinc’s primary public types and runtime surface.",
+      },
+      items: [
+        {
+          type: "doc",
+          id: "api/app",
+          label: "🚀 App",
+        },
+        {
+          type: "doc",
+          id: "api/group",
+          label: "👥 Group",
+        },
+        {
+          type: "doc",
+          id: "api/context",
+          label: "🧠 Context",
+        },
+        {
+          type: "doc",
+          id: "api/binding",
+          label: "📎 Bind",
+        },
+        {
+          type: "doc",
+          id: "api/config",
+          label: "⚙️ Config",
+        },
+        {
+          type: "doc",
+          id: "api/errors",
+          label: "🚨 Errors",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "🧭 Guide",
+      link: {
+        type: "generated-index",
+        title: "🧭 Guide",
         description: "Start here for Zinc concepts, patterns, and practical examples.",
       },
       items: [
@@ -22,37 +67,31 @@ module.exports = {
     },
     {
       type: "category",
-      label: "API",
+      label: "🛡️ Middleware",
       link: {
         type: "generated-index",
-        title: "API Reference",
-        description: "High-signal reference pages for Zinc’s primary public types.",
+        title: "🛡️ Middleware",
+        description: "Detailed docs for Zinc’s first-party middleware package.",
       },
       items: [
-        "api/app",
-        "api/group",
-        "api/context",
-        "api/binding",
-        "api/config",
-        "api/errors",
+        "middleware/overview",
+        "middleware/cors",
+        "middleware/csrf",
+        "middleware/jwt",
+        "middleware/basic-auth",
+        "middleware/request-logger",
+        "middleware/body-limit",
+        "middleware/body-dump",
+        "middleware/context-timeout",
+        "middleware/rate-limiter",
       ],
     },
     {
       type: "category",
-      label: "Middleware",
+      label: "⚡ Extra",
       link: {
         type: "generated-index",
-        title: "Middleware",
-        description: "Overview of Zinc’s first-party middleware package.",
-      },
-      items: ["middleware/overview"],
-    },
-    {
-      type: "category",
-      label: "Extra",
-      link: {
-        type: "generated-index",
-        title: "Extra",
+        title: "⚡ Extra",
         description: "Benchmarks, design notes, and practical FAQ material.",
       },
       items: ["extra/benchmarks", "extra/faq"],

@@ -1,20 +1,20 @@
 ---
 id: binding
-title: Binding API
-description: The binder interfaces, builder methods, formats, and validation flow.
+title: 📎 Bind
+description: The request binding interfaces, `c.Bind()` helper, supported formats, and validation flow.
 sidebar_position: 4
 ---
 
-Zinc’s binding story is centered around three types:
+Zinc’s binding story is centered around three pieces:
 
-- `Binder`
+- `RequestBinder`
 - `Validator`
-- `Binding`
+- the `Bind` helper returned by `c.Bind()`
 
-## Binder interface
+## RequestBinder interface
 
 ```go
-type Binder interface {
+type RequestBinder interface {
 	Bind(*Context, any) error
 	BindBody(*Context, any) error
 	BindQuery(*Context, any) error
@@ -24,15 +24,26 @@ type Binder interface {
 }
 ```
 
-Provide a custom binder in `Config` if you need different decoding behavior.
+Provide a custom request binder in `Config` if you need different decoding behavior.
 
-## Binding builder
+## `c.Bind()` helper
 
-`c.Binding()` returns a `*Binding` helper with methods for explicit source decoding.
+`c.Bind()` is Zinc's primary binding API.
+
+```go
+if err := c.Bind().All(&input); err != nil {
+	return err
+}
+```
+
+Use it when you want either:
+
+- the inferred all-source bind path with `All(...)`
+- an explicit source path like `JSON(...)` or `Query(...)`
 
 | Method | Purpose |
 |---|---|
-| `All` | Use the configured binder across supported request sources |
+| `All` | Use the configured request binder across supported request sources |
 | `Body` | Decode request body only |
 | `JSON`, `XML`, `YAML`, `TOML`, `Text` | Decode a specific body format |
 | `Form` | Bind form or multipart form data |

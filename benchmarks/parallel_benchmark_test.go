@@ -172,7 +172,7 @@ func buildZincParallelAPIHappyPathHandler() http.Handler {
 	)
 	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkAPIBindInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return c.Status(http.StatusBadRequest).String("BAD")
 		}
 		if !zincMiddlewareSatisfied(c) || input.TeamID != 42 || input.UserID != 7 || !input.Verbose || input.Limit != 25 {

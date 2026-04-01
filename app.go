@@ -187,8 +187,8 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.JSONCodec == nil {
 		cfg.JSONCodec = defaultJSONCodec{}
 	}
-	if cfg.Binder == nil {
-		cfg.Binder = defaultBinder{codec: cfg.JSONCodec}
+	if cfg.RequestBinder == nil {
+		cfg.RequestBinder = defaultBinder{codec: cfg.JSONCodec}
 	}
 	if cfg.ErrorHandler == nil {
 		cfg.ErrorHandler = defaultErrorHandler

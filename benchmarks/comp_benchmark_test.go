@@ -902,7 +902,7 @@ func buildZincAPIParamQueryJSONHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkAPIBindInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkAPIInput(input)
@@ -968,7 +968,7 @@ func buildZincAPIHappyPathHandler() http.Handler {
 	)
 	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkAPIBindInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkAPIInput(input)
@@ -1057,7 +1057,7 @@ func buildZincAPIBindJSONHappyPathHandler() http.Handler {
 	)
 	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input benchmarkAPIBindInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkAPIInput(input)

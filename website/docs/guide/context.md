@@ -1,6 +1,6 @@
 ---
 id: context
-title: Context
+title: 🧠 Context
 description: Work with request data, response state, route metadata, and request-scoped values.
 sidebar_position: 3
 ---

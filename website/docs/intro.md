@@ -1,7 +1,7 @@
 ---
 slug: /
 id: intro
-title: Welcome to Zinc
+title: 👋 Welcome
 description: Fast, explicit, net/http-native API development for Go.
 sidebar_position: 1
 ---

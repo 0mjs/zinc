@@ -170,11 +170,20 @@ body {
 }
 
 .menu {
-  padding: 0.75rem 0;
+  padding: 0.45rem 0;
+}
+
+.theme-doc-sidebar-menu {
+  padding: 0;
+}
+
+.theme-doc-sidebar-menu > .menu__list {
+  margin: 0;
+  padding: 0;
 }
 
 .menu__list-item {
-  margin: 0;
+  margin: 0.08rem 0;
 }
 
 .menu__list-item-collapsible,
@@ -189,14 +198,28 @@ body {
 
 .menu__list-item-collapsible {
   margin: 0;
-  padding-left: 1rem;
-  padding-right: 1rem;
+  padding: 0;
 }
 
 .menu__link {
   margin: 0;
-  padding-left: 2rem;
-  padding-right: 1rem;
+  padding: 0.48rem 1rem;
+}
+
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item > .menu__link,
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item > .menu__list-item-collapsible {
+  padding-left: 1rem;
+  padding-right: 1.25rem;
+}
+
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item > .menu__list {
+  margin: 0;
+  padding: 0;
+}
+
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item > .menu__list .menu__link {
+  padding-left: 1.75rem;
+  padding-right: 1.25rem;
 }
 
 .menu__list-item-collapsible:hover,
@@ -212,10 +235,12 @@ body {
 
 .menu__caret {
   padding: 0;
+  margin-right: 0.3rem;
 }
 
 .menu__caret:before {
   opacity: 0.7;
+  transform: scale(0.92);
 }
 
 .menu__caret:before,

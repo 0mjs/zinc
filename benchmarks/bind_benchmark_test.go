@@ -63,7 +63,7 @@ func buildZincBindQueryOnlyHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Get("/search", func(c *Context) error {
 		var input zincDiagnosticBindQueryInput
-		if err := c.BindQuery(&input); err != nil {
+		if err := c.Bind().Query(&input); err != nil {
 			return err
 		}
 		benchmarkSinkInt = input.Page
@@ -78,7 +78,7 @@ func buildZincBindPathQueryJSONHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
 		var input zincDiagnosticBindAPIInput
-		if err := c.Bind(&input); err != nil {
+		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		benchmarkSinkInt = input.TeamID + input.UserID + input.Limit + len(input.Roles)
@@ -93,12 +93,12 @@ func buildZincBindJSONCachedBodyHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/payload", func(c *Context) error {
 		var proof zincDiagnosticBindAPIInput
-		if err := c.BindJSON(&proof); err != nil {
+		if err := c.Bind().JSON(&proof); err != nil {
 			return err
 		}
 
 		var input zincDiagnosticBindAPIInput
-		if err := c.BindJSON(&input); err != nil {
+		if err := c.Bind().JSON(&input); err != nil {
 			return err
 		}
 
@@ -114,7 +114,7 @@ func buildZincBindFormHandler() http.Handler {
 	app := New()
 	mustNoErr(app.Post("/submit", func(c *Context) error {
 		var input zincDiagnosticBindFormInput
-		if err := c.BindForm(&input); err != nil {
+		if err := c.Bind().Form(&input); err != nil {
 			return err
 		}
 		benchmarkSinkInt = input.Count + len(input.Tags)

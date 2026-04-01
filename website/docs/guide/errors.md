@@ -1,6 +1,6 @@
 ---
 id: errors
-title: Errors
+title: 🚨 Errors
 description: Return structured HTTP errors, short-circuit handlers cleanly, and customize error handling globally.
 sidebar_position: 7
 ---
