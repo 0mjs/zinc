@@ -165,7 +165,7 @@ func TestBinderWrapperCoverage(t *testing.T) {
 	var fromPath struct {
 		ID int `path:"id"`
 	}
-	mustDo(t, ctx.BindPath(&fromPath))
+	mustDo(t, ctx.Bind().Path(&fromPath))
 	if fromPath.ID != 12 {
 		t.Fatalf("path payload=%+v", fromPath)
 	}
@@ -174,21 +174,21 @@ func TestBinderWrapperCoverage(t *testing.T) {
 		Page  int  `query:"page"`
 		Ready bool `query:"ready"`
 	}
-	mustDo(t, ctx.BindQuery(&fromQuery))
+	mustDo(t, ctx.Bind().Query(&fromQuery))
 	if fromQuery.Page != 5 || !fromQuery.Ready {
 		t.Fatalf("query payload=%+v", fromQuery)
 	}
 
 	var fromBody bindPayload
-	mustDo(t, ctx.BindJSON(&fromBody))
+	mustDo(t, ctx.Bind().JSON(&fromBody))
 	if fromBody.Name != "lin" {
 		t.Fatalf("json payload=%+v", fromBody)
 	}
 
 	var viaBinder bindPayload
-	mustDo(t, app.config.Binder.BindBody(ctx, &viaBinder))
+	mustDo(t, app.config.RequestBinder.BindBody(ctx, &viaBinder))
 	if viaBinder.Name != "lin" {
-		t.Fatalf("binder payload=%+v", viaBinder)
+		t.Fatalf("request binder payload=%+v", viaBinder)
 	}
 }
 

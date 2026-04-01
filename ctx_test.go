@@ -229,14 +229,14 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		}
 
 		var payload bindPayload
-		mustDo(t, ctx.Bind(&payload))
-		mustDo(t, ctx.BindHeader(&payload))
+		mustDo(t, ctx.Bind().All(&payload))
+		mustDo(t, ctx.Bind().Header(&payload))
 		if payload.ID != 7 || payload.Page != 2 || payload.Name != "matt" || payload.Auth != "secret" || !payload.Ready {
 			t.Fatalf("payload=%+v", payload)
 		}
 
 		var builderPayload bindPayload
-		mustDo(t, ctx.Binding().JSON(&builderPayload))
+		mustDo(t, ctx.Bind().JSON(&builderPayload))
 		if builderPayload.Name != "matt" {
 			t.Fatalf("builder payload=%+v", builderPayload)
 		}
@@ -258,7 +258,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		var xmlPayload struct {
 			Name string `xml:"Name"`
 		}
-		mustDo(t, xmlCtx.BindXML(&xmlPayload))
+		mustDo(t, xmlCtx.Bind().XML(&xmlPayload))
 		if xmlPayload.Name != "zoe" {
 			t.Fatalf("xml payload=%+v", xmlPayload)
 		}
@@ -270,13 +270,13 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		defer formCtx.release()
 		formCtx.app = app
 		var formPayload bindPayload
-		mustDo(t, formCtx.BindForm(&formPayload))
+		mustDo(t, formCtx.Bind().Form(&formPayload))
 		if formPayload.Name != "mia" || len(formPayload.Tags) != 2 {
 			t.Fatalf("form payload=%+v", formPayload)
 		}
 
 		var builderFormPayload bindPayload
-		mustDo(t, formCtx.Binding().Form(&builderFormPayload))
+		mustDo(t, formCtx.Bind().Form(&builderFormPayload))
 		if builderFormPayload.Name != "mia" || len(builderFormPayload.Tags) != 2 {
 			t.Fatalf("builder form payload=%+v", builderFormPayload)
 		}
@@ -290,7 +290,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 		defer ctx.release()
 		ctx.app = app
 		var payload bindPayload
-		if err := ctx.Bind(&payload); err == nil {
+		if err := ctx.Bind().All(&payload); err == nil {
 			t.Fatal("expected validation error")
 		}
 	})
@@ -341,7 +341,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 			FileValue multipart.FileHeader    `form:"file"`
 			FileList  []multipart.FileHeader  `form:"file"`
 		}
-		mustDo(t, ctx.BindForm(&uploadPayload))
+		mustDo(t, ctx.Bind().Form(&uploadPayload))
 		if uploadPayload.Name != "doc" ||
 			uploadPayload.File == nil ||
 			uploadPayload.File.Filename != "hello.txt" ||
@@ -355,7 +355,7 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 			Name string                `form:"name"`
 			File *multipart.FileHeader `form:"file"`
 		}
-		mustDo(t, ctx.Binding().Form(&builderUploadPayload))
+		mustDo(t, ctx.Bind().Form(&builderUploadPayload))
 		if builderUploadPayload.Name != "doc" || builderUploadPayload.File == nil || builderUploadPayload.File.Filename != "hello.txt" {
 			t.Fatalf("builder upload payload=%+v", builderUploadPayload)
 		}
@@ -723,7 +723,7 @@ func TestBindXMLAndValidateBranches(t *testing.T) {
 	defer ctx.release()
 
 	var payload struct{}
-	err := ctx.BindXML(&payload)
+	err := ctx.Bind().XML(&payload)
 	if err == nil || !strings.Contains(err.Error(), "request body is empty") {
 		t.Fatalf("err=%v", err)
 	}
@@ -733,7 +733,7 @@ func TestBindXMLAndValidateBranches(t *testing.T) {
 	ctx2, _ := newRecorderContext(t, req2)
 	defer ctx2.release()
 
-	err = ctx2.BindXML(&payload)
+	err = ctx2.Bind().XML(&payload)
 	if err == nil {
 		t.Fatal("expected XML decode error")
 	}
@@ -760,7 +760,7 @@ func TestBindTextAndBindingText(t *testing.T) {
 		defer ctx.release()
 
 		var got textInt
-		mustDo(t, ctx.BindText(&got))
+		mustDo(t, ctx.Bind().Text(&got))
 		if got != 42 {
 			t.Fatalf("got=%d", got)
 		}
@@ -772,7 +772,7 @@ func TestBindTextAndBindingText(t *testing.T) {
 		ctx, _ := newRecorderContext(t, req)
 		defer ctx.release()
 
-		err := ctx.Binding().Text(&struct{}{})
+		err := ctx.Bind().Text(&struct{}{})
 		if err == nil || !strings.Contains(err.Error(), "unsupported kind struct") {
 			t.Fatalf("err=%v", err)
 		}
@@ -789,7 +789,7 @@ func TestBindYAMLAndBindTOML(t *testing.T) {
 		var got struct {
 			Name string `yaml:"name"`
 		}
-		mustDo(t, ctx.BindYAML(&got))
+		mustDo(t, ctx.Bind().YAML(&got))
 		if got.Name != "lin" {
 			t.Fatalf("got=%+v", got)
 		}
@@ -804,7 +804,7 @@ func TestBindYAMLAndBindTOML(t *testing.T) {
 		var got struct {
 			Count int `toml:"count"`
 		}
-		mustDo(t, ctx.Binding().TOML(&got))
+		mustDo(t, ctx.Bind().TOML(&got))
 		if got.Count != 7 {
 			t.Fatalf("got=%+v", got)
 		}
@@ -816,7 +816,7 @@ func TestBindYAMLAndBindTOML(t *testing.T) {
 		ctx, _ := newRecorderContext(t, req)
 		defer ctx.release()
 
-		err := ctx.BindYAML(&struct{}{})
+		err := ctx.Bind().YAML(&struct{}{})
 		if err == nil || !strings.Contains(err.Error(), "request body is empty") {
 			t.Fatalf("err=%v", err)
 		}
@@ -831,7 +831,7 @@ func TestBindYAMLAndBindTOML(t *testing.T) {
 		var got struct {
 			Count int `toml:"count"`
 		}
-		err := ctx.BindTOML(&got)
+		err := ctx.Bind().TOML(&got)
 		if err == nil {
 			t.Fatal("expected TOML decode error")
 		}
@@ -977,7 +977,7 @@ func TestBinderAdditionalErrorBranches(t *testing.T) {
 		ctx, _ := newRecorderContext(t, req)
 		defer ctx.release()
 		var payload struct{}
-		if err := ctx.BindXML(&payload); err == nil || !strings.Contains(err.Error(), "read failed") {
+		if err := ctx.Bind().XML(&payload); err == nil || !strings.Contains(err.Error(), "read failed") {
 			t.Fatalf("err=%v", err)
 		}
 	})

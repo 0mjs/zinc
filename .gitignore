@@ -1,3 +1,4 @@
+# Framework
 _/*
 .air.toml
 .DS_Store
@@ -7,3 +8,16 @@ vendor/*
 examples/*
 .vscode/*
 *.txt
+
+# Docs
+website/node_modules/
+website/.docusaurus/
+website/build/
+website/.cache/
+website/.temp/
+website/.vite/
+website/npm-debug.log*
+website/yarn-debug.log*
+website/yarn-error.log*
+website/pnpm-debug.log*
+website/*_examples/*

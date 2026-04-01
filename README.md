@@ -9,7 +9,7 @@
 
 Zinc is an Express-inspired, idiomatic Go API framework built on `net/http`.
 
-- [Documentation](https://zinc.carbonsoft.com)
+- [Documentation](https://zinc.carbonsoft.sh)
 - [Quickstart](https://zinc.carbonsoft.sh/guide/quick-start)
 - [Middleware](https://zinc.carbonsoft.sh/middleware)
 - [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
@@ -88,7 +88,7 @@ type CreateUserInput struct {
 
 app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 	var input CreateUserInput
-	if err := c.Bind(&input); err != nil {
+	if err := c.Bind().All(&input); err != nil {
 		return err
 	}
 
@@ -112,7 +112,7 @@ app := zinc.NewWithConfig(zinc.Config{
 })
 ```
 
-`Config` also lets you plug in a custom `Binder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
+`Config` also lets you plug in a custom `RequestBinder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
 
 ```go
 views := template.Must(template.ParseGlob("templates/*.html"))

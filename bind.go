@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Binder interface {
+type RequestBinder interface {
 	Bind(*Context, any) error
 	BindBody(*Context, any) error
 	BindQuery(*Context, any) error
@@ -32,7 +32,7 @@ type Renderer interface {
 	Render(w io.Writer, name string, data any, c *Context) error
 }
 
-type Binding struct {
+type Bind struct {
 	c *Context
 }
 
@@ -246,23 +246,19 @@ func (b defaultBinder) BindPath(c *Context, v any) error {
 	return c.Validate(v)
 }
 
-func (c *Context) Bind(v any) error {
-	return c.Binding().All(v)
+func (c *Context) Bind() *Bind {
+	return &Bind{c: c}
 }
 
-func (c *Context) Binding() *Binding {
-	return &Binding{c: c}
+func (b *Bind) All(v any) error {
+	return b.c.app.config.RequestBinder.Bind(b.c, v)
 }
 
-func (b *Binding) All(v any) error {
-	return b.c.app.config.Binder.Bind(b.c, v)
+func (b *Bind) Body(v any) error {
+	return b.c.app.config.RequestBinder.BindBody(b.c, v)
 }
 
-func (b *Binding) Body(v any) error {
-	return b.c.app.config.Binder.BindBody(b.c, v)
-}
-
-func (b *Binding) JSON(v any) error {
+func (b *Bind) JSON(v any) error {
 	if b == nil || b.c == nil {
 		return errors.New("context is nil")
 	}
@@ -280,65 +276,29 @@ func (b *Binding) JSON(v any) error {
 	return b.c.Validate(v)
 }
 
-func (b *Binding) Text(v any) error {
+func (b *Bind) Text(v any) error {
 	if b == nil || b.c == nil {
 		return errors.New("context is nil")
 	}
 	return bindPlainTextBody(b.c, v, true)
 }
 
-func (b *Binding) YAML(v any) error {
+func (b *Bind) YAML(v any) error {
 	if b == nil || b.c == nil {
 		return errors.New("context is nil")
 	}
 	return bindYAMLBody(b.c, v, true)
 }
 
-func (b *Binding) TOML(v any) error {
+func (b *Bind) TOML(v any) error {
 	if b == nil || b.c == nil {
 		return errors.New("context is nil")
 	}
 	return bindTOMLBody(b.c, v, true)
 }
 
-func (b *Binding) XML(v any) error {
-	return b.c.BindXML(v)
-}
-
-func (b *Binding) Form(v any) error {
-	return b.c.app.config.Binder.BindForm(b.c, v)
-}
-
-func (b *Binding) Query(v any) error {
-	return b.c.app.config.Binder.BindQuery(b.c, v)
-}
-
-func (b *Binding) Header(v any) error {
-	return b.c.app.config.Binder.BindHeader(b.c, v)
-}
-
-func (b *Binding) Path(v any) error {
-	return b.c.app.config.Binder.BindPath(b.c, v)
-}
-
-func (c *Context) BindJSON(v any) error {
-	return c.Binding().JSON(v)
-}
-
-func (c *Context) BindText(v any) error {
-	return c.Binding().Text(v)
-}
-
-func (c *Context) BindYAML(v any) error {
-	return c.Binding().YAML(v)
-}
-
-func (c *Context) BindTOML(v any) error {
-	return c.Binding().TOML(v)
-}
-
-func (c *Context) BindXML(v any) error {
-	bodyLen, readErr, decodeErr := c.readAndCacheBody(func(r io.Reader) error {
+func (b *Bind) XML(v any) error {
+	bodyLen, readErr, decodeErr := b.c.readAndCacheBody(func(r io.Reader) error {
 		return xml.NewDecoder(r).Decode(v)
 	})
 	if readErr != nil {
@@ -350,23 +310,23 @@ func (c *Context) BindXML(v any) error {
 	if decodeErr != nil {
 		return decodeErr
 	}
-	return c.Validate(v)
+	return b.c.Validate(v)
 }
 
-func (c *Context) BindForm(v any) error {
-	return c.Binding().Form(v)
+func (b *Bind) Form(v any) error {
+	return b.c.app.config.RequestBinder.BindForm(b.c, v)
 }
 
-func (c *Context) BindQuery(v any) error {
-	return c.Binding().Query(v)
+func (b *Bind) Query(v any) error {
+	return b.c.app.config.RequestBinder.BindQuery(b.c, v)
 }
 
-func (c *Context) BindHeader(v any) error {
-	return c.Binding().Header(v)
+func (b *Bind) Header(v any) error {
+	return b.c.app.config.RequestBinder.BindHeader(b.c, v)
 }
 
-func (c *Context) BindPath(v any) error {
-	return c.Binding().Path(v)
+func (b *Bind) Path(v any) error {
+	return b.c.app.config.RequestBinder.BindPath(b.c, v)
 }
 
 func (c *Context) Validate(v any) error {
