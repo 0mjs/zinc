@@ -145,7 +145,7 @@ Latest local peer-only snapshot (`Apple M1 Pro`, `darwin/arm64`, `count=1` rerun
 
 - Zinc wins `65/85` rows overall against `Gin`, `Echo`, and `Chi`.
 - Excluding throughput, Zinc wins `65/77` rows.
-- Full tables and remaining gaps live in [BENCKMARKS.md](/Users/matt/dev/oss/zinc/BENCKMARKS.md).
+- Full tables and remaining gaps live in [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md).
 
 Selected highlights:
 
@@ -158,7 +158,7 @@ Selected highlights:
 | `RouteRegistrationStatic` | `57.88 µs` | `76.33 µs` | `337.4 µs` | `85.04 µs` | 🥇 Zinc |
 | `ScenarioAll/ParseAPI26` | `118.2 ns` | `120.9 ns` | `155.4 ns` | `370.9 ns` | 🥇 Zinc |
 
-Throughput is currently the weakest category in the peer-only suite; the detailed breakdown is in [BENCKMARKS.md](/Users/matt/dev/oss/zinc/BENCKMARKS.md).
+Throughput is currently the weakest category in the peer-only suite; the detailed breakdown is in [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md).
 
 
 ## Optional Middleware
