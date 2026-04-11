@@ -5,7 +5,7 @@ const { themes } = require("prism-react-renderer");
 const config = {
   title: "Zinc",
   tagline: "Fast, explicit API docs for a fast, explicit Go framework.",
-  favicon: "img/logo.svg",
+  favicon: "img/z_logo.png",
 
   url: "https://zinc.carbonsoft.sh",
   baseUrl: "/",
@@ -14,7 +14,11 @@ const config = {
   projectName: "zinc",
 
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
+  },
 
   i18n: {
     defaultLocale: "en",
@@ -44,7 +48,7 @@ const config = {
       title: "Zinc",
       logo: {
         alt: "Zinc",
-        src: "img/logo.svg",
+        src: "img/z_logo.png",
       },
       items: [
         { to: "/", label: "Home", position: "left" },

@@ -182,7 +182,18 @@ app.Use(middleware.BodyDump(func(c *zinc.Context, snapshot middleware.BodyDumpSn
 	log.Printf("%s %s -> %d", snapshot.Method, snapshot.Path, snapshot.Status)
 }))
 
+app.Use(middleware.Recover())
+app.Use(middleware.RequestID())
 app.Use(middleware.CORS("https://app.example.com"))
+app.Use(middleware.Decompress())
+app.Use(middleware.Gzip())
+app.Use(middleware.MethodOverride())
+app.Use(middleware.Secure())
+app.Use(middleware.TrailingSlash())
+app.Use(middleware.KeyAuth(middleware.KeyAuthStatic(os.Getenv("API_KEY"))))
+app.Use(middleware.Prometheus())
+
+app.Get("/metrics", middleware.PrometheusHandler())
 
 admin := app.Group("/admin")
 admin.Use(middleware.BodyLimit(256 * middleware.KB))

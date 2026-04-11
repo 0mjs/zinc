@@ -1,0 +1,493 @@
+package middleware
+
+import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/0mjs/zinc"
+)
+
+func TestRequestIDDefaultGeneratorAndFallbackValue(t *testing.T) {
+	app := zinc.New()
+	app.Use(RequestID())
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		id := RequestIDValue(c)
+		if len(id) != 32 {
+			t.Fatalf("request id length=%d id=%q", len(id), id)
+		}
+		return c.String(id)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get(zinc.HeaderXRequestID); got != rec.Body.String() {
+		t.Fatalf("header=%q body=%q", got, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(zinc.HeaderXRequestID, "fallback")
+	app = zinc.New()
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		if got := RequestIDValue(c); got != "fallback" {
+			t.Fatalf("fallback request id=%q", got)
+		}
+		return c.String("ok")
+	}))
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+}
+
+func TestKeyAuthExtractorsAndFirstFallback(t *testing.T) {
+	app := zinc.New()
+	app.Use(KeyAuthWithConfig(KeyAuthConfig{
+		Extractor: KeyAuthFromFirst(
+			KeyAuthFromHeader("X-Missing"),
+			KeyAuthFromHeaderPrefix("X-API-Key", "Token "),
+			KeyAuthFromCookie("api_key"),
+		),
+		Validator: KeyAuthStaticKeys("secret", "backup"),
+	}))
+	mustNoErrHardening(t, app.Get("/private", func(c *zinc.Context) error {
+		state := MustKeyAuthCurrent(c)
+		return c.String(state.Key + ":" + string(state.Source))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("X-API-Key", "Token backup")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "backup:"+string(KeyAuthSourceHeader) {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.AddCookie(&http.Cookie{Name: "api_key", Value: "secret"})
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "secret:"+string(KeyAuthSourceCookie) {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestKeyAuthCustomErrorHandlerCanReturnHTTPError(t *testing.T) {
+	app := zinc.New()
+	app.Use(KeyAuthWithConfig(KeyAuthConfig{
+		Validator: KeyAuthStatic("secret"),
+		ErrorHandler: func(_ *zinc.Context, err error) error {
+			if errors.Is(err, ErrKeyAuthKeyMissing) {
+				return zinc.ErrForbidden
+			}
+			return err
+		},
+	}))
+	mustNoErrHardening(t, app.Get("/private", func(c *zinc.Context) error {
+		return c.String("ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMethodOverrideQueryAndFirstGetter(t *testing.T) {
+	app := zinc.New()
+	app.Use(MethodOverrideWithConfig(MethodOverrideConfig{
+		Getter: MethodOverrideFromFirst(
+			MethodOverrideFromHeader("X-Missing"),
+			MethodOverrideFromQuery("_method"),
+		),
+		SourceMethods: []string{"post"},
+		Methods:       []string{"patch"},
+	}))
+	mustNoErrHardening(t, app.Patch("/resource", func(c *zinc.Context) error {
+		return c.String(c.Method())
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/resource?_method=PATCH", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != http.MethodPatch {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestTrailingSlashAddAndPathHelpers(t *testing.T) {
+	app := zinc.New()
+	app.Use(AddTrailingSlash())
+	mustNoErrHardening(t, app.Get("/users/", func(c *zinc.Context) error {
+		return c.String(c.Path())
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/users", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "/users/" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+
+	if got := normalizeTrailingSlashPath("", false); got != "/" {
+		t.Fatalf("empty path=%q", got)
+	}
+	if got := normalizeTrailingSlashPath("/", true); got != "/" {
+		t.Fatalf("root path=%q", got)
+	}
+	if got := pathWithRawQuery("/users", ""); got != "/users" {
+		t.Fatalf("path without query=%q", got)
+	}
+}
+
+func TestGzipAcceptQValuesAndExistingVary(t *testing.T) {
+	if requestAcceptsGzip("gzip;q=0") {
+		t.Fatal("gzip q=0 should not be accepted")
+	}
+	if !requestAcceptsGzip("br;q=1, gzip;q=0.5") {
+		t.Fatal("gzip q=0.5 should be accepted")
+	}
+
+	app := zinc.New()
+	app.Use(Gzip())
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		c.Vary(zinc.HeaderAcceptEncoding)
+		return c.String("hello")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip;q=1")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if values := rec.Header().Values(zinc.HeaderVary); len(values) != 1 || values[0] != zinc.HeaderAcceptEncoding {
+		t.Fatalf("vary=%v", values)
+	}
+	if got := gunzipResponse(t, rec.Body.Bytes()); got != "hello" {
+		t.Fatalf("body=%q", got)
+	}
+}
+
+func TestGzipHeadSkipsBody(t *testing.T) {
+	app := zinc.New()
+	app.Use(Gzip())
+	mustNoErrHardening(t, app.Head("/head", func(c *zinc.Context) error {
+		return c.String("no body")
+	}))
+
+	req := httptest.NewRequest(http.MethodHead, "/head", nil)
+	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get(zinc.HeaderContentEncoding); got != "" {
+		t.Fatalf("content-encoding=%q", got)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestDecompressClose(t *testing.T) {
+	app := zinc.New()
+	app.Use(Decompress())
+	mustNoErrHardening(t, app.Post("/", func(c *zinc.Context) error {
+		if err := c.Request().Body.Close(); err != nil {
+			return err
+		}
+		return c.String("closed")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/", gzipBody(t, "close me"))
+	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSecureDefaultsAndHSTSOptions(t *testing.T) {
+	app := zinc.New()
+	app.Use(Secure())
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		return c.String("ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get(zinc.HeaderStrictTransportSecurity); got != "" {
+		t.Fatalf("hsts over http=%q", got)
+	}
+	if got := rec.Header().Get(zinc.HeaderXXSSProtection); got != "0" {
+		t.Fatalf("xss=%q", got)
+	}
+
+	app = zinc.New()
+	app.Use(SecureWithConfig(SecureConfig{
+		HSTSMaxAge:            60,
+		HSTSExcludeSubdomains: true,
+	}))
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		return c.String("ok")
+	}))
+	req = httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if got := rec.Header().Get(zinc.HeaderStrictTransportSecurity); got != "max-age=60" {
+		t.Fatalf("hsts=%q", got)
+	}
+}
+
+func TestSessionDeleteValuesAndOptions(t *testing.T) {
+	cfg := DefaultSessionConfig()
+	cfg.Secret = []byte("secret")
+	cfg.Name = "sid"
+	cfg.MaxAge = 10
+	cfg.DisableHTTPOnly = true
+
+	app := zinc.New()
+	app.Use(SessionWithConfig(cfg))
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		session := MustSession(c)
+		session.Set("one", "1")
+		session.Set("two", "2")
+		session.Delete("two")
+		values := session.Values()
+		return c.String(values["one"] + values["two"])
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "1" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookies=%v", cookies)
+	}
+	if cookies[0].HttpOnly {
+		t.Fatalf("cookie should not be http-only: %+v", cookies[0])
+	}
+	if cookies[0].MaxAge != 10 || cookies[0].Expires.IsZero() {
+		t.Fatalf("cookie max-age/expires=%+v", cookies[0])
+	}
+}
+
+func TestSessionHelpersOnNil(t *testing.T) {
+	var session *Session
+	if got := session.Get("missing"); got != "" {
+		t.Fatalf("nil session get=%q", got)
+	}
+	session.Set("ignored", "value")
+	session.Delete("ignored")
+	if values := session.Values(); values != nil {
+		t.Fatalf("nil session values=%v", values)
+	}
+	if _, ok := SessionCurrent(nil); ok {
+		t.Fatal("nil context should not have session")
+	}
+}
+
+func TestStaticConstructorsAndPrefixHelpers(t *testing.T) {
+	fsys := fstest.MapFS{
+		"hello.txt": &fstest.MapFile{Data: []byte("hello")},
+	}
+
+	app := zinc.New()
+	app.Use(StaticFS(fsys))
+	req := httptest.NewRequest(http.MethodGet, "/hello.txt", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if strings.TrimSpace(rec.Body.String()) != "hello" {
+		t.Fatalf("static fs body=%q", rec.Body.String())
+	}
+
+	name, ok := staticRequestName("/assets/../bad", "/assets")
+	if ok || name != "" {
+		t.Fatalf("bad static path name=%q ok=%v", name, ok)
+	}
+	if got := normalizeStaticPrefix("assets/"); got != "/assets" {
+		t.Fatalf("prefix=%q", got)
+	}
+}
+
+func TestRedirectAndRewriteRulesHelpers(t *testing.T) {
+	app := zinc.New()
+	app.Use(RedirectWithRules(map[string]string{"/old/*": "/new/*"}))
+
+	req := httptest.NewRequest(http.MethodGet, "/old/path", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if got := rec.Header().Get(zinc.HeaderLocation); got != "/new/path" {
+		t.Fatalf("location=%q", got)
+	}
+
+	if target, ok := rewriteTarget("/x/path", map[string]string{"/x/*": "/y"}); !ok || target != "/ypath" {
+		t.Fatalf("target=%q ok=%v", target, ok)
+	}
+	if target, ok := rewriteTarget("/x/path", map[string]string{"/z/*": "/y/*"}); ok || target != "" {
+		t.Fatalf("target=%q ok=%v", target, ok)
+	}
+}
+
+func TestPrometheusDefaultAndEscaping(t *testing.T) {
+	metrics := NewPrometheusMetrics()
+	metrics.Observe("GE\"T", "/line\n\\route", 200, 0)
+	text := metrics.Text()
+	if !strings.Contains(text, `method="GE\"T"`) {
+		t.Fatalf("metrics missing escaped quote: %s", text)
+	}
+	if !strings.Contains(text, `route="/line\n\\route"`) {
+		t.Fatalf("metrics missing escaped route: %s", text)
+	}
+	var nilMetrics *PrometheusMetrics
+	if nilMetrics.Text() != "" {
+		t.Fatal("nil metrics should render empty text")
+	}
+}
+
+func TestProxyConfigHooksAndSkipper(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Director", r.Header.Get("X-Director"))
+		_, _ = w.Write([]byte("upstream"))
+	}))
+	defer upstream.Close()
+
+	app := zinc.New()
+	app.Use(ProxyWithConfig(ProxyConfig{
+		Target: upstream.URL,
+		Director: func(req *http.Request) {
+			req.Header.Set("X-Director", "set")
+		},
+		Modify: func(resp *http.Response) error {
+			resp.Header.Set("X-Modified", "yes")
+			return nil
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if got := rec.Header().Get("X-Director"); got != "set" {
+		t.Fatalf("director header=%q", got)
+	}
+	if got := rec.Header().Get("X-Modified"); got != "yes" {
+		t.Fatalf("modified header=%q", got)
+	}
+
+	app = zinc.New()
+	app.Use(ProxyWithConfig(ProxyConfig{
+		Target:  upstream.URL,
+		Skipper: func(*zinc.Context) bool { return true },
+	}))
+	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+		return c.String("skipped")
+	}))
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "skipped" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestJaegerGeneratedTraceAndObserverError(t *testing.T) {
+	observeErr := errors.New("observe")
+	app := zinc.New()
+	app.Use(Jaeger(func(*zinc.Context, JaegerSpan) error {
+		return observeErr
+	}))
+	mustNoErrHardening(t, app.Get("/trace", func(c *zinc.Context) error {
+		span, ok := JaegerCurrent(c)
+		if !ok {
+			t.Fatal("missing span")
+		}
+		if len(span.TraceID) != 32 || len(span.SpanID) != 16 {
+			t.Fatalf("span=%+v", span)
+		}
+		return nil
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/trace", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCasbinSubjectHelpers(t *testing.T) {
+	app := zinc.New()
+	app.Use(BasicAuth(BasicAuthStatic("alice", "secret")))
+	app.Use(func(c *zinc.Context) error {
+		c.Set("object", "doc")
+		return c.Next()
+	})
+	enforcer := &casbinStub{allow: true}
+	app.Use(CasbinAuthWithConfig(CasbinAuthConfig{
+		Enforcer: enforcer,
+		Subject:  CasbinSubjectFromBasicAuth(),
+		Object:   CasbinSubjectFromContext("object"),
+		Action: func(*zinc.Context) any {
+			return "read"
+		},
+	}))
+	mustNoErrHardening(t, app.Get("/docs", func(c *zinc.Context) error {
+		return c.String("ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	req.SetBasicAuth("alice", "secret")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if len(enforcer.args) != 3 || enforcer.args[0] != "alice" || enforcer.args[1] != "doc" || enforcer.args[2] != "read" {
+		t.Fatalf("args=%v", enforcer.args)
+	}
+}
+
+func mustNoErrHardening(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
