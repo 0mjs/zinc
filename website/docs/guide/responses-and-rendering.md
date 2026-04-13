@@ -30,6 +30,13 @@ For pretty JSON:
 return c.JSONPretty(payload, "  ")
 ```
 
+If you already have encoded bytes:
+
+```go
+return c.JSONBlob(zinc.StatusOK, rawJSON)
+return c.Blob(zinc.StatusOK, "application/custom", payload)
+```
+
 ## Status and headers
 
 Use the response builder style when you want to set headers or status before writing the body.
@@ -49,6 +56,14 @@ Useful helpers include:
 - `Type(ext)`
 - `Location(url)`
 - `Vary(fields...)`
+- `SetSameSite(mode)`
+
+For cookies:
+
+```go
+c.SetSameSite(http.SameSiteLaxMode)
+c.SetCookie(&http.Cookie{Name: "session", Value: token, Path: "/"})
+```
 
 ## Redirects
 
@@ -85,6 +100,7 @@ For downloads and attachments:
 
 ```go
 return c.Download("./exports/users.csv", "users-latest.csv")
+return c.Inline("./public/report.pdf")
 ```
 
 ## Streams
@@ -93,6 +109,35 @@ return c.Download("./exports/users.csv", "users-latest.csv")
 reader := strings.NewReader("streamed content")
 return c.Stream("text/plain; charset=utf-8", reader)
 ```
+
+For server-sent events, write one event at a time:
+
+```go
+return c.SSE(zinc.SSEvent{
+	Event: "message",
+	Data:  zinc.Map{"text": "hello"},
+})
+```
+
+For simple content negotiation:
+
+```go
+return c.Negotiate(zinc.StatusOK, map[string]any{
+	"application/json": zinc.Map{"ok": true},
+	"text/plain":       "ok",
+})
+```
+
+## Response writer wrapping
+
+Middleware that needs response status or byte counts can wrap the underlying writer.
+
+```go
+rw := zinc.WrapResponseWriter(c.Writer())
+c.SetWriter(rw)
+```
+
+`WrapResponseWriter` tracks status, bytes written, and whether the response has started.
 
 ## Good API pattern
 

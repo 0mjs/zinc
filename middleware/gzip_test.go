@@ -100,6 +100,43 @@ func TestGzipSkipsExistingContentEncoding(t *testing.T) {
 	}
 }
 
+func TestGzipMinLength(t *testing.T) {
+	app := zinc.New()
+	app.Use(GzipWithConfig(GzipConfig{MinLength: 8}))
+	mustNoErrGzip(t, app.Get("/small", func(c *zinc.Context) error {
+		return c.String("small")
+	}))
+	mustNoErrGzip(t, app.Get("/large", func(c *zinc.Context) error {
+		if _, err := c.Writer().Write([]byte("hello")); err != nil {
+			return err
+		}
+		_, err := c.Writer().Write([]byte(" zinc"))
+		return err
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/small", nil)
+	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if got := rec.Header().Get(zinc.HeaderContentEncoding); got != "" {
+		t.Fatalf("small content-encoding=%q", got)
+	}
+	if rec.Body.String() != "small" {
+		t.Fatalf("small body=%q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/large", nil)
+	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if got := rec.Header().Get(zinc.HeaderContentEncoding); got != "gzip" {
+		t.Fatalf("large content-encoding=%q", got)
+	}
+	if body := gunzipResponse(t, rec.Body.Bytes()); body != "hello zinc" {
+		t.Fatalf("large body=%q", body)
+	}
+}
+
 func TestGzipHandlesErrorResponse(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())

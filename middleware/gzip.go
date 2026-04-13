@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"io"
@@ -14,8 +15,9 @@ import (
 )
 
 type GzipConfig struct {
-	Skipper func(*zinc.Context) bool
-	Level   int
+	Skipper   func(*zinc.Context) bool
+	Level     int
+	MinLength int
 }
 
 func Gzip() zinc.Middleware {
@@ -29,6 +31,9 @@ func GzipWithConfig(config GzipConfig) zinc.Middleware {
 	}
 	if level < gzip.HuffmanOnly || level > gzip.BestCompression {
 		panic("zincgzip: Level must be a gzip compression level")
+	}
+	if config.MinLength < 0 {
+		panic("zincgzip: MinLength must be greater than or equal to zero")
 	}
 
 	return func(c *zinc.Context) error {
@@ -45,6 +50,7 @@ func GzipWithConfig(config GzipConfig) zinc.Middleware {
 			ResponseWriter: baseWriter,
 			method:         c.Method(),
 			level:          level,
+			minLength:      config.MinLength,
 		}
 		c.SetWriter(writer)
 
@@ -100,9 +106,11 @@ type gzipResponseWriter struct {
 	http.ResponseWriter
 	method      string
 	level       int
+	minLength   int
 	status      int
 	wroteHeader bool
 	writer      *gzip.Writer
+	buffer      bytes.Buffer
 }
 
 func (w *gzipResponseWriter) WriteHeader(code int) {
@@ -122,6 +130,21 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	if !gzipBodyAllowed(w.method, w.status) || w.Header().Get(zinc.HeaderContentEncoding) != "" {
 		w.writeRawHeader()
 		return w.ResponseWriter.Write(p)
+	}
+	if w.minLength > 0 && w.writer == nil {
+		if w.buffer.Len()+len(p) < w.minLength {
+			return w.buffer.Write(p)
+		}
+		if err := w.startGzip(); err != nil {
+			return 0, err
+		}
+		if w.buffer.Len() > 0 {
+			if _, err := w.writer.Write(w.buffer.Bytes()); err != nil {
+				return 0, err
+			}
+			w.buffer.Reset()
+		}
+		return w.writer.Write(p)
 	}
 	if err := w.startGzip(); err != nil {
 		return 0, err
@@ -165,6 +188,12 @@ func (w *gzipResponseWriter) Push(target string, opts *http.PushOptions) error {
 func (w *gzipResponseWriter) Close() error {
 	if w.writer != nil {
 		return w.writer.Close()
+	}
+	if w.buffer.Len() > 0 {
+		w.writeRawHeader()
+		_, err := w.ResponseWriter.Write(w.buffer.Bytes())
+		w.buffer.Reset()
+		return err
 	}
 	if w.status != 0 && !w.wroteHeader {
 		w.writeRawHeader()

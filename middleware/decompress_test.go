@@ -77,6 +77,24 @@ func TestDecompressRejectsInvalidGzipBody(t *testing.T) {
 	}
 }
 
+func TestDecompressRejectsOversizedDecompressedBody(t *testing.T) {
+	app := zinc.New()
+	app.Use(DecompressWithConfig(DecompressConfig{MaxDecompressedSize: 4}))
+	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+		_, err := io.ReadAll(c.Request().Body)
+		return err
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/echo", gzipBody(t, "compressed"))
+	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDecompressSkipper(t *testing.T) {
 	app := zinc.New()
 	app.Use(DecompressWithConfig(DecompressConfig{

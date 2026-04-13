@@ -43,7 +43,34 @@ Useful helpers include:
 - `ParamOr(name, fallback)`
 - `Query(name)`
 - `QueryOr(name, fallback)`
+- `QueryArray(name)`
+- `QueryMap(name)`
 - `QueryValues()`
+- `PostForm(name)`
+- `PostFormOr(name, fallback)`
+- `PostFormArray(name)`
+- `PostFormMap(name)`
+- `ContentType()`
+- `IsWebSocket()`
+
+For repeated query values:
+
+```go
+app.Get("/search", func(c *zinc.Context) error {
+	tags := c.QueryArray("tag")
+	return c.JSON(zinc.Map{"tags": tags})
+})
+```
+
+For form posts:
+
+```go
+app.Post("/profile", func(c *zinc.Context) error {
+	name := c.PostForm("name")
+	roles := c.PostFormArray("roles")
+	return c.JSON(zinc.Map{"name": name, "roles": roles})
+})
+```
 
 ## Request-scoped values
 
@@ -56,12 +83,14 @@ func loadUser(c *zinc.Context) error {
 }
 
 func handler(c *zinc.Context) error {
-	if userID, ok := c.Get("userID"); ok {
-		return c.String(userID.(string))
+	if userID := c.GetString("userID"); userID != "" {
+		return c.String(userID)
 	}
 	return zinc.ErrUnauthorized
 }
 ```
+
+Use `Get` when you want the raw value and `MustGet` when missing state should be treated as a programmer error.
 
 ## Files and multipart form data
 

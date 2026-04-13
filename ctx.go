@@ -5,6 +5,7 @@ import (
 	stdctx "context"
 	"errors"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -34,6 +35,7 @@ type Context struct {
 	body         []byte
 	bodyRead     bool
 	bodyErr      error
+	sameSite     http.SameSite
 	paramPath    string
 	paramCount   int
 	paramRanges  paramRanges
@@ -89,6 +91,7 @@ func (c *Context) Copy() *Context {
 		lastErr:      c.lastErr,
 		bodyRead:     c.bodyRead,
 		bodyErr:      c.bodyErr,
+		sameSite:     c.sameSite,
 		paramPath:    c.paramPath,
 		paramCount:   c.paramCount,
 		paramRanges:  c.paramRanges,
@@ -140,6 +143,7 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
+	c.sameSite = 0
 	c.paramPath = ""
 	c.paramRoute = nil
 	for i := 0; i < c.paramCount; i++ {
@@ -164,6 +168,7 @@ func (c *Context) release() {
 	c.body = nil
 	c.bodyRead = false
 	c.bodyErr = nil
+	c.sameSite = 0
 	c.paramPath = ""
 	c.paramRoute = nil
 	contextPool.Put(c)
@@ -265,6 +270,66 @@ func (c *Context) MustGet(key any) any {
 	return value
 }
 
+func (c *Context) GetString(key any) string {
+	value, _ := c.Get(key)
+	result, _ := value.(string)
+	return result
+}
+
+func (c *Context) GetBool(key any) bool {
+	value, _ := c.Get(key)
+	result, _ := value.(bool)
+	return result
+}
+
+func (c *Context) GetInt(key any) int {
+	value, _ := c.Get(key)
+	result, _ := value.(int)
+	return result
+}
+
+func (c *Context) GetInt64(key any) int64 {
+	value, _ := c.Get(key)
+	result, _ := value.(int64)
+	return result
+}
+
+func (c *Context) GetFloat64(key any) float64 {
+	value, _ := c.Get(key)
+	result, _ := value.(float64)
+	return result
+}
+
+func (c *Context) GetStringSlice(key any) []string {
+	value, _ := c.Get(key)
+	result, _ := value.([]string)
+	return result
+}
+
+func (c *Context) GetStringMap(key any) map[string]any {
+	value, _ := c.Get(key)
+	switch result := value.(type) {
+	case map[string]any:
+		return result
+	case Map:
+		return map[string]any(result)
+	default:
+		return nil
+	}
+}
+
+func (c *Context) GetStringMapString(key any) map[string]string {
+	value, _ := c.Get(key)
+	result, _ := value.(map[string]string)
+	return result
+}
+
+func (c *Context) GetStringMapStringSlice(key any) map[string][]string {
+	value, _ := c.Get(key)
+	result, _ := value.(map[string][]string)
+	return result
+}
+
 func (c *Context) Status(code int) *Context {
 	c.status = code
 	return c
@@ -318,6 +383,18 @@ func (c *Context) QueryOr(name, fallback string) string {
 	return fallback
 }
 
+func (c *Context) QueryArray(name string) []string {
+	values := c.QueryValues()[name]
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
+}
+
+func (c *Context) QueryMap(name string) map[string]string {
+	return valuesMap(c.QueryValues(), name)
+}
+
 func (c *Context) QueryValues() url.Values {
 	if c.queryParams == nil {
 		if c.request == nil || c.request.URL == nil {
@@ -326,6 +403,29 @@ func (c *Context) QueryValues() url.Values {
 		c.queryParams = c.request.URL.Query()
 	}
 	return c.queryParams
+}
+
+func (c *Context) PostForm(name string) string {
+	return c.postFormValues().Get(name)
+}
+
+func (c *Context) PostFormOr(name, fallback string) string {
+	if value := c.PostForm(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func (c *Context) PostFormArray(name string) []string {
+	values := c.postFormValues()[name]
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
+}
+
+func (c *Context) PostFormMap(name string) map[string]string {
+	return valuesMap(c.postFormValues(), name)
 }
 
 func (c *Context) FormValue(name string) string {
@@ -398,6 +498,15 @@ func (c *Context) GetHeader(key string) string {
 	return c.request.Header.Get(key)
 }
 
+func (c *Context) ContentType() string {
+	return mediaTypeOnly(c.GetHeader(HeaderContentType))
+}
+
+func (c *Context) IsWebSocket() bool {
+	return headerHasToken(c.GetHeader(HeaderConnection), "upgrade") &&
+		strings.EqualFold(strings.TrimSpace(c.GetHeader(HeaderUpgrade)), "websocket")
+}
+
 func (c *Context) Cookie(name string) (*http.Cookie, error) {
 	if c.request == nil {
 		return nil, http.ErrNoCookie
@@ -426,6 +535,80 @@ func (c *Context) BodyString() (string, error) {
 		return "", err
 	}
 	return string(body), nil
+}
+
+func (c *Context) postFormValues() url.Values {
+	if c.request == nil {
+		return url.Values{}
+	}
+	if c.request.PostForm != nil {
+		return c.request.PostForm
+	}
+	if c.ContentType() == "multipart/form-data" {
+		if err := c.request.ParseMultipartForm(32 << 20); err != nil {
+			return url.Values{}
+		}
+		if c.request.PostForm != nil {
+			return c.request.PostForm
+		}
+		if c.request.MultipartForm != nil {
+			return c.request.MultipartForm.Value
+		}
+		return url.Values{}
+	}
+	if err := c.request.ParseForm(); err != nil {
+		return url.Values{}
+	}
+	if c.request.PostForm == nil {
+		return url.Values{}
+	}
+	return c.request.PostForm
+}
+
+func valuesMap(values url.Values, name string) map[string]string {
+	out := map[string]string{}
+	if name == "" {
+		return out
+	}
+	prefix := name + "["
+	for key, values := range values {
+		if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, "]") {
+			continue
+		}
+		mapKey := key[len(prefix) : len(key)-1]
+		if mapKey == "" {
+			continue
+		}
+		if len(values) == 0 {
+			out[mapKey] = ""
+			continue
+		}
+		out[mapKey] = values[0]
+	}
+	return out
+}
+
+func mediaTypeOnly(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if mediaType, _, err := mime.ParseMediaType(value); err == nil {
+		return strings.ToLower(mediaType)
+	}
+	if mediaType, _, ok := strings.Cut(value, ";"); ok {
+		return strings.ToLower(strings.TrimSpace(mediaType))
+	}
+	return strings.ToLower(value)
+}
+
+func headerHasToken(value, token string) bool {
+	for _, part := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Context) bodyBytes() ([]byte, error) {

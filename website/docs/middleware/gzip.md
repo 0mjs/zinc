@@ -18,11 +18,12 @@ Zinc skips compression when:
 - the response already has a `Content-Encoding`
 - the request method is `HEAD`
 
-Use `GzipWithConfig` to set the compression level.
+Use `GzipWithConfig` to set the compression level or skip small responses.
 
 ```go
 app.Use(middleware.GzipWithConfig(middleware.GzipConfig{
-	Level: gzip.BestSpeed,
+	Level:     gzip.BestSpeed,
+	MinLength: 1024,
 }))
 ```
 

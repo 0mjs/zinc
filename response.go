@@ -10,6 +10,9 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -26,8 +29,16 @@ const (
 	tomlType    = "application/toml; charset=utf-8"
 	plainText   = "text/plain; charset=utf-8"
 	htmlType    = "text/html; charset=utf-8"
+	eventStream = "text/event-stream"
 	octetStream = "application/octet-stream"
 )
+
+type SSEvent struct {
+	Event string
+	ID    string
+	Retry time.Duration
+	Data  any
+}
 
 var nullBytes = []byte("null")
 
@@ -149,6 +160,22 @@ func (c *Context) Data(contentType string, b []byte) error {
 	return err
 }
 
+func (c *Context) Blob(status int, contentType string, b []byte) error {
+	return c.Status(status).Data(contentType, b)
+}
+
+func (c *Context) JSONBlob(status int, b []byte) error {
+	return c.Blob(status, jsonType, b)
+}
+
+func (c *Context) XMLBlob(status int, b []byte) error {
+	return c.Blob(status, xmlType, b)
+}
+
+func (c *Context) HTMLBlob(status int, b []byte) error {
+	return c.Blob(status, htmlType, b)
+}
+
 func (c *Context) JSON(v any) error {
 	return c.writeJSON(v, "")
 }
@@ -246,6 +273,63 @@ func (c *Context) Stream(contentType string, r io.Reader) error {
 	})
 }
 
+func (c *Context) SSE(event SSEvent) error {
+	writer, writeBody, err := c.prepareSSE()
+	if err != nil || !writeBody {
+		return err
+	}
+	return c.writeSSEEvent(writer, event)
+}
+
+func (c *Context) Accepts(types ...string) string {
+	if len(types) == 0 {
+		return ""
+	}
+	header := c.GetHeader(HeaderAccept)
+	if strings.TrimSpace(header) == "" {
+		return types[0]
+	}
+
+	offers := make([]acceptOffer, 0, len(types))
+	for _, offer := range types {
+		if strings.TrimSpace(offer) == "" {
+			continue
+		}
+		offers = append(offers, acceptOffer{raw: offer, mediaType: mediaTypeOnly(offer)})
+	}
+	if len(offers) == 0 {
+		return ""
+	}
+
+	ranges := parseAcceptHeader(header)
+	for _, accept := range ranges {
+		for _, offer := range offers {
+			if acceptMatches(accept.mediaType, offer.mediaType) {
+				return offer.raw
+			}
+		}
+	}
+	return ""
+}
+
+func (c *Context) Negotiate(status int, offers map[string]any) error {
+	if len(offers) == 0 {
+		return ErrNotAcceptable
+	}
+	types := make([]string, 0, len(offers))
+	for contentType := range offers {
+		types = append(types, contentType)
+	}
+	sort.Strings(types)
+
+	selected := c.Accepts(types...)
+	if selected == "" {
+		return ErrNotAcceptable
+	}
+	c.Status(status)
+	return c.writeNegotiated(selected, offers[selected])
+}
+
 func (c *Context) NoContent() error {
 	if c.status == 0 || c.status == http.StatusOK {
 		c.status = http.StatusNoContent
@@ -320,6 +404,14 @@ func (c *Context) Download(filePath string, name ...string) error {
 	return c.Attachment(filePath, name...)
 }
 
+func (c *Context) Inline(filePath string, name ...string) error {
+	inlineName := filepath.Base(filePath)
+	if len(name) > 0 && name[0] != "" {
+		inlineName = name[0]
+	}
+	return c.serveFileWithDisposition(filePath, nil, "inline", inlineName)
+}
+
 func (c *Context) Render(name string, data any) error {
 	if c.app == nil || c.app.config.Renderer == nil {
 		return errors.New("renderer is not configured")
@@ -335,13 +427,18 @@ func (c *Context) Render(name string, data any) error {
 }
 
 func (c *Context) SetCookie(cookie *http.Cookie) {
-	http.SetCookie(c.Writer(), cookie)
+	c.writeCookie(cookie)
+}
+
+func (c *Context) SetSameSite(mode http.SameSite) *Context {
+	c.sameSite = mode
+	return c
 }
 
 func (c *Context) ClearCookie(names ...string) {
 	expires := time.Unix(1, 0).UTC()
 	for _, name := range names {
-		http.SetCookie(c.Writer(), &http.Cookie{
+		c.writeCookie(&http.Cookie{
 			Name:    name,
 			Value:   "",
 			Path:    "/",
@@ -349,6 +446,15 @@ func (c *Context) ClearCookie(names ...string) {
 			Expires: expires,
 		})
 	}
+}
+
+func (c *Context) writeCookie(cookie *http.Cookie) {
+	if c.sameSite != 0 && cookie != nil && cookie.SameSite == 0 {
+		clone := *cookie
+		clone.SameSite = c.sameSite
+		cookie = &clone
+	}
+	http.SetCookie(c.Writer(), cookie)
 }
 
 func (c *Context) writeResponse(ct string, writeBody func() error) error {
@@ -418,13 +524,255 @@ func (c *Context) prepareResponse(ct string) (http.ResponseWriter, bool, error) 
 	return writer, true, nil
 }
 
+func (c *Context) prepareSSE() (http.ResponseWriter, bool, error) {
+	writer := c.Writer()
+	if c.written {
+		if mediaTypeOnly(writer.Header().Get(contentType)) != eventStream {
+			return nil, false, ErrResponseAlreadySent
+		}
+		return writer, bodyAllowed(c.Method(), c.responseStatus()), nil
+	}
+
+	c.written = true
+	header := writer.Header()
+	if len(header[contentType]) == 0 {
+		header.Set(contentType, eventStream)
+	}
+	status := c.responseStatus()
+	if !bodyAllowed(c.Method(), status) {
+		if status != http.StatusOK {
+			writer.WriteHeader(status)
+		}
+		return writer, false, nil
+	}
+	if status != http.StatusOK {
+		writer.WriteHeader(status)
+	}
+	return writer, true, nil
+}
+
+func (c *Context) writeSSEEvent(w io.Writer, event SSEvent) error {
+	if event.Event != "" {
+		if err := writeSSEField(w, "event", event.Event); err != nil {
+			return err
+		}
+	}
+	if event.ID != "" {
+		if err := writeSSEField(w, "id", event.ID); err != nil {
+			return err
+		}
+	}
+	if event.Retry > 0 {
+		if _, err := fmt.Fprintf(w, "retry: %d\n", event.Retry.Milliseconds()); err != nil {
+			return err
+		}
+	}
+
+	data, err := c.sseData(event.Data)
+	if err != nil {
+		return err
+	}
+	if err := writeSSEField(w, "data", string(data)); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, "\n")
+	return err
+}
+
+func (c *Context) sseData(data any) ([]byte, error) {
+	switch value := data.(type) {
+	case nil:
+		return nullBytes, nil
+	case string:
+		return []byte(value), nil
+	case []byte:
+		return value, nil
+	default:
+		var buf bytes.Buffer
+		codec := JSONCodec(defaultJSONCodec{})
+		if c.app != nil && c.app.config.JSONCodec != nil {
+			codec = c.app.config.JSONCodec
+		}
+		if err := codec.Encode(&buf, value, ""); err != nil {
+			return nil, err
+		}
+		return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+	}
+}
+
+func writeSSEField(w io.Writer, field, value string) error {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	for _, line := range strings.Split(value, "\n") {
+		if _, err := fmt.Fprintf(w, "%s: %s\n", field, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type acceptOffer struct {
+	raw       string
+	mediaType string
+}
+
+type acceptRange struct {
+	mediaType   string
+	q           float64
+	specificity int
+	index       int
+}
+
+func parseAcceptHeader(header string) []acceptRange {
+	parts := strings.Split(header, ",")
+	ranges := make([]acceptRange, 0, len(parts))
+	for index, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		mediaType, params, err := mime.ParseMediaType(part)
+		if err != nil {
+			mediaType = mediaTypeOnly(part)
+			params = nil
+		} else {
+			mediaType = strings.ToLower(mediaType)
+		}
+		if mediaType == "" {
+			continue
+		}
+
+		q := 1.0
+		if rawQ := params["q"]; rawQ != "" {
+			parsed, err := strconv.ParseFloat(rawQ, 64)
+			if err != nil {
+				continue
+			}
+			q = parsed
+		}
+		if q <= 0 {
+			continue
+		}
+
+		ranges = append(ranges, acceptRange{
+			mediaType:   mediaType,
+			q:           q,
+			specificity: acceptSpecificity(mediaType),
+			index:       index,
+		})
+	}
+
+	sort.SliceStable(ranges, func(i, j int) bool {
+		if ranges[i].q != ranges[j].q {
+			return ranges[i].q > ranges[j].q
+		}
+		if ranges[i].specificity != ranges[j].specificity {
+			return ranges[i].specificity > ranges[j].specificity
+		}
+		return ranges[i].index < ranges[j].index
+	})
+	return ranges
+}
+
+func acceptSpecificity(mediaType string) int {
+	switch {
+	case mediaType == "*/*":
+		return 0
+	case strings.HasSuffix(mediaType, "/*"):
+		return 1
+	default:
+		return 2
+	}
+}
+
+func acceptMatches(accept, offer string) bool {
+	if accept == "*/*" {
+		return true
+	}
+	acceptType, acceptSubType, ok := strings.Cut(accept, "/")
+	if !ok {
+		return false
+	}
+	offerType, offerSubType, ok := strings.Cut(offer, "/")
+	if !ok {
+		return false
+	}
+	if acceptSubType == "*" {
+		return acceptType == offerType
+	}
+	return acceptType == offerType && acceptSubType == offerSubType
+}
+
+func (c *Context) writeNegotiated(ct string, value any) error {
+	switch mediaTypeOnly(ct) {
+	case "application/json":
+		if data, ok := value.([]byte); ok {
+			return c.Data(jsonType, data)
+		}
+		return c.JSON(value)
+	case "application/xml", "text/xml":
+		if data, ok := value.([]byte); ok {
+			return c.Data(xmlType, data)
+		}
+		return c.XML(value)
+	case "application/yaml", "application/x-yaml", "text/yaml":
+		if data, ok := value.([]byte); ok {
+			return c.Data(yamlType, data)
+		}
+		return c.YAML(value)
+	case "application/toml":
+		if data, ok := value.([]byte); ok {
+			return c.Data(tomlType, data)
+		}
+		return c.TOML(value)
+	case "text/html":
+		switch data := value.(type) {
+		case []byte:
+			return c.Data(htmlType, data)
+		case string:
+			return c.HTML(data)
+		default:
+			return c.HTML(fmt.Sprint(data))
+		}
+	case "text/plain":
+		switch data := value.(type) {
+		case []byte:
+			return c.Data(plainText, data)
+		case string:
+			return c.String(data)
+		default:
+			return c.String(fmt.Sprint(data))
+		}
+	default:
+		switch data := value.(type) {
+		case []byte:
+			return c.Data(ct, data)
+		case string:
+			return c.Data(ct, []byte(data))
+		case io.Reader:
+			return c.Stream(ct, data)
+		default:
+			return c.Data(ct, []byte(fmt.Sprint(data)))
+		}
+	}
+}
+
 func (c *Context) serveFile(filePath string, filesystem fs.FS, downloadName string) error {
+	disposition := ""
+	if downloadName != "" {
+		disposition = "attachment"
+	}
+	return c.serveFileWithDisposition(filePath, filesystem, disposition, downloadName)
+}
+
+func (c *Context) serveFileWithDisposition(filePath string, filesystem fs.FS, disposition, name string) error {
 	if c.written {
 		return ErrResponseAlreadySent
 	}
 	c.written = true
-	if downloadName != "" {
-		c.SetHeader(HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", downloadName))
+	if name != "" && disposition != "" {
+		c.SetHeader(HeaderContentDisposition, fmt.Sprintf("%s; filename=%q", disposition, name))
 	}
 
 	if filesystem == nil {

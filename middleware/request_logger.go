@@ -1,12 +1,9 @@
 package middleware
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -120,9 +117,9 @@ func RequestLoggerWithConfig(config RequestLoggerConfig) zinc.Middleware {
 			config.BeforeNextFunc(c)
 		}
 
-		var rw *requestLoggerResponseWriter
+		var rw zinc.ResponseWriter
 		if config.LogStatus || config.LogResponseSize {
-			rw = newRequestLoggerResponseWriter(c.Writer())
+			rw = zinc.WrapResponseWriter(c.Writer())
 			c.SetWriter(rw)
 		}
 
@@ -199,7 +196,7 @@ func RequestLoggerWithConfig(config RequestLoggerConfig) zinc.Middleware {
 		}
 		if config.LogResponseSize {
 			if rw != nil {
-				v.ResponseSize = rw.Size()
+				v.ResponseSize = int64(rw.BytesWritten())
 			} else {
 				v.ResponseSize = -1
 			}
@@ -298,7 +295,7 @@ func defaultRequestLogValuesFunc(logger *slog.Logger) func(*zinc.Context, Reques
 	}
 }
 
-func resolveRequestLogStatus(rw *requestLoggerResponseWriter, err error) int {
+func resolveRequestLogStatus(rw zinc.ResponseWriter, err error) int {
 	if rw != nil && rw.Written() {
 		return rw.Status()
 	}
@@ -310,97 +307,4 @@ func resolveRequestLogStatus(rw *requestLoggerResponseWriter, err error) int {
 		return http.StatusInternalServerError
 	}
 	return http.StatusOK
-}
-
-type requestLoggerResponseWriter struct {
-	http.ResponseWriter
-	status int
-	size   int64
-}
-
-func newRequestLoggerResponseWriter(w http.ResponseWriter) *requestLoggerResponseWriter {
-	return &requestLoggerResponseWriter{ResponseWriter: w}
-}
-
-func (w *requestLoggerResponseWriter) WriteHeader(code int) {
-	if w.status == 0 {
-		w.status = code
-	}
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *requestLoggerResponseWriter) Write(p []byte) (int, error) {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
-	n, err := w.ResponseWriter.Write(p)
-	w.size += int64(n)
-	return n, err
-}
-
-func (w *requestLoggerResponseWriter) WriteString(s string) (int, error) {
-	if sw, ok := w.ResponseWriter.(io.StringWriter); ok {
-		if w.status == 0 {
-			w.WriteHeader(http.StatusOK)
-		}
-		n, err := sw.WriteString(s)
-		w.size += int64(n)
-		return n, err
-	}
-	return w.Write([]byte(s))
-}
-
-func (w *requestLoggerResponseWriter) ReadFrom(r io.Reader) (int64, error) {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
-	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
-		n, err := rf.ReadFrom(r)
-		w.size += n
-		return n, err
-	}
-	n, err := io.Copy(w.ResponseWriter, r)
-	w.size += n
-	return n, err
-}
-
-func (w *requestLoggerResponseWriter) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (w *requestLoggerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	hj, ok := w.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, errors.New("response writer does not support hijacking")
-	}
-	return hj.Hijack()
-}
-
-func (w *requestLoggerResponseWriter) Push(target string, opts *http.PushOptions) error {
-	p, ok := w.ResponseWriter.(http.Pusher)
-	if !ok {
-		return http.ErrNotSupported
-	}
-	return p.Push(target, opts)
-}
-
-func (w *requestLoggerResponseWriter) Status() int {
-	if w.status == 0 {
-		return http.StatusOK
-	}
-	return w.status
-}
-
-func (w *requestLoggerResponseWriter) Size() int64 {
-	return w.size
-}
-
-func (w *requestLoggerResponseWriter) Written() bool {
-	return w.status != 0
-}
-
-func (w *requestLoggerResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
 }

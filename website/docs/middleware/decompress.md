@@ -24,3 +24,13 @@ app.Post("/ingest", func(c *zinc.Context) error {
 ```
 
 Unsupported content encodings return `415 Unsupported Media Type`. Invalid gzip bodies return `400 Bad Request`.
+
+Use `MaxDecompressedSize` when compressed uploads should be capped after decompression.
+
+```go
+app.Use(middleware.DecompressWithConfig(middleware.DecompressConfig{
+	MaxDecompressedSize: 4 << 20,
+}))
+```
+
+Requests that expand past the limit return `413 Payload Too Large`.

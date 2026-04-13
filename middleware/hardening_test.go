@@ -2,8 +2,11 @@ package middleware
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -428,6 +431,91 @@ func TestProxyConfigHooksAndSkipper(t *testing.T) {
 	}
 }
 
+func TestProxyTargetsRewriteAndRetry(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "first:"+r.URL.Path)
+	}))
+	defer first.Close()
+
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "second:"+r.URL.Path)
+	}))
+	defer second.Close()
+
+	app := zinc.New()
+	app.Use(ProxyWithConfig(ProxyConfig{
+		Targets: []*ProxyTarget{
+			{Name: "first", URL: mustParseProxyURLHardening(t, first.URL)},
+			{Name: "second", URL: mustParseProxyURLHardening(t, second.URL)},
+		},
+		Rewrite: map[string]string{"/proxy/*": "/*"},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/proxy/users", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "first:/users" {
+		t.Fatalf("first body=%q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/proxy/users", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "second:/users" {
+		t.Fatalf("second body=%q", rec.Body.String())
+	}
+
+	app = zinc.New()
+	app.Use(ProxyWithConfig(ProxyConfig{
+		Target: first.URL,
+		RegexRewrite: map[*regexp.Regexp]string{
+			regexp.MustCompile(`^/v([0-9]+)/(.+)$`): `/api/v$1/$2`,
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Set("X-Modified-Response", "yes")
+			return nil
+		},
+	}))
+	req = httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "first:/api/v1/users" {
+		t.Fatalf("regex rewrite body=%q", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Modified-Response"); got != "yes" {
+		t.Fatalf("modify response header=%q", got)
+	}
+
+	attempts := 0
+	retryErr := errors.New("temporary upstream failure")
+	app = zinc.New()
+	app.Use(ProxyWithConfig(ProxyConfig{
+		Target:  "http://example.com",
+		Retries: 1,
+		RetryFilter: func(c *zinc.Context, err error) bool {
+			return c.Path() == "/retry" && errors.Is(err, retryErr)
+		},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, retryErr
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("retried")),
+				Request:    req,
+			}, nil
+		}),
+	}))
+	req = httptest.NewRequest(http.MethodGet, "/retry", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if attempts != 2 || rec.Body.String() != "retried" {
+		t.Fatalf("attempts=%d body=%q", attempts, rec.Body.String())
+	}
+}
+
 func TestJaegerGeneratedTraceAndObserverError(t *testing.T) {
 	observeErr := errors.New("observe")
 	app := zinc.New()
@@ -483,6 +571,21 @@ func TestCasbinSubjectHelpers(t *testing.T) {
 	if len(enforcer.args) != 3 || enforcer.args[0] != "alice" || enforcer.args[1] != "doc" || enforcer.args[2] != "read" {
 		t.Fatalf("args=%v", enforcer.args)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func mustParseProxyURLHardening(t *testing.T, rawURL string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	return parsed
 }
 
 func mustNoErrHardening(t *testing.T, err error) {

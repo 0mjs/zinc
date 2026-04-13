@@ -16,7 +16,8 @@ var (
 )
 
 type DecompressConfig struct {
-	Skipper func(*zinc.Context) bool
+	Skipper             func(*zinc.Context) bool
+	MaxDecompressedSize int64
 }
 
 func Decompress() zinc.Middleware {
@@ -24,6 +25,10 @@ func Decompress() zinc.Middleware {
 }
 
 func DecompressWithConfig(config DecompressConfig) zinc.Middleware {
+	if config.MaxDecompressedSize < 0 {
+		panic("zincdecompress: MaxDecompressedSize must be greater than or equal to zero")
+	}
+
 	return func(c *zinc.Context) error {
 		if config.Skipper != nil && config.Skipper(c) {
 			return c.Next()
@@ -47,9 +52,18 @@ func DecompressWithConfig(config DecompressConfig) zinc.Middleware {
 			return errors.Join(zinc.ErrBadRequest, fmt.Errorf("%w: %v", ErrDecompressInvalidBody, err))
 		}
 
+		bodyReader := io.Reader(reader)
+		if config.MaxDecompressedSize > 0 {
+			bodyReader = &decompressedLimitReader{
+				reader:    reader,
+				remaining: config.MaxDecompressedSize,
+			}
+		}
+
 		req.Body = &gzipRequestBody{
-			reader: reader,
-			body:   req.Body,
+			reader:     bodyReader,
+			gzipReader: reader,
+			body:       req.Body,
 		}
 		req.Header.Del(zinc.HeaderContentEncoding)
 		req.Header.Del(zinc.HeaderContentLength)
@@ -60,8 +74,9 @@ func DecompressWithConfig(config DecompressConfig) zinc.Middleware {
 }
 
 type gzipRequestBody struct {
-	reader *gzip.Reader
-	body   io.Closer
+	reader     io.Reader
+	gzipReader *gzip.Reader
+	body       io.Closer
 }
 
 func (b *gzipRequestBody) Read(p []byte) (int, error) {
@@ -69,9 +84,39 @@ func (b *gzipRequestBody) Read(p []byte) (int, error) {
 }
 
 func (b *gzipRequestBody) Close() error {
-	err := b.reader.Close()
+	err := b.gzipReader.Close()
 	if closeErr := b.body.Close(); err == nil {
 		err = closeErr
 	}
 	return err
+}
+
+type decompressedLimitReader struct {
+	reader    io.Reader
+	remaining int64
+	exceeded  bool
+}
+
+func (r *decompressedLimitReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if r.exceeded {
+		return 0, zinc.ErrRequestEntityTooLarge
+	}
+	if r.remaining <= 0 {
+		var probe [1]byte
+		n, err := r.reader.Read(probe[:])
+		if n > 0 {
+			r.exceeded = true
+			return 0, zinc.ErrRequestEntityTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > r.remaining {
+		p = p[:int(r.remaining)]
+	}
+	n, err := r.reader.Read(p)
+	r.remaining -= int64(n)
+	return n, err
 }

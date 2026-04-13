@@ -58,7 +58,7 @@ func PrometheusWithConfig(config PrometheusConfig) zinc.Middleware {
 		}
 
 		baseWriter := c.Writer()
-		writer := newRequestLoggerResponseWriter(baseWriter)
+		writer := zinc.WrapResponseWriter(baseWriter)
 		c.SetWriter(writer)
 
 		start := now()

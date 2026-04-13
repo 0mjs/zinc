@@ -30,6 +30,9 @@ github.com/0mjs/zinc/middleware
 | [`Prometheus`](./prometheus) | Dependency-free Prometheus text metrics for request counts and duration |
 | [`Jaeger`](./jaeger) | Jaeger `uber-trace-id` propagation with an observer hook |
 | [`Proxy`](./proxy) | `net/http/httputil` reverse proxy middleware |
+| [`Utility`](./utility) | Small helpers for no-cache headers, health checks, real IPs, throttling, and conditional middleware |
+| [`Header Guards`](./header-guards) | Content header allow-lists and header-routed middleware |
+| [`Pprof`](./pprof) | Standard library pprof handlers behind Zinc middleware |
 | [`Redirect`](./redirect) | Exact and wildcard path redirects |
 | [`Rewrite`](./rewrite) | Exact and wildcard path rewrites before route dispatch |
 | [`Secure`](./secure) | Common security response headers |
@@ -54,6 +57,7 @@ app.Use(middleware.MethodOverride())
 app.Use(middleware.Secure())
 app.Use(middleware.TrailingSlash())
 app.Use(middleware.BodyLimit(10 * middleware.MB))
+app.Use(middleware.Throttle(64))
 app.Use(middleware.Prometheus())
 
 app.Get("/metrics", middleware.PrometheusHandler())

@@ -130,6 +130,157 @@ func TestContextRequestHelpersAndMetadata(t *testing.T) {
 	}
 }
 
+func TestContextTypedStoreGetters(t *testing.T) {
+	ctx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctx.release()
+
+	ctx.Set("string", "zinc")
+	ctx.Set("bool", true)
+	ctx.Set("int", 7)
+	ctx.Set("int64", int64(9))
+	ctx.Set("float64", 1.5)
+	ctx.Set("strings", []string{"a", "b"})
+	ctx.Set("map", Map{"ok": true})
+	ctx.Set("mapString", map[string]string{"name": "zinc"})
+	ctx.Set("mapStringSlice", map[string][]string{"tags": {"api", "go"}})
+
+	if ctx.GetString("string") != "zinc" ||
+		!ctx.GetBool("bool") ||
+		ctx.GetInt("int") != 7 ||
+		ctx.GetInt64("int64") != 9 ||
+		ctx.GetFloat64("float64") != 1.5 {
+		t.Fatal("scalar typed getters failed")
+	}
+	if got := ctx.GetStringSlice("strings"); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("string slice=%v", got)
+	}
+	if got := ctx.GetStringMap("map"); got["ok"] != true {
+		t.Fatalf("string map=%v", got)
+	}
+	if got := ctx.GetStringMapString("mapString"); got["name"] != "zinc" {
+		t.Fatalf("string map string=%v", got)
+	}
+	if got := ctx.GetStringMapStringSlice("mapStringSlice"); len(got["tags"]) != 2 {
+		t.Fatalf("string map string slice=%v", got)
+	}
+
+	if ctx.GetString("missing") != "" ||
+		ctx.GetBool("missing") ||
+		ctx.GetInt("missing") != 0 ||
+		ctx.GetInt64("missing") != 0 ||
+		ctx.GetFloat64("missing") != 0 {
+		t.Fatal("missing scalar getters should return zero values")
+	}
+	if ctx.GetString("int") != "" || ctx.GetInt("string") != 0 {
+		t.Fatal("mismatched typed getters should return zero values")
+	}
+	if ctx.GetStringSlice("missing") != nil ||
+		ctx.GetStringMap("missing") != nil ||
+		ctx.GetStringMapString("missing") != nil ||
+		ctx.GetStringMapStringSlice("missing") != nil {
+		t.Fatal("missing collection getters should return nil")
+	}
+}
+
+func TestContextQueryAndPostFormCollections(t *testing.T) {
+	t.Run("query arrays and maps", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/search?tag=a&tag=b&filter[name]=zinc&filter[role]=admin", nil)
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		if got := ctx.QueryArray("tag"); !reflect.DeepEqual(got, []string{"a", "b"}) {
+			t.Fatalf("query array=%v", got)
+		}
+		if got := ctx.QueryArray("missing"); len(got) != 0 {
+			t.Fatalf("missing query array=%v", got)
+		}
+		queryMap := ctx.QueryMap("filter")
+		if queryMap["name"] != "zinc" || queryMap["role"] != "admin" {
+			t.Fatalf("query map=%v", queryMap)
+		}
+		if got := ctx.QueryMap("missing"); len(got) != 0 {
+			t.Fatalf("missing query map=%v", got)
+		}
+	})
+
+	t.Run("urlencoded post form arrays and maps", func(t *testing.T) {
+		form := url.Values{
+			"name":       {"body"},
+			"tag":        {"a", "b"},
+			"user[name]": {"zinc"},
+			"user[role]": {"admin"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/submit?name=query&queryOnly=yes", strings.NewReader(form.Encode()))
+		req.Header.Set(HeaderContentType, "application/x-www-form-urlencoded")
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		if got := ctx.PostForm("name"); got != "body" {
+			t.Fatalf("post form name=%q", got)
+		}
+		if got := ctx.PostForm("queryOnly"); got != "" {
+			t.Fatalf("post form should not read query values, got=%q", got)
+		}
+		if got := ctx.PostFormOr("missing", "fallback"); got != "fallback" {
+			t.Fatalf("post form fallback=%q", got)
+		}
+		if got := ctx.PostFormArray("tag"); !reflect.DeepEqual(got, []string{"a", "b"}) {
+			t.Fatalf("post form array=%v", got)
+		}
+		postFormMap := ctx.PostFormMap("user")
+		if postFormMap["name"] != "zinc" || postFormMap["role"] != "admin" {
+			t.Fatalf("post form map=%v", postFormMap)
+		}
+	})
+
+	t.Run("multipart post form arrays and maps", func(t *testing.T) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		mustDo(t, writer.WriteField("tag", "a"))
+		mustDo(t, writer.WriteField("tag", "b"))
+		mustDo(t, writer.WriteField("user[name]", "zinc"))
+		mustDo(t, writer.WriteField("user[role]", "admin"))
+		mustDo(t, writer.Close())
+
+		req := httptest.NewRequest(http.MethodPost, "/submit", &body)
+		req.Header.Set(HeaderContentType, writer.FormDataContentType())
+		ctx, _ := newRecorderContext(t, req)
+		defer ctx.release()
+
+		if got := ctx.PostFormArray("tag"); !reflect.DeepEqual(got, []string{"a", "b"}) {
+			t.Fatalf("multipart post form array=%v", got)
+		}
+		postFormMap := ctx.PostFormMap("user")
+		if postFormMap["name"] != "zinc" || postFormMap["role"] != "admin" {
+			t.Fatalf("multipart post form map=%v", postFormMap)
+		}
+	})
+}
+
+func TestContextRequestIntrospectionHelpers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(HeaderContentType, "Application/JSON; charset=utf-8")
+	req.Header.Set(HeaderConnection, "keep-alive, Upgrade")
+	req.Header.Set(HeaderUpgrade, "WebSocket")
+	ctx, _ := newRecorderContext(t, req)
+	defer ctx.release()
+
+	if got := ctx.ContentType(); got != "application/json" {
+		t.Fatalf("content type=%q", got)
+	}
+	if !ctx.IsWebSocket() {
+		t.Fatal("expected websocket request")
+	}
+
+	plainReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	plainReq.Header.Set(HeaderConnection, "close")
+	plainCtx, _ := newRecorderContext(t, plainReq)
+	defer plainCtx.release()
+	if plainCtx.ContentType() != "" || plainCtx.IsWebSocket() {
+		t.Fatal("plain request should not report content type or websocket")
+	}
+}
+
 func TestContextAcquireReleaseAndCopy(t *testing.T) {
 	app := New()
 
