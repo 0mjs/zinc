@@ -44,6 +44,11 @@ module.exports = {
           id: "api/errors",
           label: "🚨 Errors",
         },
+        {
+          type: "doc",
+          id: "api/response-writer",
+          label: "✍️ Response Writer",
+        },
       ],
     },
     {

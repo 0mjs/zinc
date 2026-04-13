@@ -51,6 +51,17 @@ Use it when you want either:
 | `Header` | Bind request headers |
 | `Path` | Bind route params |
 
+Common struct tags:
+
+- `path:"id"`
+- `query:"page"`
+- `header:"x-request-id"`
+- `form:"name"`
+- `json:"name"`
+- `xml:"name"`
+- `yaml:"name"`
+- `toml:"name"`
+
 ## Validation
 
 If `Config.Validator` is set, Zinc validates after binding.

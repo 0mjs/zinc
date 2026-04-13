@@ -72,6 +72,26 @@ app.Post("/profile", func(c *zinc.Context) error {
 })
 ```
 
+For bracket-style query or form maps:
+
+```go
+app.Get("/search", func(c *zinc.Context) error {
+	filters := c.QueryMap("filter")
+	return c.JSON(filters)
+})
+```
+
+For request shape checks:
+
+```go
+app.Post("/events", func(c *zinc.Context) error {
+	if c.ContentType() != "application/json" {
+		return zinc.ErrUnsupportedMediaType
+	}
+	return c.NoContent()
+})
+```
+
 ## Request-scoped values
 
 Use `Set` and `Get` for request-local state.

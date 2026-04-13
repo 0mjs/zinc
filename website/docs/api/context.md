@@ -13,9 +13,14 @@ sidebar_position: 3
 |---|---|
 | `Request()` | Get the underlying `*http.Request` |
 | `Writer()` | Get the response writer |
+| `SetWriter(writer)` | Replace the response writer for middleware |
 | `Method()` | Current request method |
 | `Path()` | Current request path |
+| `SetPath(path)` | Rewrite the current path before continuing |
+| `OriginalURL()` | Original request URI |
 | `Route()` | Matched `RouteInfo` |
+| `Context()` | Underlying request context |
+| `SetContext(ctx)` | Replace the underlying request context |
 
 ## Route and query helpers
 
@@ -34,6 +39,11 @@ sidebar_position: 3
 | `PostFormMap(name)` | Bracket-style body form map |
 | `ContentType()` | Request content type without parameters |
 | `IsWebSocket()` | Whether the request is a websocket upgrade |
+| `GetHeader(key)` | Read a request header |
+| `Cookie(name)` | Read a request cookie |
+| `Cookies()` | Read all request cookies |
+| `BodyBytes()` | Read and cache the request body |
+| `BodyString()` | Read and cache the request body as a string |
 
 ## Request-local state
 
@@ -101,7 +111,13 @@ The response helpers live on `Context` too:
 
 - `IP()`
 - `IPs()`
+- `RemoteIP()`
+- `Scheme()`
+- `Secure()`
+- `IsPreflight()`
 - `RequestID()`
+
+`IP()` and `IPs()` use `Config.ProxyHeader` only when `TrustedProxies` allows the direct peer.
 
 ## Safety
 

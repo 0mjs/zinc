@@ -27,7 +27,7 @@ Groups let you:
 |---|---|
 | `Use` | Add group-local middleware |
 | `Group`, `Route` | Create nested route trees |
-| `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options` | Register routes under the group prefix |
+| `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Connect`, `Trace` | Register routes under the group prefix |
 | `Add`, `Match`, `All`, `Any` | Register more general route sets |
 | `Handle` | Register a named route with `RouteSpec` |
 | `RouteNotFound` | Register a prefix-scoped not-found route |
@@ -53,3 +53,9 @@ if err := v1.Handle(zinc.RouteSpec{
 ```
 
 Group route registration inherits the group prefix and middleware stack automatically.
+
+Route-local middleware still works inside groups.
+
+```go
+v1.Post("/posts", requireRole("editor"), createPost)
+```

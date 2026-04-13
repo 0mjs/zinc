@@ -38,6 +38,18 @@ app := zinc.NewWithConfig(zinc.Config{StrictRouting: true})
 | `Routes`, `FindRoute`, `RouteByName`, `URL` | Inspect routes and generate URLs |
 | `Listen`, `ListenTLS`, `Serve`, `Shutdown` | Run and stop the app |
 
+Route methods accept a handler chain. Middleware goes before the final handler.
+
+```go
+app.Post("/posts", authUser, requireRole("editor"), createPost)
+```
+
+`Get` also accepts a literal string for quick static text responses.
+
+```go
+app.Get("/health", "ok")
+```
+
 ## Named route registration
 
 Use `Handle(RouteSpec)` when you want route naming and reverse URL generation.
@@ -79,3 +91,5 @@ Most apps do not need these directly, but Zinc exposes:
 - `ReleaseContext`
 
 They are useful for adapters, framework integration, and low-level tests.
+
+For normal applications, register routes and let Zinc manage context lifecycle.

@@ -47,6 +47,15 @@ These control how Zinc matches and caches routes.
 
 These affect how client IP helpers behave.
 
+```go
+app := zinc.NewWithConfig(zinc.Config{
+	ProxyHeader:    zinc.HeaderXForwardedFor,
+	TrustedProxies: []string{"10.0.0.1"},
+})
+```
+
+Use this only for proxies you control. If `TrustedProxies` does not trust the direct peer, Zinc ignores forwarded IP headers.
+
 ## Extension points
 
 Plug in application-specific behavior with:
@@ -58,3 +67,16 @@ Plug in application-specific behavior with:
 - `ErrorHandler`
 
 Use these when you need custom serialization, validation, rendering, or error-envelope policies without replacing the rest of Zinc.
+
+Example:
+
+```go
+app := zinc.NewWithConfig(zinc.Config{
+	Validator: validator,
+	ErrorHandler: func(c *zinc.Context, err error) {
+		_ = c.Status(zinc.StatusInternalServerError).JSON(zinc.Map{
+			"error": err.Error(),
+		})
+	},
+})
+```

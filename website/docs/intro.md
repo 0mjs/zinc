@@ -6,16 +6,17 @@ description: Fast, explicit, net/http-native API development for Go.
 sidebar_position: 1
 ---
 
-Zinc is an Express-inspired Go API framework built on top of `net/http`.
+Zinc is a Fiber-style Go API framework built on top of `net/http`.
 
 It focuses on:
 
-- explicit routing and middleware composition
+- Fiber-like routing and handler ergonomics
+- explicit middleware composition
 - practical binding and response helpers
 - compatibility with the standard library
 - strong request-path performance without forcing a non-`net/http` runtime model
 
-If you like the ergonomics of frameworks such as Fiber or Express, but want to stay close to idiomatic Go and the standard library, Zinc is built for that shape of application.
+If you like Fiber's developer experience but want to stay on `net/http`, Zinc is built for that shape of application.
 
 ## Installation
 
@@ -45,10 +46,26 @@ func main() {
 }
 ```
 
+## Mental Model
+
+Zinc handlers and middleware share one signature:
+
+```go
+func(*zinc.Context) error
+```
+
+That means route-level guards, group middleware, and final handlers compose in the same chain.
+
+```go
+app.Post("/posts", authUser, requireRole("editor"), createPost)
+```
+
+Each middleware can call `return c.Next()` to continue, return a response to stop, or return an error for the app error handler.
+
 ## Why Zinc
 
 - **`net/http` native**: mount stdlib handlers, wrap existing middleware, and keep normal Go deployment patterns.
-- **Express-style routing**: named params, wildcards, groups, prefix middleware, and route-scoped `404` handling.
+- **Fiber-style routing**: named params, wildcards, groups, prefix middleware, and route-scoped `404` handling.
 - **API-first binding**: bind path, query, headers, forms, multipart files, JSON, XML, YAML, TOML, and plain text.
 - **Practical responses**: JSON, XML, YAML, TOML, HTML, streams, files, redirects, downloads, and renderer-backed templates.
 - **Tooling-friendly routing**: named routes, reverse URL generation, route introspection, and regex-constrained params.

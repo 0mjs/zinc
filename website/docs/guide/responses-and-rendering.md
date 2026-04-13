@@ -34,8 +34,12 @@ If you already have encoded bytes:
 
 ```go
 return c.JSONBlob(zinc.StatusOK, rawJSON)
+return c.XMLBlob(zinc.StatusOK, rawXML)
+return c.HTMLBlob(zinc.StatusOK, rawHTML)
 return c.Blob(zinc.StatusOK, "application/custom", payload)
 ```
+
+Blob helpers write the bytes you pass in. They do not re-encode the payload.
 
 ## Status and headers
 
@@ -113,13 +117,40 @@ return c.Stream("text/plain; charset=utf-8", reader)
 For server-sent events, write one event at a time:
 
 ```go
-return c.SSE(zinc.SSEvent{
-	Event: "message",
-	Data:  zinc.Map{"text": "hello"},
+app.Get("/events", func(c *zinc.Context) error {
+	for _, msg := range messages {
+		if err := c.SSE(zinc.SSEvent{
+			Event: "message",
+			Data:  zinc.Map{"text": msg},
+		}); err != nil {
+			return err
+		}
+		if flusher, ok := c.Writer().(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+	return nil
 })
 ```
 
-For simple content negotiation:
+`SSE` writes one event and leaves streaming control with the handler.
+
+## Content negotiation
+
+Use `Accepts` when the handler needs to branch before writing.
+
+```go
+switch c.Accepts("application/json", "text/html") {
+case "application/json":
+	return c.JSON(payload)
+case "text/html":
+	return c.Render("users/show", payload)
+default:
+	return zinc.ErrNotAcceptable
+}
+```
+
+Use `Negotiate` when the response body can be offered in multiple content types.
 
 ```go
 return c.Negotiate(zinc.StatusOK, map[string]any{
@@ -128,16 +159,31 @@ return c.Negotiate(zinc.StatusOK, map[string]any{
 })
 ```
 
+`Accepts` follows the request `Accept` header, including quality values and `type/*` or `*/*` wildcards. When no `Accept` header is present, Zinc picks the first offered type.
+
 ## Response writer wrapping
 
 Middleware that needs response status or byte counts can wrap the underlying writer.
 
 ```go
-rw := zinc.WrapResponseWriter(c.Writer())
+base := c.Writer()
+rw := zinc.WrapResponseWriter(base)
 c.SetWriter(rw)
+defer c.SetWriter(base)
 ```
 
-`WrapResponseWriter` tracks status, bytes written, and whether the response has started.
+`WrapResponseWriter` returns `zinc.ResponseWriter`.
+
+```go
+type ResponseWriter interface {
+	http.ResponseWriter
+	Status() int
+	BytesWritten() int
+	Written() bool
+}
+```
+
+It preserves common optional writer behavior such as flushing, hijacking, `io.ReaderFrom`, server push, and unwrapping when the underlying writer supports it.
 
 ## Good API pattern
 
