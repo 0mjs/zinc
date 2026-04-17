@@ -216,6 +216,55 @@ app.Use(middleware.JWTWithConfig(middleware.JWTConfig{
 
 Zinc now exposes middleware through a single public package: `github.com/0mjs/zinc/middleware`.
 
+## Background Jobs
+
+Zinc also ships a small first-party jobs add-on:
+
+- `github.com/0mjs/zinc/jobs`
+
+```go
+queue := jobs.NewWithConfig(jobs.Config{
+	DefaultMaxAttempts: 3,
+	Backoff:            jobs.ExponentialBackoff(time.Second, time.Minute),
+})
+
+if _, err := queue.Cron("log.hey", "10s", func(ctx context.Context) error {
+	log.Println("Hey!")
+	return nil
+}); err != nil {
+	log.Fatal(err)
+}
+
+if err := queue.Handle("email.send", func(ctx context.Context, job jobs.Job) error {
+	var payload SendEmail
+	if err := job.Decode(&payload); err != nil {
+		return err
+	}
+	return mailer.Send(ctx, payload.To, payload.Subject)
+}); err != nil {
+	log.Fatal(err)
+}
+
+runner, err := queue.Start(context.Background(), 4)
+if err != nil {
+	log.Fatal(err)
+}
+defer runner.Stop(context.Background())
+
+if _, err := queue.Enqueue(context.Background(), "email.send", SendEmail{
+	To:      "sam@example.com",
+	Subject: "Welcome",
+}); err != nil {
+	log.Fatal(err)
+}
+
+if _, err := queue.Schedule("reports.daily", "0 9 * * mon-fri", DailyReport{}); err != nil {
+	log.Fatal(err)
+}
+```
+
+The initial backend is in-memory and supports workers, delayed jobs, retries, failed-job inspection, and cron-style schedules. Use `Cron` for Nest-like scheduled function declarations, and drop down to `Handle` plus `Schedule` when the job needs a payload. Durable Postgres and Redis adapters can build on the same API.
+
 ## License
 
 [MIT](./LICENSE)
