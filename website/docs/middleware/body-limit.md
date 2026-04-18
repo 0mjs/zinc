@@ -1,5 +1,5 @@
 ---
-title: 📦 Body Limit
+title: Body Limit
 description: Reject oversized request bodies before handlers consume them.
 sidebar_position: 7
 ---

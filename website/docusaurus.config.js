@@ -4,7 +4,7 @@ const { themes } = require("prism-react-renderer");
 
 const config = {
   title: "Zinc",
-  tagline: "Fast, explicit API docs for a fast, explicit Go framework.",
+  tagline: "Fast, explicit Go APIs on net/http.",
   favicon: "img/z_logo.png",
 
   url: "https://zinc.carbonsoft.sh",
@@ -51,7 +51,9 @@ const config = {
         src: "img/z_logo.png",
       },
       items: [
-        { to: "/", label: "Home", position: "left" },
+        { to: "/", label: "Docs", position: "left" },
+        { to: "/getting-started/quick-start", label: "Quick Start", position: "left" },
+        { to: "/guide/routing", label: "Guide", position: "left" },
         { href: "https://pkg.go.dev/github.com/0mjs/zinc", label: "pkg.go.dev", position: "right" },
         { href: "https://github.com/0mjs/zinc", label: "GitHub", position: "right" },
       ],
@@ -63,6 +65,7 @@ const config = {
           title: "Docs",
           items: [
             { label: "Welcome", to: "/" },
+            { label: "Quick Start", to: "/getting-started/quick-start" },
             { label: "Routing", to: "/guide/routing" },
             { label: "Binding", to: "/guide/binding" },
             { label: "App API", to: "/api/app" },
@@ -85,15 +88,15 @@ const config = {
       darkTheme: themes.dracula,
     },
     colorMode: {
-      defaultMode: "dark",
+      defaultMode: "light",
       disableSwitch: false,
-      respectPrefersColorScheme: false,
+      respectPrefersColorScheme: true,
     },
     announcementBar: {
       id: "docs-preview",
-      content: "Zinc docs are live in-repo. Expect rapid improvements while the API stabilizes toward 0.1.x.",
-      backgroundColor: "#15161a",
-      textColor: "#eceef0",
+      content: "Zinc is pre-1.0. The docs track the current API and call out behavior directly.",
+      backgroundColor: "#f4f5f7",
+      textColor: "#1f2328",
       isCloseable: true,
     },
   },

@@ -1,30 +1,18 @@
 ---
 slug: /
 id: intro
-title: 👋 Welcome
-description: Fast, explicit, net/http-native API development for Go.
+title: Welcome
+description: Build fast, explicit Go APIs on net/http with Zinc.
 sidebar_position: 1
 ---
 
-Zinc is a Fiber-style Go API framework built on top of `net/http`.
+Zinc is a Go API framework for developers who want expressive routing and practical helpers without leaving `net/http`.
 
-It focuses on:
-
-- Fiber-like routing and handler ergonomics
-- explicit middleware composition
-- practical binding and response helpers
-- compatibility with the standard library
-- strong request-path performance without forcing a non-`net/http` runtime model
-
-If you like Fiber's developer experience but want to stay on `net/http`, Zinc is built for that shape of application.
-
-## Installation
+It gives you route groups, middleware chains, request binding, response helpers, static files, rendering, route metadata, and first-party middleware while keeping normal Go deployment and testing habits.
 
 ```bash
 go get github.com/0mjs/zinc
 ```
-
-## Hello, World
 
 ```go
 package main
@@ -46,50 +34,47 @@ func main() {
 }
 ```
 
-## Mental Model
+<div className="zinc-doc-cards">
+  <a className="zinc-doc-card" href="/getting-started/quick-start">
+    <strong>Start building</strong>
+    Install Zinc, run a tiny server, and add your first JSON endpoint.
+  </a>
+  <a className="zinc-doc-card" href="/guide/routing">
+    <strong>Learn the guide</strong>
+    Work through routing, middleware, context, binding, responses, and errors.
+  </a>
+  <a className="zinc-doc-card" href="/middleware/overview">
+    <strong>Pick middleware</strong>
+    Add CORS, auth, logging, recovery, metrics, rate limiting, static files, and more.
+  </a>
+</div>
 
-Zinc handlers and middleware share one signature:
+## What Zinc is good at
+
+- **API ergonomics:** handlers and middleware use one `func(*zinc.Context) error` shape.
+- **Standard library compatibility:** mount `http.Handler` values and keep normal `net/http` server behavior.
+- **Fast request paths:** Zinc is built around a compact router and a pooled request context.
+- **Practical defaults:** common response formats, request binding, error handling, static files, and middleware are first-party.
+
+## Mental model
+
+A Zinc app is a request pipeline:
+
+1. app-level middleware runs
+2. prefix and group middleware run when their route matches
+3. the route handler writes a response or returns an error
+4. Zinc's error handler turns returned errors into responses
 
 ```go
-func(*zinc.Context) error
+app.Post("/posts", requireUser, requireRole("editor"), createPost)
 ```
 
-That means route-level guards, group middleware, and final handlers compose in the same chain.
+Each item in that chain can call `c.Next()` to continue, return a response to stop, or return an error for the app error handler.
 
-```go
-app.Post("/posts", authUser, requireRole("editor"), createPost)
-```
+## Where to go next
 
-Each middleware can call `return c.Next()` to continue, return a response to stop, or return an error for the app error handler.
-
-## Why Zinc
-
-- **`net/http` native**: mount stdlib handlers, wrap existing middleware, and keep normal Go deployment patterns.
-- **Fiber-style routing**: named params, wildcards, groups, prefix middleware, and route-scoped `404` handling.
-- **API-first binding**: bind path, query, headers, forms, multipart files, JSON, XML, YAML, TOML, and plain text.
-- **Practical responses**: JSON, XML, YAML, TOML, HTML, streams, files, redirects, downloads, and renderer-backed templates.
-- **Tooling-friendly routing**: named routes, reverse URL generation, route introspection, and regex-constrained params.
-
-## Start Here
-
-- [Routing](./guide/routing) for route shapes, params, groups, and route naming
-- [Binding](./guide/binding) for request decoding and validation patterns
-- [Responses and rendering](./guide/responses-and-rendering) for response helpers
-- [Errors](./guide/errors) for `HTTPError`, abort helpers, and custom error handling
-- [App API](./api/app) for the primary app lifecycle and route APIs
-
-## Current Benchmark Snapshot
-
-As of the latest peer-only suite, Zinc wins `65/85` rows overall and `65/77` non-throughput rows against `Gin`, `Echo`, and `Chi`.
-
-The full benchmark tables live in the repository benchmark report:
-
-- [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/main/BENCKMARKS.md)
-
-## Docs Philosophy
-
-These docs are written to be explicit, operational, and copy-paste friendly:
-
-- guide pages explain how to use Zinc in real applications
-- API pages explain the most important public types and behaviors
-- benchmark and FAQ pages keep the “why Zinc?” story honest and easy to inspect
+- [Installation](./getting-started/installation) covers module setup and Go version requirements.
+- [Quick Start](./getting-started/quick-start) builds a small API in one file.
+- [First Route](./getting-started/first-route) explains params, query values, JSON, and errors in one handler.
+- [Routing](./guide/routing) is the first full guide page once you are ready for groups and named routes.
+- [API Reference](./api/app) keeps the method-level details separate from the learning path.

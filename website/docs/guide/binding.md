@@ -1,11 +1,31 @@
 ---
 id: binding
-title: 📥 Binding
+title: Binding
 description: Use `c.Bind()` to decode path, query, headers, body formats, forms, and multipart files into Go types.
 sidebar_position: 4
 ---
 
 Zinc's primary binding API is `c.Bind()`.
+
+## At a glance
+
+```go
+type CreateUserInput struct {
+	TeamID int    `path:"teamID"`
+	Page   int    `query:"page"`
+	Name   string `json:"name"`
+}
+
+app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
+	var input CreateUserInput
+	if err := c.Bind().All(&input); err != nil {
+		return err
+	}
+	return c.Status(zinc.StatusCreated).JSON(input)
+})
+```
+
+Use `All` for normal API handlers and the source-specific methods when a handler needs stricter control.
 
 ## Bind the whole request
 
@@ -119,12 +139,10 @@ That means both `c.Bind().All(&dst)` and `c.Bind().JSON(&dst)` participate in th
 
 ## Bind errors
 
-Zinc exposes a typed `BindError` to make source-aware error handling easier.
+Binding errors keep source information so your error handler can explain whether a failure came from path params, query values, headers, forms, or the request body.
 
-It includes:
+## See also
 
-- `Source`
-- `Field`
-- `Err`
-
-This is useful when you want structured error responses rather than a single generic bad-request message.
+- [First Route](../getting-started/first-route) for a smaller binding example.
+- [Configuration](./configuration) for custom binders and validators.
+- [Bind API](../api/binding) for interfaces and error types.

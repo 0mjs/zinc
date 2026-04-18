@@ -1,5 +1,5 @@
 ---
-title: ⏱️ Context Timeout
+title: Context Timeout
 description: Attach per-request deadlines to the handler chain.
 sidebar_position: 9
 ---

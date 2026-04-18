@@ -1,6 +1,6 @@
 ---
 id: context
-title: 🧠 Context
+title: Context
 description: Work with request data, response state, route metadata, and request-scoped values.
 sidebar_position: 3
 ---
@@ -14,6 +14,20 @@ It gives you access to:
 - request-scoped values
 - binding and response helpers
 - route metadata and client/network helpers
+
+## At a glance
+
+```go
+app.Get("/users/:id", func(c *zinc.Context) error {
+	return c.JSON(zinc.Map{
+		"id":      c.Param("id"),
+		"verbose": c.QueryOr("verbose", "false"),
+		"route":   c.FullPath(),
+	})
+})
+```
+
+Treat the context as short-lived. Read what you need during the request, and use `c.Copy()` before sending request data to another goroutine.
 
 ## Basic request data
 
@@ -174,6 +188,14 @@ Do not keep the original request context beyond the active handler lifetime. Use
 :::
 
 ## Advanced: manual acquire and release
+
+Most applications do not need manual context management. Use `AcquireContext` and `ReleaseContext` only when integrating Zinc with code that already owns an `http.ResponseWriter` and `*http.Request`.
+
+## See also
+
+- [Binding](./binding) for decoding requests into structs.
+- [Responses and Rendering](./responses-and-rendering) for writing responses.
+- [Context API](../api/context) for the full helper list.
 
 Most applications should let Zinc manage context lifecycle automatically.
 

@@ -1,6 +1,6 @@
 ---
 id: app
-title: 🚀 App
+title: App
 description: The primary Zinc application type and its lifecycle, routing, and introspection APIs.
 sidebar_position: 1
 ---

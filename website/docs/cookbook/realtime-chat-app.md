@@ -1,6 +1,6 @@
 ---
 slug: /cookbook/realtime-chat-app
-title: 💬 Realtime Chat App
+title: Realtime Chat App
 description: Build a small live chat UI with Zinc templates, static assets, and a WebSocket endpoint.
 ---
 

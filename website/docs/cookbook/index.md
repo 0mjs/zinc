@@ -1,7 +1,7 @@
 ---
 id: cookbook
 slug: /cookbook
-title: 📚 Cookbook
+title: Cookbook
 description: Runnable Zinc examples that combine routing, templates, browser code, storage, and real request flows.
 ---
 
@@ -17,15 +17,15 @@ These recipes are the right place to see how Zinc fits together when you need:
 
 ## Recipes
 
-### [🧱 Templated HTML + JS Page](/cookbook/templated-html-js-page)
+### [Templated HTML + JS Page](/cookbook/templated-html-js-page)
 
 Render a small server-side HTML page, serve browser assets from `/static`, and progressively enhance the page with a lightweight script.
 
-### [💬 Realtime Chat App](/cookbook/realtime-chat-app)
+### [Realtime Chat App](/cookbook/realtime-chat-app)
 
 Build a live chat UI with Zinc templates, a WebSocket endpoint, and a small hub for fan-out broadcasting.
 
-### [🗃️ SQLite CRUD API](/cookbook/sqlite-crud-api)
+### [SQLite CRUD API](/cookbook/sqlite-crud-api)
 
 Wire Zinc into a compact SQLite-backed API with request binding, route params, and JSON responses.
 

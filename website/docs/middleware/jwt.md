@@ -1,5 +1,5 @@
 ---
-title: 🔐 JWT
+title: JWT
 description: Parse bearer tokens, validate claims, and expose token data to handlers.
 sidebar_position: 4
 ---

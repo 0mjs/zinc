@@ -1,6 +1,6 @@
 ---
 id: configuration
-title: ⚙️ Configuration
+title: Configuration
 description: Understand Zinc’s routing, server, proxy, and extensibility settings.
 sidebar_position: 8
 ---
@@ -20,6 +20,8 @@ app := zinc.NewWithConfig(zinc.Config{
 	RouteCacheSize:         1000,
 })
 ```
+
+Most applications can start with `zinc.New()` and add config only when routing behavior, server timeouts, proxy trust, or extension points need to change.
 
 ## Routing behavior
 
@@ -80,3 +82,9 @@ app := zinc.NewWithConfig(zinc.Config{
 	},
 })
 ```
+
+## See also
+
+- [Config API](../api/config) for the field-level reference.
+- [Errors](./errors) for custom error handlers.
+- [Binding](./binding) for validators and request binders.

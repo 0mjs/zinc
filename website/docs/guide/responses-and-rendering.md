@@ -1,11 +1,22 @@
 ---
 id: responses-and-rendering
-title: 📤 Responses and Rendering
+title: Responses and Rendering
 description: Return JSON, XML, YAML, TOML, HTML, templates, files, downloads, streams, and redirects.
 sidebar_position: 5
 ---
 
 Zinc provides response helpers for common API and web application flows.
+
+## At a glance
+
+```go
+return c.
+	Status(zinc.StatusCreated).
+	SetHeader(zinc.HeaderLocation, "/users/42").
+	JSON(zinc.Map{"id": 42})
+```
+
+Set status and headers before writing the body. Once a response helper writes, treat the response as complete.
 
 ## Plain responses
 
@@ -187,10 +198,26 @@ It preserves common optional writer behavior such as flushing, hijacking, `io.Re
 
 ## Good API pattern
 
-For most API handlers, a clean pattern is:
+For API handlers, prefer one clear return path: validate input, run application logic, then return one response helper or one error.
 
 ```go
-return c.Status(zinc.StatusCreated).JSON(payload)
+app.Post("/users", func(c *zinc.Context) error {
+	var input CreateUserInput
+	if err := c.Bind().JSON(&input); err != nil {
+		return err
+	}
+
+	user, err := createUser(input)
+	if err != nil {
+		return err
+	}
+
+	return c.Status(zinc.StatusCreated).JSON(user)
+})
 ```
 
-That keeps status, headers, and body shape close together and easy to read.
+## See also
+
+- [Errors](./errors) for error responses.
+- [Configuration](./configuration) for custom renderers and JSON codecs.
+- [Context API](../api/context) for response helper details.

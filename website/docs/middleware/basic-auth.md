@@ -1,5 +1,5 @@
 ---
-title: 🔑 Basic Auth
+title: Basic Auth
 description: Extract, validate, and expose HTTP Basic auth credentials.
 sidebar_position: 5
 ---

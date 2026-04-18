@@ -1,5 +1,5 @@
 ---
-title: 🧷 CSRF
+title: CSRF
 description: Cookie-backed CSRF protection with configurable token readers and fetch metadata checks.
 sidebar_position: 3
 ---

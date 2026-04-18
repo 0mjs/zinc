@@ -1,6 +1,6 @@
 ---
 id: routing
-title: 🧭 Routing
+title: Routing
 description: Register routes, use params and wildcards, group APIs, and generate URLs from named routes.
 sidebar_position: 1
 toc_max_heading_level: 4
@@ -11,6 +11,18 @@ Routing in Zinc is intentionally straightforward:
 - use `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Connect`, and `Trace`
 - fall back to `Add`, `Match`, `All`, or `Any` for broader patterns
 - use groups to apply prefixes and middleware once
+
+## At a glance
+
+```go
+app.Get("/users/:id", showUser)
+app.Post("/users", createUser)
+
+api := app.Group("/api")
+api.Get("/health", health)
+```
+
+Use method helpers for normal routes, params for path values, wildcards for trailing captures, and groups when routes share a prefix or middleware.
 
 ## Basic routes
 
@@ -142,11 +154,18 @@ Mounted handlers also show up in route introspection with `Mounted: true`.
 
 ## Introspection helpers
 
-Zinc exposes basic route discovery helpers for tooling and diagnostics:
+Zinc keeps route metadata available for tooling and diagnostics.
 
-- `Routes()`
-- `FindRoute(method, path)`
-- `RoutesByMethod(method)`
-- `RoutesByPrefix(prefix)`
+```go
+routes := app.Routes()
+users := app.RoutesByPrefix("/users")
+route, ok := app.FindRoute(zinc.MethodGet, "/users/42")
+```
 
-Use these for doc generation, runtime inspection, or smoke tests.
+Use these helpers for tests, debug pages, generated route tables, and application tooling.
+
+## See also
+
+- [Groups and Middleware](./groups-and-middleware) for composing route trees.
+- [Context](./context) for reading params and query values in handlers.
+- [App API](../api/app) for method-level route registration details.

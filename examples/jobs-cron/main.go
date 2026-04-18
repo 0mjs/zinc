@@ -12,7 +12,7 @@ func main() {
 	queue := jobs.New()
 
 	queue.Cron("log.zinc", "3s", func(ctx context.Context) error {
-		log.Println("Zinc")
+		log.Println("I'm running every 3 seconds")
 		return nil
 	})
 

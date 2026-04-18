@@ -1,6 +1,6 @@
 ---
 slug: /cookbook/sqlite-crud-api
-title: 🗃️ SQLite CRUD API
+title: SQLite CRUD API
 description: A compact API example with request binding, route params, and JSON responses.
 ---
 

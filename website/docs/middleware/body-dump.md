@@ -1,5 +1,5 @@
 ---
-title: 🧾 Body Dump
+title: Body Dump
 description: Capture request and response bodies for logging, auditing, or test instrumentation.
 sidebar_position: 8
 ---

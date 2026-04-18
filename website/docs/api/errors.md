@@ -1,6 +1,6 @@
 ---
 id: errors
-title: 🚨 Errors
+title: Errors
 description: HTTPError, predefined status errors, and custom error handling hooks.
 sidebar_position: 6
 ---

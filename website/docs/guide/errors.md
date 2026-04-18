@@ -1,11 +1,25 @@
 ---
 id: errors
-title: 🚨 Errors
+title: Errors
 description: Return structured HTTP errors, short-circuit handlers cleanly, and customize error handling globally.
 sidebar_position: 7
 ---
 
 Zinc uses normal Go error returns for handler failure flow.
+
+## At a glance
+
+```go
+app.Get("/users/:id", func(c *zinc.Context) error {
+	user, err := findUser(c.Param("id"))
+	if err != nil {
+		return zinc.ErrNotFound.WithMessage("user not found")
+	}
+	return c.JSON(user)
+})
+```
+
+Return errors from handlers and middleware. Let one app-level error handler decide how errors become HTTP responses.
 
 ## Returning errors
 
@@ -76,3 +90,9 @@ app := zinc.NewWithConfig(zinc.Config{
 ```
 
 That gives you one place to standardize API error envelopes.
+
+## See also
+
+- [First Route](../getting-started/first-route) for a small returned-error example.
+- [Configuration](./configuration) for `Config.ErrorHandler`.
+- [Errors API](../api/errors) for predefined HTTP errors.

@@ -1,6 +1,6 @@
 ---
 slug: /cookbook/templated-html-js-page
-title: 🧱 Templated HTML + JS Page
+title: Templated HTML + JS Page
 description: Render a simple HTML page with Zinc templates and enhance it with a small browser script.
 ---
 

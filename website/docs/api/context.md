@@ -1,6 +1,6 @@
 ---
 id: context
-title: 🧠 Context
+title: Context
 description: The request-scoped API surface for handlers and middleware.
 sidebar_position: 3
 ---

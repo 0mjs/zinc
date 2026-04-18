@@ -1,6 +1,6 @@
 ---
 id: config
-title: ⚙️ Config
+title: Config
 description: Routing behavior, server limits, proxy handling, and extension points.
 sidebar_position: 5
 ---

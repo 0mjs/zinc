@@ -1,5 +1,5 @@
 ---
-title: 🪵 Request Logger
+title: Request Logger
 description: Structured request logging with configurable fields, hooks, and error handling.
 sidebar_position: 6
 ---

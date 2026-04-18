@@ -1,5 +1,5 @@
 ---
-title: 🚦 Rate Limiter
+title: Rate Limiter
 description: Token-bucket rate limiting for global, per-IP, or custom-key request control.
 sidebar_position: 10
 ---

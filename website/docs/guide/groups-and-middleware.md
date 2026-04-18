@@ -1,6 +1,6 @@
 ---
 id: groups-and-middleware
-title: 🧩 Groups and Middleware
+title: Groups and Middleware
 description: Compose app-wide, prefix-scoped, and group-scoped behavior cleanly.
 sidebar_position: 2
 ---
@@ -19,6 +19,17 @@ type Middleware = func(*zinc.Context) error
 ```
 
 Every item in the chain runs in order. Call `c.Next()` to continue.
+
+## At a glance
+
+```go
+app.Use(middleware.RequestID())
+
+api := app.Group("/api", requireAPIKey)
+api.Get("/users/:id", loadUser, showUser)
+```
+
+Middleware belongs at the narrowest level that still matches the behavior: app-wide for every request, group-level for route families, and route-level for endpoint-specific guards.
 
 ## Global middleware
 
@@ -119,41 +130,16 @@ func requireAPIKey(c *zinc.Context) error {
 
 ## First-party middleware package
 
-Zinc ships first-party middleware under:
+Zinc ships common middleware in one package:
 
 ```go
-github.com/0mjs/zinc/middleware
+import "github.com/0mjs/zinc/middleware"
 ```
 
-Current built-in middleware includes:
+Start with [Request ID](../middleware/request-id), [Request Logger](../middleware/request-logger), [Recover](../middleware/recover), [CORS](../middleware/cors), and [Secure](../middleware/secure) for a typical API stack.
 
-- `CORS`
-- `CSRF`
-- `JWT`
-- `BasicAuth`
-- `RequestLogger`
-- `RequestID`
-- `Recover`
-- `Gzip`
-- `Decompress`
-- `KeyAuth`
-- `CasbinAuth`
-- `MethodOverride`
-- `Prometheus`
-- `Jaeger`
-- `Proxy`
-- `NoCache`, `Heartbeat`, `RealIP`, `Throttle`, `Maybe`
-- `AllowContentType`, `AllowContentEncoding`, `SetHeader`, `RouteHeaders`
-- `Pprof`
-- `Redirect`
-- `Rewrite`
-- `Secure`
-- `SessionCookie`
-- `Static`
-- `TrailingSlash`
-- `RateLimiter`
-- `BodyLimit`
-- `BodyDump`
-- `ContextTimeout`
+## See also
 
-See the [middleware overview](../middleware/overview) for a quick map.
+- [Middleware Overview](../middleware/overview) for the full first-party middleware map.
+- [Routing](./routing) for groups and route registration.
+- [Errors](./errors) for returned middleware errors.

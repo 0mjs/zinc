@@ -1,6 +1,6 @@
 ---
 id: group
-title: 👥 Group
+title: Group
 description: Group routes by prefix, middleware chain, and route subtree.
 sidebar_position: 2
 ---

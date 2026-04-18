@@ -1,5 +1,5 @@
 ---
-title: 🌍 CORS
+title: CORS
 description: Configure cross-origin policies, preflight responses, and exposed headers.
 sidebar_position: 2
 ---

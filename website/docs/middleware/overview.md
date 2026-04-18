@@ -1,87 +1,113 @@
 ---
 id: overview
-title: 🛡️ Middleware Overview
-description: Zinc’s first-party middleware package and the common use cases it covers.
+title: Middleware Overview
+description: Choose and compose Zinc's first-party middleware package.
 sidebar_position: 1
 ---
 
-Zinc ships first-party middleware under:
+Zinc middleware uses the same shape as a route handler, so it composes directly with apps, groups, and individual routes.
 
 ```go
-github.com/0mjs/zinc/middleware
+func(*zinc.Context) error
 ```
 
-## What ships today
-
-| Middleware | Purpose |
-|---|---|
-| [`CORS`](./cors) | Cross-origin request policy and preflight handling |
-| [`CSRF`](./csrf) | Cookie-backed CSRF protection for browser-facing apps |
-| [`JWT`](./jwt) | Bearer token parsing, validation, and claims access |
-| [`BasicAuth`](./basic-auth) | Basic auth extraction and validation helpers |
-| [`RequestLogger`](./request-logger) | Structured request logging with status, timing, and selected fields |
-| [`RequestID`](./request-id) | Request ID generation and response header publishing |
-| [`Recover`](./recover) | Panic recovery through Zinc's normal error flow |
-| [`Gzip`](./gzip) | Gzip response compression for clients that opt in with `Accept-Encoding` |
-| [`Decompress`](./decompress) | Gzip request body decompression from `Content-Encoding` |
-| [`KeyAuth`](./key-auth) | API key extraction and validation from headers, query values, or cookies |
-| [`CasbinAuth`](./casbin-auth) | Casbin-compatible authorization through a small `Enforce(...any)` adapter |
-| [`MethodOverride`](./method-override) | POST method override from headers or custom getters |
-| [`Prometheus`](./prometheus) | Dependency-free Prometheus text metrics for request counts and duration |
-| [`Jaeger`](./jaeger) | Jaeger `uber-trace-id` propagation with an observer hook |
-| [`Proxy`](./proxy) | `net/http/httputil` reverse proxy middleware |
-| [`Utility`](./utility) | Small helpers for no-cache headers, health checks, real IPs, throttling, and conditional middleware |
-| [`Header Guards`](./header-guards) | Content header allow-lists and header-routed middleware |
-| [`Pprof`](./pprof) | Standard library pprof handlers behind Zinc middleware |
-| [`Redirect`](./redirect) | Exact and wildcard path redirects |
-| [`Rewrite`](./rewrite) | Exact and wildcard path rewrites before route dispatch |
-| [`Secure`](./secure) | Common security response headers |
-| [`SessionCookie`](./session) | Signed cookie-backed string session values |
-| [`Static`](./static) | Static file serving as middleware |
-| [`TrailingSlash`](./trailing-slash) | Add, remove, or redirect trailing slash variants |
-| [`BodyLimit`](./body-limit) | Request-size enforcement before handlers consume the body |
-| [`BodyDump`](./body-dump) | Request/response body capture with truncation and redaction hooks |
-| [`ContextTimeout`](./context-timeout) | Per-request context deadlines for handler chains |
-| [`RateLimiter`](./rate-limiter) | Global, per-IP, or custom-key token-bucket rate limiting |
-
-## Typical stack
+Import first-party middleware from one package:
 
 ```go
-app.Use(middleware.RequestLogger())
+import "github.com/0mjs/zinc/middleware"
+```
+
+## Start with a normal stack
+
+Most APIs start with request identity, logging, panic recovery, CORS, body limits, and security headers.
+
+```go
 app.Use(middleware.RequestID())
+app.Use(middleware.RequestLogger())
 app.Use(middleware.Recover())
 app.Use(middleware.CORS("https://app.example.com"))
-app.Use(middleware.Decompress())
-app.Use(middleware.Gzip())
-app.Use(middleware.MethodOverride())
-app.Use(middleware.Secure())
-app.Use(middleware.TrailingSlash())
 app.Use(middleware.BodyLimit(10 * middleware.MB))
-app.Use(middleware.Throttle(64))
-app.Use(middleware.Prometheus())
-
-app.Get("/metrics", middleware.PrometheusHandler())
-
-admin := app.Group("/admin")
-admin.Use(middleware.BasicAuthWithConfig(middleware.BasicAuthConfig{
-	Validator: middleware.BasicAuthStatic("admin", "secret"),
-}))
-
-api := app.Group("/api")
-api.Use(middleware.JWT(func(_ *zinc.Context, token *jwt.Token) (any, error) {
-	return signingKey, nil
-}))
+app.Use(middleware.Secure())
 ```
 
-## How to read this section
+Add auth, metrics, rate limiting, compression, and static files only where the application needs them.
 
-- Start with the page for the middleware you want to install.
-- Use the constructor examples first.
-- Drop into the config tables only when you need custom behavior.
-- Reach for `pkg.go.dev` when you want every exported helper in one place.
+## Security
 
-## Design goal
+| Middleware | Use it for |
+|---|---|
+| [`CORS`](./cors) | Browser cross-origin policy and preflight responses |
+| [`CSRF`](./csrf) | Cookie-backed CSRF protection for browser-facing forms and fetch requests |
+| [`Secure`](./secure) | Common browser security response headers |
+| [`Header Guards`](./header-guards) | Reject unsupported content types or route by request headers |
 
-The middleware package is intended to cover the common API and security cases while keeping Zinc’s core small and focused. The docs here stay practical and operational; the source package docs remain the best low-level reference:
+## Authentication and sessions
 
-- [pkg.go.dev middleware package](https://pkg.go.dev/github.com/0mjs/zinc/middleware)
+| Middleware | Use it for |
+|---|---|
+| [`JWT`](./jwt) | Bearer token parsing, validation, and typed claims |
+| [`Basic Auth`](./basic-auth) | Simple admin or internal route protection |
+| [`Key Auth`](./key-auth) | API keys from headers, query values, cookies, or custom extractors |
+| [`Casbin Auth`](./casbin-auth) | Authorization through a Casbin-compatible enforcer |
+| [`Session`](./session) | Small signed cookie-backed session values |
+
+## Observability
+
+| Middleware | Use it for |
+|---|---|
+| [`Request Logger`](./request-logger) | Structured request logs with status, timing, route, headers, and errors |
+| [`Request ID`](./request-id) | Generate or propagate request IDs through `X-Request-ID` |
+| [`Prometheus`](./prometheus) | Dependency-free request counters and duration metrics |
+| [`Jaeger`](./jaeger) | `Uber-Trace-Id` propagation and span observation |
+| [`Pprof`](./pprof) | Standard library profiling routes behind Zinc middleware |
+| [`Body Dump`](./body-dump) | Request and response body snapshots for debugging or auditing |
+
+## Traffic control
+
+| Middleware | Use it for |
+|---|---|
+| [`Rate Limiter`](./rate-limiter) | Token-bucket limits by app, IP, or custom key |
+| [`Body Limit`](./body-limit) | Reject oversized request bodies |
+| [`Context Timeout`](./context-timeout) | Attach per-request deadlines to the handler chain |
+| [`Recover`](./recover) | Convert panics into Zinc's normal error flow |
+| [`Utility`](./utility) | `Throttle`, `Heartbeat`, `NoCache`, `Maybe`, `RealIP`, and `SetHeader` |
+
+## Transport and routing helpers
+
+| Middleware | Use it for |
+|---|---|
+| [`Gzip`](./gzip) | Compress responses for clients that accept gzip |
+| [`Decompress`](./decompress) | Decode gzip request bodies before handlers read them |
+| [`Method Override`](./method-override) | Tunnel `PUT`, `PATCH`, or `DELETE` through `POST` |
+| [`Trailing Slash`](./trailing-slash) | Add, remove, or redirect trailing slash variants |
+| [`Rewrite`](./rewrite) | Rewrite request paths before route dispatch |
+| [`Redirect`](./redirect) | Redirect exact or wildcard paths |
+| [`Proxy`](./proxy) | Reverse proxy requests with `net/http/httputil` |
+| [`Static`](./static) | Serve static files from middleware |
+
+## Where middleware belongs
+
+Use app-level middleware for behavior that should wrap every request.
+
+```go
+app.Use(middleware.RequestID(), middleware.RequestLogger())
+```
+
+Use group middleware for a route family.
+
+```go
+api := app.Group("/api")
+api.Use(middleware.JWT(keyFunc))
+```
+
+Use route middleware when the behavior belongs to one endpoint.
+
+```go
+app.Post("/exports", middleware.RateLimiter(), startExport)
+```
+
+## See also
+
+- [Groups and Middleware](../guide/groups-and-middleware) explains middleware order and `c.Next()`.
+- [Errors](../guide/errors) explains how returned middleware errors become responses.
+- [Configuration](../guide/configuration) explains app-level extension points.

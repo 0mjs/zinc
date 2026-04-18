@@ -1,6 +1,6 @@
 ---
 id: binding
-title: 📎 Bind
+title: Bind
 description: The request binding interfaces, `c.Bind()` helper, supported formats, and validation flow.
 sidebar_position: 4
 ---
