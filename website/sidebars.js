@@ -140,8 +140,9 @@ module.exports = {
       },
       items: [
         "cookbook/templated-html-js-page",
-        "cookbook/realtime-chat-app",
         "cookbook/sqlite-crud-api",
+        "cookbook/scheduled-jobs",
+        "cookbook/templ-ui",
       ],
     },
     {
