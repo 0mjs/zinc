@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/0mjs/zinc"
@@ -179,6 +180,46 @@ func TestGzipSkipper(t *testing.T) {
 	}
 	if rec.Body.String() != "plain" {
 		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestGzipResponseWriterInterfaces(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writer := &gzipResponseWriter{
+		ResponseWriter: rec,
+		method:         http.MethodGet,
+		level:          gzip.DefaultCompression,
+	}
+
+	n, err := writer.ReadFrom(strings.NewReader("read from"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != int64(len("read from")) {
+		t.Fatalf("read bytes=%d", n)
+	}
+	writer.Flush()
+	mustNoErrGzip(t, writer.Close())
+	if body := gunzipResponse(t, rec.Body.Bytes()); body != "read from" {
+		t.Fatalf("body=%q", body)
+	}
+	if writer.Unwrap() != rec {
+		t.Fatal("unwrap returned wrong writer")
+	}
+	if _, _, err := writer.Hijack(); err == nil {
+		t.Fatal("expected unsupported hijack error")
+	}
+	if err := writer.Push("/asset.js", nil); err != http.ErrNotSupported {
+		t.Fatalf("push err=%v", err)
+	}
+
+	blocked := &gzipResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		method:         http.MethodGet,
+		status:         http.StatusNoContent,
+	}
+	if _, err := (gzipWriterOnly{w: blocked}).Write([]byte("raw")); err == nil {
+		t.Fatal("expected no-body write error")
 	}
 }
 

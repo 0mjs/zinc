@@ -2,6 +2,7 @@ package zinc
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,5 +90,18 @@ func TestStaticUsesDirectoryFSAndCustomIndex(t *testing.T) {
 	}
 	if body := resp.Body.String(); body != "custom-root" {
 		t.Fatalf("body=%q", body)
+	}
+}
+
+func TestServeOpenedStaticFileReadAllFallback(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/asset.txt", nil)
+	rec := httptest.NewRecorder()
+	err := serveOpenedStaticFile(rec, req, &memoryFile{
+		data: []byte("fallback-static"),
+		info: fileInfoStub{name: "asset.txt"},
+	}, fileInfoStub{name: "asset.txt"})
+	mustDo(t, err)
+	if rec.Body.String() != "fallback-static" {
+		t.Fatalf("body=%q", rec.Body.String())
 	}
 }

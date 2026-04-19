@@ -191,6 +191,45 @@ func TestPprofMiddleware(t *testing.T) {
 	}
 }
 
+func TestPprofDefaultAndPrefixNormalization(t *testing.T) {
+	app := zinc.New()
+	app.Use(Pprof())
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/cmdline", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("default cmdline status=%d", rec.Code)
+	}
+
+	app = zinc.New()
+	app.Use(PprofWithPrefix("custom/pprof/"))
+	mustNoErrUtility(t, app.Get("/next", func(c *zinc.Context) error {
+		return c.String("next")
+	}))
+
+	req = httptest.NewRequest(http.MethodGet, "/custom/pprof/symbol", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("symbol status=%d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/custom/pprof/heap", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
+		t.Fatalf("heap status=%d body len=%d", rec.Code, rec.Body.Len())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/next", nil)
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "next" {
+		t.Fatalf("fallthrough body=%q", rec.Body.String())
+	}
+}
+
 func mustNoErrUtility(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

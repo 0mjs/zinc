@@ -95,6 +95,65 @@ func TestQueueRetriesFailedJob(t *testing.T) {
 	}
 }
 
+func TestExponentialBackoff(t *testing.T) {
+	backoff := ExponentialBackoff(10*time.Millisecond, 35*time.Millisecond)
+	cases := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{attempt: 0, want: 10 * time.Millisecond},
+		{attempt: 1, want: 10 * time.Millisecond},
+		{attempt: 2, want: 20 * time.Millisecond},
+		{attempt: 3, want: 35 * time.Millisecond},
+		{attempt: 4, want: 35 * time.Millisecond},
+	}
+	for _, tc := range cases {
+		if got := backoff(tc.attempt, errors.New("boom")); got != tc.want {
+			t.Fatalf("attempt %d backoff=%s want %s", tc.attempt, got, tc.want)
+		}
+	}
+
+	if got := ExponentialBackoff(-time.Second, -time.Second)(3, nil); got != 0 {
+		t.Fatalf("negative backoff=%s", got)
+	}
+}
+
+func TestQueuePendingAndRunnerWait(t *testing.T) {
+	queue := New()
+	if got := queue.Pending(); got != 0 {
+		t.Fatalf("initial pending=%d", got)
+	}
+	if _, err := queue.Enqueue(context.Background(), "missing.handler", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := queue.Pending(); got != 1 {
+		t.Fatalf("pending=%d", got)
+	}
+
+	runner := &Runner{done: make(chan struct{})}
+	waited := make(chan struct{})
+	go func() {
+		runner.Wait()
+		close(waited)
+	}()
+
+	select {
+	case <-waited:
+		t.Fatal("Wait returned before runner was done")
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	close(runner.done)
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Wait")
+	}
+
+	var nilRunner *Runner
+	nilRunner.Wait()
+}
+
 func TestQueueStoresFailedJob(t *testing.T) {
 	failed := make(chan Job, 1)
 	queue := NewWithConfig(Config{

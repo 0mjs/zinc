@@ -1,34 +1,39 @@
-![Version](https://img.shields.io/badge/version-0.0.87-blue)
+![Version](https://img.shields.io/badge/version-0.1.2-blue)
 ![Go Version](https://img.shields.io/badge/Go-1.25+-blue)
 [![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
-[![Coverage](https://img.shields.io/badge/coverage-83.4%25-brightgreen)](#quality-snapshot)
-[![Go%20Report%20Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
+[![Coverage](https://img.shields.io/badge/coverage-83.4%25-brightgreen)](#quality)
+[![Go Report Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 # Zinc
 
-Zinc is an Express-inspired, idiomatic Go API framework built on `net/http`.
+An Express-inspired, idiomatic Go API framework built on `net/http`.
+
+Zinc gives you expressive routing, middleware chains, request binding, response helpers, rendering, and a practical standard-library shape — without forking away from `net/http`. Handlers are one `func(*zinc.Context) error`, stdlib handlers mount cleanly, and deployment stays ordinary Go.
 
 - [Documentation](https://zinc.carbonsoft.sh)
-- [Quickstart](https://zinc.carbonsoft.sh/guide/quick-start)
+- [Quick Start](https://zinc.carbonsoft.sh/guide/quick-start)
 - [Middleware](https://zinc.carbonsoft.sh/middleware)
 - [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
 
-### Features
+## Features
 
 - Express-style routes with `:param` and `*wildcard`
 - Route groups, prefix middleware, and route metadata
 - Binding helpers for path, query, headers, JSON, XML, and forms
 - Response helpers for JSON, XML, HTML, streams, redirects, files, and rendering
-- First-party template renderer helper for `html/template` and `text/template`
-- Static/file serving and stdlib handler interop through `Mount`, `Wrap`, and `WrapFunc`
+- First-party template renderer for `html/template` and `text/template`
+- Static/file serving and stdlib interop via `Mount`, `Wrap`, and `WrapFunc`
 - Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
+- First-party middleware and a small in-memory jobs add-on in one module
 
 ## Installation
 
 ```bash
 go get github.com/0mjs/zinc
 ```
+
+Requires Go 1.25 or newer.
 
 ## Quick Start
 
@@ -37,7 +42,7 @@ package main
 
 import (
 	"github.com/0mjs/zinc"
-	middleware "github.com/0mjs/zinc/middleware"
+	"github.com/0mjs/zinc/middleware"
 )
 
 func main() {
@@ -62,7 +67,7 @@ func main() {
 }
 ```
 
-## Routing And Middleware
+## Routing and Middleware
 
 ```go
 app.Use(middleware.RequestLogger())
@@ -74,7 +79,9 @@ app.Route("/api", func(api *zinc.Group) {
 })
 ```
 
-## Binding And Responses
+See the [routing guide](https://zinc.carbonsoft.sh/guide/routing) for groups, parameters, method shortcuts, and named routes.
+
+## Binding and Responses
 
 ```go
 type CreateUserInput struct {
@@ -94,6 +101,8 @@ app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 })
 ```
 
+`c.Bind()` covers path, query, header, JSON, XML, and form inputs. `c.JSON`, `c.XML`, `c.String`, `c.Stream`, `c.File`, `c.Redirect`, and `c.Render` cover the response side.
+
 ## Configuration
 
 ```go
@@ -110,7 +119,7 @@ app := zinc.NewWithConfig(zinc.Config{
 })
 ```
 
-`Config` also lets you plug in a custom `RequestBinder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`.
+`Config` also takes a custom `RequestBinder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`:
 
 ```go
 views := template.Must(template.ParseGlob("templates/*.html"))
@@ -127,43 +136,9 @@ app.Get("/dashboard", func(c *zinc.Context) error {
 })
 ```
 
-## Quality Snapshot
+## Middleware
 
-Latest local coverage run (`go test -count=1 ./... -coverprofile=coverage.out`):
-
-```text
-Overall                                      [#################...] 83.4%
-Core (github.com/0mjs/zinc)                  [#################...] 83.3%
-Middleware (github.com/0mjs/zinc/middleware) [#################...] 83.9%
-```
-
-## Benchmark Snapshot
-
-Latest local peer-only snapshot (`Apple M1 Pro`, `darwin/arm64`, `count=1` rerun on `2026-03-18`):
-
-- Zinc wins `65/85` rows overall against `Gin`, `Echo`, and `Chi`.
-- Excluding throughput, Zinc wins `65/77` rows.
-- Full tables and remaining gaps live in [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md).
-
-Selected highlights:
-
-| Benchmark | Zinc | Gin | Echo | Chi | Winner |
-|---|---:|---:|---:|---:|---|
-| `HelloWorld` | `61.82 ns` | `88.21 ns` | `127.2 ns` | `178.8 ns` | 🥇 Zinc |
-| `APIHappyPath` | `1.25 µs` | `3.02 µs` | `2.19 µs` | `1.66 µs` | 🥇 Zinc |
-| `APIBindJSONHappyPath` | `2.41 µs` | `4.41 µs` | `2.52 µs` | `2.81 µs` | 🥇 Zinc |
-| `StaticFileHit` | `15.64 µs` | `32.85 µs` | `26.95 µs` | `15.97 µs` | 🥇 Zinc |
-| `RouteRegistrationStatic` | `57.88 µs` | `76.33 µs` | `337.4 µs` | `85.04 µs` | 🥇 Zinc |
-| `ScenarioAll/ParseAPI26` | `118.2 ns` | `120.9 ns` | `155.4 ns` | `370.9 ns` | 🥇 Zinc |
-
-Throughput is currently the weakest category in the peer-only suite; the detailed breakdown is in [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md).
-
-
-## Optional Middleware
-
-Zinc ships middleware behind one unified import:
-
-- `github.com/0mjs/zinc/middleware`
+All middleware lives under one package: `github.com/0mjs/zinc/middleware`.
 
 ```go
 import (
@@ -175,10 +150,6 @@ import (
 	"github.com/0mjs/zinc/middleware"
 	jwt "github.com/golang-jwt/jwt/v5"
 )
-
-app.Use(middleware.BodyDump(func(c *zinc.Context, snapshot middleware.BodyDumpSnapshot) {
-	log.Printf("%s %s -> %d", snapshot.Method, snapshot.Path, snapshot.Status)
-}))
 
 app.Use(middleware.Recover())
 app.Use(middleware.RequestID())
@@ -197,6 +168,10 @@ admin := app.Group("/admin")
 admin.Use(middleware.BodyLimit(256 * middleware.KB))
 admin.Use(middleware.ContextTimeout(250 * time.Millisecond))
 
+app.Use(middleware.BodyDump(func(c *zinc.Context, snapshot middleware.BodyDumpSnapshot) {
+	log.Printf("%s %s -> %d", snapshot.Method, snapshot.Path, snapshot.Status)
+}))
+
 app.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
 	ExposeHeader: zinc.HeaderXCSRFToken,
 }))
@@ -212,13 +187,11 @@ app.Use(middleware.JWTWithConfig(middleware.JWTConfig{
 }))
 ```
 
-Zinc now exposes middleware through a single public package: `github.com/0mjs/zinc/middleware`.
+Covered: `BasicAuth`, `BodyDump`, `BodyLimit`, `CasbinAuth`, `ContextTimeout`, `CORS`, `CSRF`, `Decompress`, `Gzip`, `Jaeger`, `JWT`, `KeyAuth`, `MethodOverride`, `Pprof`, `Prometheus`, `Proxy`, `RateLimiter`, `Recover`, `Redirect`, `RequestID`, `RequestLogger`, `Rewrite`, `Secure`, `Session`, `Static`, and `TrailingSlash`. Each has a full page under [Middleware](https://zinc.carbonsoft.sh/middleware).
 
 ## Background Jobs
 
-Zinc also ships a small first-party jobs add-on:
-
-- `github.com/0mjs/zinc/jobs`
+Zinc also ships a small first-party jobs add-on: `github.com/0mjs/zinc/jobs`.
 
 ```go
 queue := jobs.NewWithConfig(jobs.Config{
@@ -262,6 +235,29 @@ if _, err := queue.Schedule("reports.daily", "0 9 * * mon-fri", DailyReport{}); 
 ```
 
 The initial backend is in-memory and supports workers, delayed jobs, retries, failed-job inspection, and cron-style schedules. Use `Cron` for Nest-like scheduled function declarations, and drop down to `Handle` plus `Schedule` when the job needs a payload. Durable Postgres and Redis adapters can build on the same API.
+
+## Benchmarks
+
+Peer-only snapshot (`Apple M1 Pro`, `darwin/arm64`, rerun `2026-03-18`): Zinc wins `65/85` rows overall against Gin, Echo, and Chi — `65/77` excluding throughput. Full tables and remaining gaps live in [BENCKMARKS.md](./BENCKMARKS.md).
+
+| Benchmark | Zinc | Gin | Echo | Chi | Winner |
+|---|---:|---:|---:|---:|---|
+| `HelloWorld` | `61.82 ns` | `88.21 ns` | `127.2 ns` | `178.8 ns` | Zinc |
+| `APIHappyPath` | `1.25 µs` | `3.02 µs` | `2.19 µs` | `1.66 µs` | Zinc |
+| `APIBindJSONHappyPath` | `2.41 µs` | `4.41 µs` | `2.52 µs` | `2.81 µs` | Zinc |
+| `StaticFileHit` | `15.64 µs` | `32.85 µs` | `26.95 µs` | `15.97 µs` | Zinc |
+| `RouteRegistrationStatic` | `57.88 µs` | `76.33 µs` | `337.4 µs` | `85.04 µs` | Zinc |
+| `ScenarioAll/ParseAPI26` | `118.2 ns` | `120.9 ns` | `155.4 ns` | `370.9 ns` | Zinc |
+
+Throughput is the weakest category in the peer-only suite; see [BENCKMARKS.md](./BENCKMARKS.md) for the breakdown.
+
+## Quality
+
+Latest local run of `go test -count=1 ./... -coverprofile=coverage.out`:
+
+- Overall: `83.4%`
+- Core (`github.com/0mjs/zinc`): `83.3%`
+- Middleware (`github.com/0mjs/zinc/middleware`): `83.9%`
 
 ## License
 

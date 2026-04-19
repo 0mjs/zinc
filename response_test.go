@@ -299,6 +299,23 @@ func TestResponseInternalHelpers(t *testing.T) {
 	if got := rec.Header().Get(HeaderContentType); got != "" {
 		t.Fatalf("content type=%q", got)
 	}
+
+	ranges := parseAcceptHeader("text/*;q=0.4, application/json;q=bad, */*;q=0, application/xml;q=0.8, broken")
+	if len(ranges) != 3 {
+		t.Fatalf("ranges=%v", ranges)
+	}
+	if ranges[0].mediaType != "broken" || ranges[1].mediaType != "application/xml" || ranges[2].mediaType != "text/*" {
+		t.Fatalf("ranges=%v", ranges)
+	}
+	if acceptSpecificity("*/*") != 0 || acceptSpecificity("text/*") != 1 || acceptSpecificity("application/json") != 2 {
+		t.Fatal("accept specificity failed")
+	}
+	if acceptMatches("text/*", "application/json") {
+		t.Fatal("text wildcard should not match application/json")
+	}
+	if acceptMatches("broken", "text/plain") {
+		t.Fatal("invalid accept range should not match")
+	}
 }
 
 func TestWriteJSONNilAndXMLNil(t *testing.T) {
@@ -314,6 +331,144 @@ func TestWriteJSONNilAndXMLNil(t *testing.T) {
 	mustDo(t, xmlCtx.XML(nil))
 	if xmlRec.Body.String() != "null" {
 		t.Fatalf("xml body=%q", xmlRec.Body.String())
+	}
+}
+
+func TestWriteNegotiatedContentTypes(t *testing.T) {
+	cases := []struct {
+		name        string
+		contentType string
+		value       any
+		wantType    string
+		wantBody    string
+	}{
+		{
+			name:        "json bytes",
+			contentType: "application/json; charset=utf-8",
+			value:       []byte(`{"ok":true}`),
+			wantType:    jsonType,
+			wantBody:    `{"ok":true}`,
+		},
+		{
+			name:        "json value",
+			contentType: "application/json",
+			value:       Map{"ok": true},
+			wantType:    jsonType,
+			wantBody:    "{\"ok\":true}\n",
+		},
+		{
+			name:        "xml bytes",
+			contentType: "text/xml",
+			value:       []byte(`<ok>true</ok>`),
+			wantType:    xmlType,
+			wantBody:    `<ok>true</ok>`,
+		},
+		{
+			name:        "xml value",
+			contentType: "application/xml",
+			value:       xmlPayload{Value: "x"},
+			wantType:    xmlType,
+			wantBody:    "<response><value>x</value></response>",
+		},
+		{
+			name:        "yaml bytes",
+			contentType: "application/x-yaml",
+			value:       []byte("ok: true\n"),
+			wantType:    yamlType,
+			wantBody:    "ok: true\n",
+		},
+		{
+			name:        "yaml value",
+			contentType: "text/yaml",
+			value:       Map{"ok": true},
+			wantType:    yamlType,
+			wantBody:    "ok: true\n",
+		},
+		{
+			name:        "toml bytes",
+			contentType: "application/toml",
+			value:       []byte("ok = true\n"),
+			wantType:    tomlType,
+			wantBody:    "ok = true\n",
+		},
+		{
+			name:        "toml value",
+			contentType: "application/toml",
+			value:       Map{"ok": true},
+			wantType:    tomlType,
+			wantBody:    "ok = true\n",
+		},
+		{
+			name:        "html bytes",
+			contentType: "text/html",
+			value:       []byte("<p>bytes</p>"),
+			wantType:    htmlType,
+			wantBody:    "<p>bytes</p>",
+		},
+		{
+			name:        "html string",
+			contentType: "text/html",
+			value:       "<p>ok</p>",
+			wantType:    htmlType,
+			wantBody:    "<p>ok</p>",
+		},
+		{
+			name:        "plain string",
+			contentType: "text/plain",
+			value:       "plain",
+			wantType:    plainText,
+			wantBody:    "plain",
+		},
+		{
+			name:        "plain value",
+			contentType: "text/plain",
+			value:       42,
+			wantType:    plainText,
+			wantBody:    "42",
+		},
+		{
+			name:        "default bytes",
+			contentType: "application/custom",
+			value:       []byte("custom-bytes"),
+			wantType:    "application/custom",
+			wantBody:    "custom-bytes",
+		},
+		{
+			name:        "default reader",
+			contentType: "application/octet-stream",
+			value:       strings.NewReader("streamed"),
+			wantType:    "application/octet-stream",
+			wantBody:    "streamed",
+		},
+		{
+			name:        "default string",
+			contentType: "application/custom",
+			value:       "custom",
+			wantType:    "application/custom",
+			wantBody:    "custom",
+		},
+		{
+			name:        "default value",
+			contentType: "application/custom",
+			value:       42,
+			wantType:    "application/custom",
+			wantBody:    "42",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, rec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+			defer ctx.release()
+
+			mustDo(t, ctx.writeNegotiated(tc.contentType, tc.value))
+			if got := rec.Header().Get(HeaderContentType); got != tc.wantType {
+				t.Fatalf("content type=%q want %q", got, tc.wantType)
+			}
+			if got := rec.Body.String(); got != tc.wantBody {
+				t.Fatalf("body=%q want %q", got, tc.wantBody)
+			}
+		})
 	}
 }
 

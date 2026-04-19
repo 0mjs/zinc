@@ -297,6 +297,7 @@ func TestContextAcquireReleaseAndCopy(t *testing.T) {
 	var copied *Context
 	mustDo(t, app.Post("/users/:id", func(c *Context) error {
 		c.Set("trace", "abc")
+		_ = c.QueryValues()
 		_, err := c.BodyBytes()
 		mustDo(t, err)
 		copied = c.Copy()
@@ -353,6 +354,21 @@ func TestContextAcquireReleaseAndCopy(t *testing.T) {
 	}
 	if copied.Request().URL == req.URL {
 		t.Fatal("copied URL should be cloned")
+	}
+
+	copied.queryParams.Set("page", "99")
+	if got := req.URL.Query().Get("page"); got != "3" {
+		t.Fatalf("original query was mutated: %q", got)
+	}
+}
+
+func TestContextFailReturnsError(t *testing.T) {
+	ctx, _ := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+	defer ctx.release()
+
+	err := errors.New("failed")
+	if got := ctx.Fail(err); !errors.Is(got, err) {
+		t.Fatalf("fail error=%v", got)
 	}
 }
 

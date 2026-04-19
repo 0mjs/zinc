@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/0mjs/zinc"
 )
@@ -86,6 +89,79 @@ func TestKeyAuthExtractorsAndFirstFallback(t *testing.T) {
 	}
 	if rec.Body.String() != "secret:"+string(KeyAuthSourceCookie) {
 		t.Fatalf("body=%q", rec.Body.String())
+	}
+
+	app = zinc.New()
+	app.Use(KeyAuth(KeyAuthStatic("subject-key")))
+	mustNoErrHardening(t, app.Get("/subject", func(c *zinc.Context) error {
+		return c.String(CasbinSubjectFromKeyAuth()(c).(string))
+	}))
+	req = httptest.NewRequest(http.MethodGet, "/subject", nil)
+	req.Header.Set(zinc.HeaderAuthorization, "Bearer subject-key")
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Body.String() != "subject-key" {
+		t.Fatalf("subject body=%q", rec.Body.String())
+	}
+}
+
+func TestAuthTokenExtractorsAndErrorValues(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/?jwt=query-token&csrf=one&csrf=two", nil)
+	req.Header.Set("X-Basic", base64.StdEncoding.EncodeToString([]byte("joe:secret")))
+	req.Header.Set("X-JWT", "header-token")
+	app := zinc.New()
+	ctx := app.AcquireContext(httptest.NewRecorder(), req)
+	defer app.ReleaseContext(ctx)
+
+	credentials, err := BasicAuthFromHeader("X-Basic")(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.Username != "joe" || credentials.Password != "secret" || credentials.Source != BasicAuthSourceHeader {
+		t.Fatalf("credentials=%+v", credentials)
+	}
+
+	token, err := JWTFromHeader("X-JWT")(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "header-token" {
+		t.Fatalf("header token=%q", token)
+	}
+	token, err = JWTFromQuery("jwt")(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "query-token" {
+		t.Fatalf("query token=%q", token)
+	}
+
+	values, err := CSRFFromQuery("csrf")(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(values, ",") != "one,two" {
+		t.Fatalf("csrf values=%v", values)
+	}
+
+	timeoutErr := &ContextTimeoutError{
+		Info:  ContextTimeoutInfo{Timeout: time.Second},
+		Cause: context.Canceled,
+	}
+	if timeoutErr.Error() == "" || !errors.Is(timeoutErr, ErrContextTimeout) || !errors.Is(timeoutErr.Unwrap(), context.Canceled) {
+		t.Fatalf("timeout error=%v unwrap=%v", timeoutErr, timeoutErr.Unwrap())
+	}
+	var nilTimeoutErr *ContextTimeoutError
+	if nilTimeoutErr.Error() == "" || !errors.Is(nilTimeoutErr.Unwrap(), context.DeadlineExceeded) {
+		t.Fatalf("nil timeout error=%v unwrap=%v", nilTimeoutErr, nilTimeoutErr.Unwrap())
+	}
+
+	if got := (&RecoverError{Value: "boom"}).Error(); !strings.Contains(got, "boom") {
+		t.Fatalf("recover error=%q", got)
+	}
+	var nilRecoverErr *RecoverError
+	if nilRecoverErr.Error() == "" {
+		t.Fatal("nil recover error should have a message")
 	}
 }
 
@@ -328,6 +404,52 @@ func TestSessionHelpersOnNil(t *testing.T) {
 	}
 }
 
+func TestSessionResponseWriterBuffersStatusAndBody(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writer := &sessionResponseWriter{ResponseWriter: rec}
+
+	writer.WriteHeader(http.StatusCreated)
+	writer.WriteHeader(http.StatusAccepted)
+	if _, err := writer.Write([]byte("created")); err != nil {
+		t.Fatal(err)
+	}
+	if writer.Unwrap() != rec {
+		t.Fatal("unwrap returned the wrong writer")
+	}
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("response should still be buffered: status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	mustNoErrHardening(t, writer.FlushBuffered())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if rec.Body.String() != "created" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+func TestPrometheusConvenienceMiddleware(t *testing.T) {
+	metrics := NewPrometheusMetrics()
+	app := zinc.New()
+	app.Use(Prometheus(metrics))
+	mustNoErrHardening(t, app.Get("/ok", func(c *zinc.Context) error {
+		return c.String("ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	text := metrics.Text()
+	if !strings.Contains(text, `method="GET"`) || !strings.Contains(text, `route="/ok"`) || !strings.Contains(text, `status="200"`) {
+		t.Fatalf("metrics=%s", text)
+	}
+}
+
 func TestStaticConstructorsAndPrefixHelpers(t *testing.T) {
 	fsys := fstest.MapFS{
 		"hello.txt": &fstest.MapFile{Data: []byte("hello")},
@@ -516,6 +638,101 @@ func TestProxyTargetsRewriteAndRetry(t *testing.T) {
 	}
 }
 
+func TestProxyBalancersAndPathHelpers(t *testing.T) {
+	firstURL := mustParseProxyURLHardening(t, "http://first.example.test/base/")
+	secondURL := mustParseProxyURLHardening(t, "http://second.example.test")
+	targets := []*ProxyTarget{
+		{Name: "first", URL: firstURL},
+		{Name: "second", URL: secondURL},
+	}
+
+	roundRobin := NewRoundRobinBalancer(targets)
+	for _, want := range []string{"first", "second", "first"} {
+		target, err := roundRobin.Next(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if target.Name != want {
+			t.Fatalf("round robin target=%q want %q", target.Name, want)
+		}
+	}
+
+	random := NewRandomBalancer(targets)
+	target, err := random.Next(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Name != "first" && target.Name != "second" {
+		t.Fatalf("random target=%q", target.Name)
+	}
+
+	assertPanicHardening(t, func() {
+		_ = NewRoundRobinBalancer(nil)
+	})
+	emptyRandom := &randomProxyBalancer{}
+	if _, err := emptyRandom.Next(nil); err == nil {
+		t.Fatal("expected random balancer with no targets to fail")
+	}
+
+	targetURL := mustParseProxyURLHardening(t, "http://example.test/api/")
+	requestURL := mustParseProxyURLHardening(t, "http://example.test/users")
+	path, rawPath := joinProxyPaths(targetURL, requestURL)
+	if path != "/api/users" || rawPath != "" {
+		t.Fatalf("joined path=%q raw=%q", path, rawPath)
+	}
+	if got := singleJoiningSlash("/api", "users"); got != "/api/users" {
+		t.Fatalf("single joining slash=%q", got)
+	}
+	if got := singleJoiningSlash("/api/", "/users"); got != "/api/users" {
+		t.Fatalf("double slash join=%q", got)
+	}
+}
+
+func TestProxyNormalizeAndModifyResponseBranches(t *testing.T) {
+	targetURL := mustParseProxyURLHardening(t, "http://example.test")
+	original := &ProxyTarget{Name: "copy", URL: targetURL}
+	normalized := normalizeProxyTargets([]*ProxyTarget{original})
+	original.Name = "changed"
+	original.URL.Host = "mutated.example.test"
+	if normalized[0].Name != "copy" || normalized[0].URL.Host != "example.test" {
+		t.Fatalf("normalized target was not cloned: %+v", normalized[0])
+	}
+
+	assertPanicHardening(t, func() {
+		normalizeOptionalProxyTargets([]*ProxyTarget{{URL: &url.URL{Path: "/relative"}}})
+	})
+
+	var calls []string
+	firstErr := errors.New("first failed")
+	chained := chainProxyModifyResponse(
+		func(*http.Response) error {
+			calls = append(calls, "first")
+			return nil
+		},
+		func(*http.Response) error {
+			calls = append(calls, "second")
+			return nil
+		},
+	)
+	if err := chained(&http.Response{}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "first,second" {
+		t.Fatalf("calls=%v", calls)
+	}
+
+	chained = chainProxyModifyResponse(
+		func(*http.Response) error { return firstErr },
+		func(*http.Response) error {
+			t.Fatal("second modify should not run after first error")
+			return nil
+		},
+	)
+	if err := chained(&http.Response{}); !errors.Is(err, firstErr) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestJaegerGeneratedTraceAndObserverError(t *testing.T) {
 	observeErr := errors.New("observe")
 	app := zinc.New()
@@ -593,4 +810,14 @@ func mustNoErrHardening(t *testing.T, err error) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func assertPanicHardening(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	fn()
 }

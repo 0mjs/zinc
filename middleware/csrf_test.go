@@ -310,6 +310,101 @@ func TestCSRFExposeHeader(t *testing.T) {
 	}
 }
 
+func TestCSRFExistingSafeCookieIsReused(t *testing.T) {
+	generateCalled := false
+	app := zinc.New()
+	app.Use(CSRFWithConfig(CSRFConfig{
+		Generate: func(*zinc.Context) (string, error) {
+			generateCalled = true
+			return "new-token", nil
+		},
+	}))
+	mustNoErrCSRF(t, app.Get("/form", func(c *zinc.Context) error {
+		state := MustCSRFCurrent(c)
+		if state.Issued {
+			t.Fatal("existing cookie should not be marked issued")
+		}
+		return c.String(state.Token)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/form", nil)
+	req.AddCookie(&http.Cookie{Name: "_csrf", Value: " existing-token "})
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if generateCalled {
+		t.Fatal("generator should not run when a token cookie already exists")
+	}
+	if rec.Body.String() != "existing-token" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+	if got := rec.Header().Get(zinc.HeaderSetCookie); !strings.Contains(got, "_csrf=existing-token") {
+		t.Fatalf("set-cookie=%q", got)
+	}
+}
+
+func TestCSRFAllowFetchSiteDecider(t *testing.T) {
+	t.Run("allows same site decision", func(t *testing.T) {
+		var decision CSRFDecision
+		app := zinc.New()
+		app.Use(CSRFWithConfig(CSRFConfig{
+			AllowFetchSite: func(_ *zinc.Context, got CSRFDecision) (bool, error) {
+				decision = got
+				return got.Site == CSRFFetchSiteSameSite, nil
+			},
+		}))
+		mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+			return c.String("ok")
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
+		req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
+		req.Header.Set(zinc.HeaderXCSRFToken, "token")
+		req.Header.Set(zinc.HeaderSecFetchSite, " Same-Site ")
+		req.Header.Set(zinc.HeaderOrigin, "https://app.example.com")
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+		if decision.Site != CSRFFetchSiteSameSite || decision.Origin != "https://app.example.com" || decision.Trusted {
+			t.Fatalf("decision=%+v", decision)
+		}
+	})
+
+	t.Run("returns decider error", func(t *testing.T) {
+		deciderErr := errors.New("policy unavailable")
+		app := zinc.New()
+		app.Use(CSRFWithConfig(CSRFConfig{
+			AllowFetchSite: func(*zinc.Context, CSRFDecision) (bool, error) {
+				return false, deciderErr
+			},
+			ErrorHandler: func(_ *zinc.Context, err error) error {
+				if !errors.Is(err, deciderErr) {
+					t.Fatalf("err=%v", err)
+				}
+				return err
+			},
+		}))
+		mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+			t.Fatal("handler should not run")
+			return nil
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
+		req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
+		req.Header.Set(zinc.HeaderXCSRFToken, "token")
+		req.Header.Set(zinc.HeaderSecFetchSite, string(CSRFFetchSiteCrossSite))
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 func TestCSRFSkipper(t *testing.T) {
 	app := zinc.New()
 	app.Use(CSRFWithConfig(CSRFConfig{
@@ -339,6 +434,9 @@ func TestCSRFViolationErrorMatching(t *testing.T) {
 		Reason: CSRFReasonTokenMissing,
 		Cause:  ErrCSRFTokenMissing,
 	}
+	if got := missing.Error(); !strings.Contains(got, ErrCSRFTokenMissing.Error()) {
+		t.Fatalf("missing error=%q", got)
+	}
 	if !errors.Is(missing, ErrCSRFTokenMissing) {
 		t.Fatal("missing token should match sentinel")
 	}
@@ -347,11 +445,34 @@ func TestCSRFViolationErrorMatching(t *testing.T) {
 	}
 
 	invalid := &CSRFViolation{Reason: CSRFReasonTokenInvalid}
+	if got := invalid.Error(); got != ErrCSRFTokenInvalid.Error() {
+		t.Fatalf("invalid error=%q", got)
+	}
 	if !errors.Is(invalid, ErrCSRFTokenInvalid) {
 		t.Fatal("invalid token should match sentinel")
 	}
 	if !errors.Is(invalid, zinc.ErrForbidden) {
 		t.Fatal("invalid token should match forbidden")
+	}
+
+	cookie := &CSRFViolation{Reason: CSRFReasonCookieMissing, CookieName: "_csrf"}
+	if got := cookie.Error(); !strings.Contains(got, "_csrf") {
+		t.Fatalf("cookie error=%q", got)
+	}
+
+	fetch := &CSRFViolation{Reason: CSRFReasonFetchSiteRejected, FetchSite: CSRFFetchSiteCrossSite}
+	if got := fetch.Error(); !strings.Contains(got, string(CSRFFetchSiteCrossSite)) {
+		t.Fatalf("fetch error=%q", got)
+	}
+
+	cause := &CSRFViolation{Cause: errors.New("custom")}
+	if got := cause.Error(); got != "custom" {
+		t.Fatalf("cause error=%q", got)
+	}
+
+	var nilViolation *CSRFViolation
+	if got := nilViolation.Error(); got == "" {
+		t.Fatal("nil violation should have a fallback message")
 	}
 }
 
@@ -380,6 +501,18 @@ func TestCSRFSameSiteNoneForcesSecure(t *testing.T) {
 	}
 }
 
+func TestCSRFConfigValidation(t *testing.T) {
+	assertPanicCSRF(t, func() {
+		_ = CSRFWithConfig(CSRFConfig{Readers: []CSRFReader{nil}})
+	})
+	assertPanicCSRF(t, func() {
+		_ = CSRFWithConfig(CSRFConfig{TrustedOrigins: []string{"https://example.com/path"}})
+	})
+	assertPanicCSRF(t, func() {
+		_ = CSRFWithConfig(CSRFConfig{TrustedOrigins: []string{"://bad"}})
+	})
+}
+
 func fixedCSRFToken(token string) CSRFGenerator {
 	return func(*zinc.Context) (string, error) {
 		return token, nil
@@ -391,4 +524,14 @@ func mustNoErrCSRF(t *testing.T, err error) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func assertPanicCSRF(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	fn()
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	texttemplate "text/template"
 )
 
 func TestTemplateRendererHelpers(t *testing.T) {
@@ -57,6 +58,21 @@ func TestTemplateRendererHelpers(t *testing.T) {
 
 		resp := performRequest(t, app, http.MethodGet, "/dashboard", nil, nil)
 		if body := strings.TrimSpace(resp.Body.String()); body != "Dashboard" {
+			t.Fatalf("body=%q", body)
+		}
+	})
+
+	t.Run("renders with text templates", func(t *testing.T) {
+		tmpl := texttemplate.Must(texttemplate.New("plain").Parse("Hello, {{.Name}}!"))
+		app := NewWithConfig(Config{
+			Renderer: NewTextTemplateRenderer(tmpl),
+		})
+		mustDo(t, app.Get("/plain", func(c *Context) error {
+			return c.Render("plain", Map{"Name": "Zinc"})
+		}))
+
+		resp := performRequest(t, app, http.MethodGet, "/plain", nil, nil)
+		if body := strings.TrimSpace(resp.Body.String()); body != "Hello, Zinc!" {
 			t.Fatalf("body=%q", body)
 		}
 	})
