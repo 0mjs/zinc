@@ -13,8 +13,6 @@ This page builds a small API with a health route, a JSON route, and a grouped en
 package main
 
 import (
-	"log"
-
 	"github.com/0mjs/zinc"
 	"github.com/0mjs/zinc/middleware"
 )
@@ -41,7 +39,7 @@ func main() {
 		})
 	})
 
-	log.Fatal(app.Listen(":8080"))
+	app.Listen()
 }
 ```
 
@@ -67,5 +65,6 @@ curl http://localhost:8080/api/users/42
 - `app.Group("/api")` created a route group with a shared prefix.
 - `c.Param("id")` read the `:id` route parameter.
 - `c.JSON(...)` encoded and wrote a JSON response.
+- `app.Listen()` started the server on `:8080`.
 
 Continue with [First Route](./first-route) for a closer look at handlers.

@@ -6,6 +6,8 @@ description: Build fast, explicit Go APIs on net/http with Zinc.
 sidebar_position: 1
 ---
 
+import DocCards from "@site/src/components/DocCards";
+
 Zinc is a Go API framework for developers who want expressive routing and practical helpers without leaving `net/http`.
 
 It gives you route groups, middleware chains, request binding, response helpers, static files, rendering, route metadata, and first-party middleware while keeping normal Go deployment and testing habits.
@@ -17,37 +19,39 @@ go get github.com/0mjs/zinc
 ```go
 package main
 
-import (
-	"log"
-
-	"github.com/0mjs/zinc"
-)
+import "github.com/0mjs/zinc"
 
 func main() {
 	app := zinc.New()
 
-	app.Get("/", func(c *zinc.Context) error {
-		return c.String("Hello, Zinc!")
-	})
+	app.Get("/", "Hello, World!")
 
-	log.Fatal(app.Listen(":8080"))
+	app.Listen()
 }
 ```
 
-<div className="zinc-doc-cards">
-  <a className="zinc-doc-card" href="/getting-started/quick-start">
-    <strong>Start building</strong>
-    Install Zinc, run a tiny server, and add your first JSON endpoint.
-  </a>
-  <a className="zinc-doc-card" href="/guide/routing">
-    <strong>Learn the guide</strong>
-    Work through routing, middleware, context, binding, responses, and errors.
-  </a>
-  <a className="zinc-doc-card" href="/middleware/overview">
-    <strong>Pick middleware</strong>
-    Add CORS, auth, logging, recovery, metrics, rate limiting, static files, and more.
-  </a>
-</div>
+<DocCards
+  cards={[
+    {
+      to: "/getting-started/quick-start",
+      title: "Start building",
+      description:
+        "Install Zinc, run a tiny server, and add your first JSON endpoint.",
+    },
+    {
+      to: "/guide/routing",
+      title: "Learn the guide",
+      description:
+        "Work through routing, middleware, context, binding, responses, and errors.",
+    },
+    {
+      to: "/middleware/overview",
+      title: "Pick middleware",
+      description:
+        "Add CORS, auth, logging, recovery, metrics, rate limiting, static files, and more.",
+    },
+  ]}
+/>
 
 ## What Zinc is good at
 

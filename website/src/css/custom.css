@@ -1,21 +1,21 @@
 :root {
   color-scheme: light;
 
-  --ifm-color-primary: #2f6f4e;
-  --ifm-color-primary-dark: #285f42;
-  --ifm-color-primary-darker: #24563c;
-  --ifm-color-primary-darkest: #1c432f;
-  --ifm-color-primary-light: #3d865f;
-  --ifm-color-primary-lighter: #4a966d;
-  --ifm-color-primary-lightest: #6aaf87;
+  --ifm-color-primary: #5e81ac;
+  --ifm-color-primary-dark: #527399;
+  --ifm-color-primary-darker: #4d6c90;
+  --ifm-color-primary-darkest: #3f5a77;
+  --ifm-color-primary-light: #6e90ba;
+  --ifm-color-primary-lighter: #789ac2;
+  --ifm-color-primary-lightest: #93b0d1;
 
   --ifm-background-color: #fbfbfa;
   --ifm-background-surface-color: #ffffff;
   --ifm-font-color-base: #202326;
   --ifm-font-color-secondary: #5f666d;
   --ifm-heading-color: #151719;
-  --ifm-link-color: #276646;
-  --ifm-link-hover-color: #174d33;
+  --ifm-link-color: #5e81ac;
+  --ifm-link-hover-color: #3f5a77;
   --ifm-navbar-background-color: rgba(255, 255, 255, 0.9);
   --ifm-footer-background-color: #17191b;
   --ifm-toc-border-color: #dfe3e6;
@@ -39,8 +39,8 @@
     "Liberation Mono",
     monospace;
 
-  --ifm-menu-color-background-hover: #f0f3f2;
-  --ifm-menu-color-background-active: #e7efea;
+  --ifm-menu-color-background-hover: #eef2f7;
+  --ifm-menu-color-background-active: #e0e9f4;
   --ifm-menu-color: #4f565d;
   --ifm-breadcrumb-color-active: #202326;
 
@@ -55,33 +55,39 @@
   --zinc-text-soft: #737b83;
   --zinc-code-bg: #f6f8f7;
   --zinc-code-border: #d9dedc;
+  --zinc-codeblock-bg: #eceff4;
+  --zinc-codeblock-border: #d8dee9;
+  --zinc-codeblock-title-bg: #e5e9f0;
+  --zinc-codeblock-title-color: #4c566a;
+  --zinc-announcement-bg: #f3f1e8;
+  --zinc-announcement-color: #3c3836;
   --zinc-shadow: 0 1px 2px rgba(23, 25, 27, 0.06);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --ifm-color-primary: #8fd3aa;
-  --ifm-color-primary-dark: #74c595;
-  --ifm-color-primary-darker: #63bb86;
-  --ifm-color-primary-darkest: #469767;
-  --ifm-color-primary-light: #a9dfbc;
-  --ifm-color-primary-lighter: #bce8cb;
-  --ifm-color-primary-lightest: #d7f3df;
+  --ifm-color-primary: #88c0d0;
+  --ifm-color-primary-dark: #6fafc3;
+  --ifm-color-primary-darker: #63a8be;
+  --ifm-color-primary-darkest: #4b93ab;
+  --ifm-color-primary-light: #a0cddb;
+  --ifm-color-primary-lighter: #acd3e0;
+  --ifm-color-primary-lightest: #c8e2ea;
 
   --ifm-background-color: #101112;
   --ifm-background-surface-color: #17191b;
   --ifm-font-color-base: #edeff0;
   --ifm-font-color-secondary: #b5bac0;
   --ifm-heading-color: #f6f7f7;
-  --ifm-link-color: #a9dfbc;
-  --ifm-link-hover-color: #d7f3df;
+  --ifm-link-color: #88c0d0;
+  --ifm-link-hover-color: #c8e2ea;
   --ifm-navbar-background-color: rgba(16, 17, 18, 0.92);
   --ifm-footer-background-color: #0d0e0f;
   --ifm-toc-border-color: #2d3134;
 
-  --ifm-menu-color-background-hover: #1b1f21;
-  --ifm-menu-color-background-active: #203128;
+  --ifm-menu-color-background-hover: #1d2229;
+  --ifm-menu-color-background-active: #2a3748;
   --ifm-menu-color: #cbd0d5;
   --ifm-breadcrumb-color-active: #f2f4f4;
 
@@ -94,8 +100,14 @@
   --zinc-text: #edeff0;
   --zinc-text-muted: #b5bac0;
   --zinc-text-soft: #8f979f;
-  --zinc-code-bg: #141719;
+  --zinc-code-bg: #1d2022;
   --zinc-code-border: #30363a;
+  --zinc-codeblock-bg: #2e3440;
+  --zinc-codeblock-border: #3b4252;
+  --zinc-codeblock-title-bg: #3b4252;
+  --zinc-codeblock-title-color: #d8dee9;
+  --zinc-announcement-bg: #1b1f21;
+  --zinc-announcement-color: #ebdbb2;
   --zinc-shadow: none;
 }
 
@@ -111,7 +123,7 @@ body {
 }
 
 ::selection {
-  background: rgba(47, 111, 78, 0.2);
+  background: rgba(94, 129, 172, 0.24);
 }
 
 .navbar {
@@ -145,7 +157,22 @@ body {
 }
 
 div[class*="announcementBar"] {
+  background: var(--zinc-announcement-bg);
   border-bottom: 1px solid var(--zinc-border);
+  color: var(--zinc-announcement-color);
+}
+
+div[class*="announcementBarContent"] {
+  color: var(--zinc-announcement-color);
+}
+
+button[class*="announcementBarClose"] {
+  color: var(--zinc-announcement-color);
+  opacity: 0.7;
+}
+
+button[class*="announcementBarClose"]:hover {
+  opacity: 1;
 }
 
 .main-wrapper,
@@ -382,8 +409,8 @@ div[class*="announcementBar"] {
 .theme-code-block,
 div[class^="codeBlockContainer_"],
 div[class*=" codeBlockContainer_"] {
-  background: var(--zinc-code-bg);
-  border: 1px solid var(--zinc-code-border);
+  background: var(--zinc-codeblock-bg);
+  border: 1px solid var(--zinc-codeblock-border);
   border-radius: 8px;
   box-shadow: var(--zinc-shadow);
   overflow: hidden;
@@ -395,7 +422,7 @@ div[class^="codeBlockContainer_"] pre,
 div[class^="codeBlockContainer_"] code[class*="language-"],
 div[class*=" codeBlockContainer_"] pre,
 div[class*=" codeBlockContainer_"] code[class*="language-"] {
-  background: var(--zinc-code-bg) !important;
+  background: var(--zinc-codeblock-bg) !important;
 }
 
 .theme-code-block pre,
@@ -418,9 +445,9 @@ div[class*=" codeBlockContainer_"] code[class*="language-"] {
 
 div[class^="codeBlockTitle_"],
 div[class*=" codeBlockTitle_"] {
-  background: var(--zinc-panel-strong);
-  border-bottom: 1px solid var(--zinc-code-border);
-  color: var(--zinc-text-muted);
+  background: var(--zinc-codeblock-title-bg);
+  border-bottom: 1px solid var(--zinc-codeblock-border);
+  color: var(--zinc-codeblock-title-color);
   font-size: 0.82rem;
   font-weight: 550;
   letter-spacing: 0;
@@ -541,6 +568,10 @@ div[class*=" buttonGroup_"] button:focus-visible {
   color: var(--zinc-text);
   display: block;
   margin-bottom: 0.35rem;
+}
+
+.zinc-doc-card span {
+  display: block;
 }
 
 @media (max-width: 996px) {

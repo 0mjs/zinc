@@ -139,7 +139,6 @@ module.exports = {
         id: "cookbook/cookbook",
       },
       items: [
-        "cookbook/cookbook",
         "cookbook/templated-html-js-page",
         "cookbook/realtime-chat-app",
         "cookbook/sqlite-crud-api",

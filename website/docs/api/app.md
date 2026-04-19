@@ -85,6 +85,13 @@ url, err := app.URL("users.show", "42")
 
 ## Advanced lifecycle helpers
 
+`Listen` is the shortest way to start an app. With no address, it listens on `:8080`.
+
+```go
+app.Listen()
+app.Listen(":3000")
+```
+
 Most apps do not need these directly, but Zinc exposes:
 
 - `AcquireContext`

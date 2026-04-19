@@ -36,8 +36,6 @@ go get github.com/0mjs/zinc
 package main
 
 import (
-	"log"
-
 	"github.com/0mjs/zinc"
 	middleware "github.com/0mjs/zinc/middleware"
 )
@@ -60,7 +58,7 @@ func main() {
 		return c.String("ok")
 	})
 
-	log.Fatal(app.Listen(":8080"))
+	app.Listen()
 }
 ```
 

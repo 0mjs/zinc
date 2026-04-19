@@ -349,6 +349,36 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 			t.Fatalf("Shutdown without server: %v", err)
 		}
 	})
+
+	t.Run("listen resolves address", func(t *testing.T) {
+		tests := []struct {
+			name string
+			addr []string
+			want string
+		}{
+			{name: "default", want: DefaultListenAddr},
+			{name: "empty uses default", addr: []string{""}, want: DefaultListenAddr},
+			{name: "custom", addr: []string{":3000"}, want: ":3000"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := resolveListenAddr(tt.addr...)
+				mustDo(t, err)
+				if got != tt.want {
+					t.Fatalf("addr=%q, want %q", got, tt.want)
+				}
+			})
+		}
+
+		if _, err := resolveListenAddr(":3000", ":4000"); err == nil {
+			t.Fatal("resolveListenAddr should fail with multiple addresses")
+		}
+
+		if err := New().Listen("bad-addr", ":4000"); err == nil {
+			t.Fatal("Listen should fail with multiple addresses")
+		}
+	})
 }
 
 func TestWrapAndWrapFunc(t *testing.T) {

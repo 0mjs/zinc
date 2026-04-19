@@ -200,12 +200,31 @@ func (a *App) Handler() http.Handler {
 	return a
 }
 
-func (a *App) Listen(addr string) error {
-	ln, err := net.Listen("tcp", addr)
+// Listen starts the app on addr, defaulting to :8080 when addr is omitted.
+func (a *App) Listen(addr ...string) error {
+	listenAddr, err := resolveListenAddr(addr...)
+	if err != nil {
+		return err
+	}
+	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
 	}
 	return a.Serve(ln)
+}
+
+func resolveListenAddr(addr ...string) (string, error) {
+	switch len(addr) {
+	case 0:
+		return DefaultListenAddr, nil
+	case 1:
+		if addr[0] == "" {
+			return DefaultListenAddr, nil
+		}
+		return addr[0], nil
+	default:
+		return "", fmt.Errorf("expected at most one listen address, got %d", len(addr))
+	}
 }
 
 func (a *App) ListenTLS(addr, certFile, keyFile string) error {

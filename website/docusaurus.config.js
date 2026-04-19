@@ -1,6 +1,6 @@
 // @ts-check
 
-const { themes } = require("prism-react-renderer");
+const { nordDark, nordLight } = require("./src/prism/nord");
 
 const config = {
   title: "Zinc",
@@ -33,6 +33,8 @@ const config = {
           routeBasePath: "/",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/0mjs/zinc/tree/main/website/",
+          showLastUpdateTime: true,
+          showLastUpdateAuthor: true,
         },
         blog: false,
         pages: false,
@@ -43,7 +45,23 @@ const config = {
     ],
   ],
 
+  themes: [
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      {
+        hashed: true,
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: false,
+        docsRouteBasePath: "/",
+        highlightSearchTermsOnTargetPage: true,
+        explicitSearchResultPath: true,
+      },
+    ],
+  ],
+
   themeConfig: {
+    image: "img/z_logo.png",
     navbar: {
       title: "Zinc",
       logo: {
@@ -84,8 +102,9 @@ const config = {
       copyright: `Copyright ${new Date().getFullYear()} Zinc.`,
     },
     prism: {
-      theme: themes.github,
-      darkTheme: themes.dracula,
+      theme: nordLight,
+      darkTheme: nordDark,
+      additionalLanguages: ["bash", "go", "json", "toml", "yaml"],
     },
     colorMode: {
       defaultMode: "light",
@@ -95,8 +114,6 @@ const config = {
     announcementBar: {
       id: "docs-preview",
       content: "Zinc is pre-1.0. The docs track the current API and call out behavior directly.",
-      backgroundColor: "#f4f5f7",
-      textColor: "#1f2328",
       isCloseable: true,
     },
   },

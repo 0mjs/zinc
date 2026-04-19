@@ -21,5 +21,5 @@ func main() {
 	app := zinc.New()
 	app.Get("/", "ok")
 
-	log.Fatal(app.Listen(":8080"))
+	app.Listen()
 }

@@ -170,7 +170,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Fatal(app.Listen(":8080"))
+	app.Listen()
 }
 ```
 
