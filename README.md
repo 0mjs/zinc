@@ -1,7 +1,7 @@
 ![Version](https://img.shields.io/badge/version-0.1.2-blue)
 ![Go Version](https://img.shields.io/badge/Go-1.25+-blue)
 [![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
-[![Coverage](https://img.shields.io/badge/coverage-83.4%25-brightgreen)](#quality)
+[![Coverage](https://img.shields.io/badge/coverage-86.4%25-brightgreen)](#quality)
 [![Go Report Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
