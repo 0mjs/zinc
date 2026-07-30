@@ -182,20 +182,21 @@ func (m *mountedHandler) serve(c *Context) {
 		return
 	}
 	request := c.Request()
-	cloned := request.Clone(request.Context())
-	cloned.URL = cloneURL(request.URL)
-	cloned.RequestURI = cloneRequestURI(cloned.URL)
-	cloned.URL.Path = stripMountPrefix(cloned.URL.Path, m.prefixPath)
-	if cloned.URL.RawPath != "" {
-		cloned.URL.RawPath = stripMountPrefix(cloned.URL.RawPath, m.prefixPath)
+	mountedRequest := new(http.Request)
+	*mountedRequest = *request
+	mountedRequest.URL = cloneURL(request.URL)
+	mountedRequest.RequestURI = cloneRequestURI(mountedRequest.URL)
+	mountedRequest.URL.Path = stripMountPrefix(mountedRequest.URL.Path, m.prefixPath)
+	if mountedRequest.URL.RawPath != "" {
+		mountedRequest.URL.RawPath = stripMountPrefix(mountedRequest.URL.RawPath, m.prefixPath)
 	}
-	if cloned.URL.Path == "" {
-		cloned.URL.Path = "/"
+	if mountedRequest.URL.Path == "" {
+		mountedRequest.URL.Path = "/"
 	}
-	if cloned.URL.RawPath == "" && cloned.URL.Path != "" {
-		cloned.URL.RawPath = cloned.URL.Path
+	if mountedRequest.URL.RawPath == "" && mountedRequest.URL.Path != "" {
+		mountedRequest.URL.RawPath = mountedRequest.URL.Path
 	}
-	m.handler.ServeHTTP(c.Writer(), cloned)
+	m.handler.ServeHTTP(c.Writer(), mountedRequest)
 	c.written = true
 }
 

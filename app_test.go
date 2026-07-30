@@ -783,6 +783,9 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 		if body := rec2.Body.String(); body != "/a|/%61" {
 			t.Fatalf("body=%q", body)
 		}
+		if req.URL.Path != "/sub/a" || req.URL.RawPath != "/sub/%61" || req.RequestURI != "/sub/%61" {
+			t.Fatalf("mount mutated original request: path=%q rawPath=%q requestURI=%q", req.URL.Path, req.URL.RawPath, req.RequestURI)
+		}
 
 		if got := stripMountPrefix("/sub/hello", "/"); got != "/sub/hello" {
 			t.Fatalf("strip=%q", got)
