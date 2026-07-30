@@ -12,6 +12,7 @@ import (
 )
 
 const cacheMatrixCardinality = 16
+const cacheMatrixPromotionWarmCycles = 4
 
 func cacheMatrixGitHubScenario() benchmarkScenario {
 	for _, scenario := range scenarioBenchmarks {
@@ -66,6 +67,18 @@ func buildCacheMatrixHighCardinalityRequests(scenario benchmarkScenario) []*http
 	return requests
 }
 
+func buildCacheMatrixDynamicVariantRequests(scenario benchmarkScenario, variant int) []*http.Request {
+	requests := make([]*http.Request, 0, len(scenario.routes))
+	for _, route := range scenario.routes {
+		if len(route.paramNames) == 0 {
+			continue
+		}
+		target := materializeScenarioPathVariant(route.pattern, variant)
+		requests = append(requests, httptest.NewRequest(route.method, target, nil))
+	}
+	return requests
+}
+
 func proveZincCacheMatrixRequests(t testing.TB, handler http.Handler, requests []*http.Request) {
 	t.Helper()
 	for i, req := range requests {
@@ -94,6 +107,27 @@ func runZincCacheMatrixSequential(b *testing.B, cacheSize int, scenario benchmar
 	benchmarkSinkInt = rw.status + rw.bytes
 }
 
+func warmZincCacheMatrix(handler http.Handler, requests []*http.Request, cycles int) {
+	rw := newDiscardResponseWriter()
+	for cycle := 0; cycle < cycles; cycle++ {
+		for _, request := range requests {
+			rw.reset()
+			handler.ServeHTTP(rw, request)
+		}
+	}
+}
+
+func benchmarkZincCacheMatrixRequests(b *testing.B, handler http.Handler, requests []*http.Request) {
+	rw := newDiscardResponseWriter()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rw.reset()
+		handler.ServeHTTP(rw, requests[i%len(requests)])
+	}
+	benchmarkSinkInt = rw.status + rw.bytes
+}
+
 func runZincCacheMatrixParallel(b *testing.B, cacheSize int, scenario benchmarkScenario, requests []*http.Request) {
 	handler := buildZincCacheMatrixHandler(scenario.routes, cacheSize)
 	proveZincCacheMatrixRequests(b, handler, requests)
@@ -112,6 +146,31 @@ func runZincCacheMatrixParallel(b *testing.B, cacheSize int, scenario benchmarkS
 				index = 0
 			}
 		}
+	})
+}
+
+func BenchmarkZincGitHubCachePhaseShift(b *testing.B) {
+	scenario := cacheMatrixGitHubScenario()
+	phaseA := buildCacheMatrixDynamicVariantRequests(scenario, 0)
+	phaseB := buildCacheMatrixDynamicVariantRequests(scenario, 1)
+
+	b.Run("StableA", func(b *testing.B) {
+		handler := buildZincCacheMatrixHandler(scenario.routes, DefaultConfig.RouteCacheSize)
+		warmZincCacheMatrix(handler, phaseA, cacheMatrixPromotionWarmCycles)
+		benchmarkZincCacheMatrixRequests(b, handler, phaseA)
+	})
+
+	b.Run("ShiftedRecoveredB", func(b *testing.B) {
+		handler := buildZincCacheMatrixHandler(scenario.routes, DefaultConfig.RouteCacheSize)
+		warmZincCacheMatrix(handler, phaseA, cacheMatrixPromotionWarmCycles)
+		warmZincCacheMatrix(handler, phaseB, cacheMatrixPromotionWarmCycles)
+		benchmarkZincCacheMatrixRequests(b, handler, phaseB)
+	})
+
+	b.Run("FreshB", func(b *testing.B) {
+		handler := buildZincCacheMatrixHandler(scenario.routes, DefaultConfig.RouteCacheSize)
+		warmZincCacheMatrix(handler, phaseB, cacheMatrixPromotionWarmCycles)
+		benchmarkZincCacheMatrixRequests(b, handler, phaseB)
 	})
 }
 

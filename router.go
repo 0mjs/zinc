@@ -126,6 +126,7 @@ type RouteCache struct {
 	dirty        uint32
 	hot          atomic.Pointer[routeCacheHotEntry]
 	snapshot     atomic.Pointer[routeCacheReadSnapshot]
+	overlayHits  uint32
 }
 
 type routeCacheHotEntry struct {
@@ -214,6 +215,13 @@ const routeCacheAdmissionShards = 16
 const routeCacheFreezeHitCycles = 2
 const routeCacheFreezeCapacityNumerator = 3
 const routeCacheFreezeCapacityDenominator = 4
+
+// Replace a frozen snapshot when a new working set is at least half its size
+// and remains unchanged for the same two complete hit cycles. New overlay
+// insertions reset the stability counter, preventing partial phase shifts from
+// being promoted prematurely.
+const routeCacheRebaseSizeNumerator = 1
+const routeCacheRebaseSizeDenominator = 2
 
 var allowHeaderByMask [allowHeaderTableSize]string
 
@@ -1866,6 +1874,9 @@ func (rc *RouteCache) getWithMask(key routeCacheKey, mask methodMask) (routeCach
 		rc.mu.RLock()
 		entry, ok := rc.getOverlayLocked(key, mask)
 		rc.mu.RUnlock()
+		if ok {
+			rc.recordOverlayHit(snapshot)
+		}
 		return entry, ok
 	}
 	rc.ensureFresh()
@@ -1975,6 +1986,30 @@ func (rc *RouteCache) recordHit() {
 	rc.freezeReadSnapshot(count)
 }
 
+func (rc *RouteCache) recordOverlayHit(expectedSnapshot *routeCacheReadSnapshot) {
+	if rc.snapshot.Load() != expectedSnapshot {
+		return
+	}
+	count := atomic.LoadUint32(&rc.count)
+	frozenCount := atomic.LoadUint32(&rc.frozenCount)
+	if count <= frozenCount {
+		return
+	}
+	overlayCount := count - frozenCount
+	if overlayCount < routeCacheMinRoutes ||
+		uint64(overlayCount)*routeCacheFreezeCapacityDenominator >
+			uint64(rc.size)*routeCacheFreezeCapacityNumerator ||
+		uint64(overlayCount)*routeCacheRebaseSizeDenominator <
+			uint64(frozenCount)*routeCacheRebaseSizeNumerator {
+		return
+	}
+	hits := atomic.AddUint32(&rc.overlayHits, 1)
+	if uint64(hits) < uint64(overlayCount)*routeCacheFreezeHitCycles {
+		return
+	}
+	rc.rebaseReadSnapshot(expectedSnapshot, overlayCount, frozenCount)
+}
+
 func (rc *RouteCache) freezeReadSnapshot(expectedCount uint32) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
@@ -1992,6 +2027,39 @@ func (rc *RouteCache) freezeReadSnapshot(expectedCount uint32) {
 	rc.next = 0
 	atomic.StoreUint32(&rc.frozenCount, expectedCount)
 	rc.snapshot.Store(snapshot)
+	rc.hot.Store(nil)
+}
+
+func (rc *RouteCache) rebaseReadSnapshot(
+	expectedSnapshot *routeCacheReadSnapshot,
+	expectedOverlayCount,
+	expectedFrozenCount uint32,
+) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.snapshot.Load() != expectedSnapshot ||
+		atomic.LoadUint32(&rc.dirty) != 0 ||
+		atomic.LoadUint32(&rc.frozenCount) != expectedFrozenCount ||
+		atomic.LoadUint32(&rc.count) != expectedFrozenCount+expectedOverlayCount ||
+		uint64(atomic.LoadUint32(&rc.overlayHits)) <
+			uint64(expectedOverlayCount)*routeCacheFreezeHitCycles {
+		return
+	}
+
+	rc.methodCache = rc.overlay
+	rc.extraCache = rc.extraOverlay
+	rc.overlay = [routeMethodCount]map[string]routeCacheEntry{}
+	rc.extraOverlay = nil
+	rc.keys = nil
+	rc.next = 0
+	atomic.StoreUint32(&rc.count, expectedOverlayCount)
+	atomic.StoreUint32(&rc.hits, 0)
+	atomic.StoreUint32(&rc.frozenCount, expectedOverlayCount)
+	atomic.StoreUint32(&rc.overlayHits, 0)
+	rc.snapshot.Store(&routeCacheReadSnapshot{
+		methodCache: rc.methodCache,
+		extraCache:  rc.extraCache,
+	})
 	rc.hot.Store(nil)
 }
 
@@ -2048,6 +2116,7 @@ func (rc *RouteCache) setOverlayLocked(key routeCacheKey, mask methodMask, entry
 		rc.storeOverlayLocked(key, mask, entry)
 		rc.keys = append(rc.keys, key)
 		atomic.StoreUint32(&rc.count, uint32(count+1))
+		atomic.StoreUint32(&rc.overlayHits, 0)
 		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
 		return
 	}
@@ -2058,6 +2127,7 @@ func (rc *RouteCache) setOverlayLocked(key routeCacheKey, mask methodMask, entry
 	rc.deleteOverlayLocked(victim, methodMaskFor(victim.method))
 	rc.storeOverlayLocked(key, mask, entry)
 	rc.keys[rc.next] = key
+	atomic.StoreUint32(&rc.overlayHits, 0)
 	rc.next++
 	if rc.next == len(rc.keys) {
 		rc.next = 0
@@ -2137,6 +2207,7 @@ func (rc *RouteCache) ensureFresh() {
 		atomic.StoreUint32(&rc.count, 0)
 		atomic.StoreUint32(&rc.hits, 0)
 		atomic.StoreUint32(&rc.frozenCount, 0)
+		atomic.StoreUint32(&rc.overlayHits, 0)
 		for i := range rc.admit {
 			atomic.StoreUint32(&rc.admit[i], 0)
 		}

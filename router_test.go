@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -247,6 +248,87 @@ func TestRouteCachePromotesStablePartialCacheAndKeepsOverlayAdaptive(t *testing.
 	if _, ok := cache.get(keys[0]); ok {
 		t.Fatal("expected invalidation to clear the promoted snapshot")
 	}
+}
+
+func TestRouteCacheRepromotesStableOverlay(t *testing.T) {
+	cache := NewRouteCache(256)
+	phaseA := make([]routeCacheKey, routeCacheMinRoutes)
+	phaseB := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range phaseA {
+		phaseA[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/phase-a/%d", i)}
+		phaseB[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/phase-b/%d", i)}
+		cache.set(phaseA[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range phaseA {
+			cache.get(key)
+		}
+	}
+	firstSnapshot := cache.snapshot.Load()
+	if firstSnapshot == nil {
+		t.Fatal("expected phase A to promote")
+	}
+
+	for i, key := range phaseB {
+		cache.set(key, routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 101)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range phaseB {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("phase B key missing before re-promotion: %+v", key)
+			}
+		}
+	}
+
+	if snapshot := cache.snapshot.Load(); snapshot == nil || snapshot == firstSnapshot {
+		t.Fatal("expected the stable overlay to replace the original snapshot")
+	}
+	if got := atomic.LoadUint32(&cache.count); got != routeCacheMinRoutes {
+		t.Fatalf("cache count=%d, want %d after re-promotion", got, routeCacheMinRoutes)
+	}
+	if _, ok := cache.get(phaseA[0]); ok {
+		t.Fatal("expected the old phase to be dropped from the cache")
+	}
+	if _, ok := cache.get(phaseB[0]); !ok {
+		t.Fatal("expected the new phase in the replacement snapshot")
+	}
+}
+
+var benchmarkRouteCacheSink *RouteCache
+
+func BenchmarkRouteCachePromotionAllocation(b *testing.B) {
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	entries := make([]routeCacheEntry, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/stable/%d", i)}
+		entries[i] = routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}}
+	}
+	prepare := func(promote bool) *RouteCache {
+		cache := NewRouteCache(100)
+		for i := range keys {
+			cache.set(keys[i], entries[i])
+		}
+		for hit := 1; hit < routeCacheMinRoutes*routeCacheFreezeHitCycles; hit++ {
+			cache.get(keys[0])
+		}
+		if promote {
+			cache.get(keys[0])
+		}
+		return cache
+	}
+
+	b.Run("BeforePromotion", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			benchmarkRouteCacheSink = prepare(false)
+		}
+	})
+	b.Run("Promote", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			benchmarkRouteCacheSink = prepare(true)
+		}
+	})
 }
 
 func TestRouteCacheDoesNotFreezeAtCapacity(t *testing.T) {
