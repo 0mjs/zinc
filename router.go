@@ -417,6 +417,12 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		path = path[:len(path)-1]
 	}
 	routes := r.staticRoutesFor(method, methodMaskFor(method))
+	if routes != nil {
+		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
+			ctx.setRouteIndex(route.infoIndex)
+			return true, allowedMethodSet{}, route.handler(ctx)
+		}
+	}
 	dispatchCacheEnabled := r.dispatchCacheEnabled()
 	var key routeCacheKey
 	if dispatchCacheEnabled {
@@ -425,12 +431,6 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	if dispatchCacheEnabled && routes != nil {
 		if entry, ok := r.cache.getHot(key); ok && entry.route == nil {
 			return false, entry.allowed, nil
-		}
-	}
-	if routes != nil {
-		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
-			ctx.setRouteIndex(route.infoIndex)
-			return true, allowedMethodSet{}, route.handler(ctx)
 		}
 	}
 	if dispatchCacheEnabled {

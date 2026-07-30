@@ -89,6 +89,41 @@ Zinc remains fifth on the fresh GitHub workload: HttpRouter scored 19,626 ns/op 
 
 The sixteen admission shards add 80 bytes to each constructed Zinc app after alignment. That is a 0.06% increase for the GitHub route set and remains below the 2% memory guardrail.
 
+## Static Fast-Path Optimization
+
+Profiling the GitHub static route showed that a successful static request checked the negative route cache before consulting the exact static map. A dedicated cache-enabled/cache-disabled A/B benchmark measured that tax directly.
+
+The dispatch order now checks the exact static map first. Successful static routes return without constructing a cache key or loading the atomic hot-cache entry. Dynamic routes, misses, invalidation, and cache admission behavior are unchanged.
+
+Ten-sample static A/B medians:
+
+| Workload | Before | Optimized | Change | B/op |
+| :------- | -----: | --------: | -----: | ---: |
+| Static hit, default cache | 45.13 ns | 39.81 ns | **11.8% faster** | 0 |
+| Static hit, cache disabled | 39.43 ns | 39.58 ns | Within noise | 0 |
+
+The four-way matrix remained inside its 3% noise guardrail and retained zero B/op in every row.
+
+The complete external Gin suite was rerun again:
+
+| External workload | Before | Optimized | Change | Optimized allocs |
+| :---------------- | -----: | --------: | -----: | ---------------: |
+| GitHub static route | 42.60 ns | 38.79 ns | **8.9% faster** | 0 |
+| Static, 157 routes | 7,352 ns | 6,721 ns | **8.6% faster** | 0 |
+| GitHub API, 203 routes | 20,702 ns | 19,912 ns | **3.8% faster** | 0 |
+
+Fresh same-run GitHub ranking:
+
+| Rank | Router | ns/op | B/op | allocs/op |
+| :--: | :----- | ----: | ---: | --------: |
+| 1 | Gin | 13,976 | 0 | 0 |
+| 2 | BunRouter | 14,927 | 0 | 0 |
+| 3 | Echo | 16,154 | 0 | 0 |
+| **4** | **Zinc** | **19,912** | **0** | **0** |
+| 5 | HttpRouter | 25,199 | 13,792 | 167 |
+
+Zinc now completes the GitHub workload with 21.0% lower latency than HttpRouter while avoiding all of its request allocations. Run-to-run machine conditions varied materially, so the ranking is meaningful within this shared run; the 3.8% Zinc before/after improvement should be confirmed again when making a release claim.
+
 ## What We Learned
 
 ### Fixed-Path Cache Benefit

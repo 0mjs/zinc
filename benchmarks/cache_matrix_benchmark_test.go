@@ -133,6 +133,18 @@ func BenchmarkZincGitHubCacheMatrix(b *testing.B) {
 	})
 }
 
+func BenchmarkZincGitHubStaticCacheMatrix(b *testing.B) {
+	scenario := cacheMatrixGitHubScenario()
+	requests := []*http.Request{scenario.staticRequest}
+
+	b.Run("DefaultCache", func(b *testing.B) {
+		runZincCacheMatrixSequential(b, DefaultConfig.RouteCacheSize, scenario, requests)
+	})
+	b.Run("CacheDisabled", func(b *testing.B) {
+		runZincCacheMatrixSequential(b, 0, scenario, requests)
+	})
+}
+
 func TestZincGitHubCacheMatrixCorpus(t *testing.T) {
 	scenario := cacheMatrixGitHubScenario()
 	if got, want := len(scenario.allRequests), 203; got != want {
