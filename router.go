@@ -111,20 +111,31 @@ type paramRanges struct {
 }
 
 type RouteCache struct {
-	cache map[routeCacheKey]routeCacheEntry
-	mu    sync.RWMutex
-	size  int
-	keys  []routeCacheKey
-	next  int
-	count uint32
-	admit [routeCacheAdmissionShards]uint32
-	dirty uint32
-	hot   atomic.Pointer[routeCacheHotEntry]
+	methodCache  [routeMethodCount]map[string]routeCacheEntry
+	extraCache   map[routeCacheKey]routeCacheEntry
+	overlay      [routeMethodCount]map[string]routeCacheEntry
+	extraOverlay map[routeCacheKey]routeCacheEntry
+	mu           sync.RWMutex
+	size         int
+	keys         []routeCacheKey
+	next         int
+	count        uint32
+	hits         uint32
+	frozenCount  uint32
+	admit        [routeCacheAdmissionShards]uint32
+	dirty        uint32
+	hot          atomic.Pointer[routeCacheHotEntry]
+	snapshot     atomic.Pointer[routeCacheReadSnapshot]
 }
 
 type routeCacheHotEntry struct {
 	key   routeCacheKey
 	entry routeCacheEntry
+}
+
+type routeCacheReadSnapshot struct {
+	methodCache [routeMethodCount]map[string]routeCacheEntry
+	extraCache  map[routeCacheKey]routeCacheEntry
 }
 
 type collectedRouteParams struct {
@@ -196,6 +207,13 @@ const routeCacheAdmissionInterval = 4
 
 // Keep this a power of two so routeCacheAdmissionShard can use a mask.
 const routeCacheAdmissionShards = 16
+
+// Promote a stable, partially filled cache after two complete hit cycles.
+// Keeping one quarter of the cache free prevents read-mostly promotion from
+// disabling adaptation when the concrete-path working set exceeds capacity.
+const routeCacheFreezeHitCycles = 2
+const routeCacheFreezeCapacityNumerator = 3
+const routeCacheFreezeCapacityDenominator = 4
 
 var allowHeaderByMask [allowHeaderTableSize]string
 
@@ -416,7 +434,8 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	if !strictRouting && len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}
-	routes := r.staticRoutesFor(method, methodMaskFor(method))
+	mask := methodMaskFor(method)
+	routes := r.staticRoutesFor(method, mask)
 	if routes != nil {
 		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
 			ctx.setRouteIndex(route.infoIndex)
@@ -434,7 +453,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		}
 	}
 	if dispatchCacheEnabled {
-		if entry, ok := r.cache.get(key); ok {
+		if entry, ok := r.cache.getWithMask(key, mask); ok {
 			if entry.route == nil {
 				return false, entry.allowed, nil
 			}
@@ -444,16 +463,16 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		}
 	}
 	captured := ctx.paramRangesScratch()
-	entry := r.lookupDynamicDispatch(method, path, needAllowed, captured)
+	entry := r.lookupDynamicDispatch(method, mask, path, needAllowed, captured)
 	if !caseSensitive && entry.route == nil {
-		if routes := r.staticRoutesFor(method, methodMaskFor(method)); routes != nil {
+		if routes := r.staticRoutesFor(method, mask); routes != nil {
 			if route := lookupStaticRouteLower(routes, originalPath, path); route != nil {
 				ctx.setRouteIndex(route.infoIndex)
 				return true, allowedMethodSet{}, route.handler(ctx)
 			}
 		}
 		if lower, changed := lowercasePath(path); changed {
-			lowerEntry := r.lookupDynamicDispatch(method, lower, needAllowed, captured)
+			lowerEntry := r.lookupDynamicDispatch(method, mask, lower, needAllowed, captured)
 			if lowerEntry.route != nil || !lowerEntry.allowed.empty() {
 				entry = lowerEntry
 			}
@@ -466,7 +485,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		if entry.route != nil {
 			entry.values = cloneParamRangesForCache(entry.values, int(entry.route.paramCount))
 		}
-		r.cache.setMiss(routeCacheKey{method: method, path: originalPath}, entry)
+		r.cache.setMissWithMask(routeCacheKey{method: method, path: originalPath}, mask, entry)
 	}
 	if entry.route == nil {
 		return false, entry.allowed, nil
@@ -477,10 +496,11 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 }
 
 func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc {
+	mask := methodMaskFor(method)
 	cacheEnabled := r.dynamicCacheEnabled()
 	if cacheEnabled {
 		key := routeCacheKey{method: method, path: path}
-		if entry, ok := r.cache.get(key); ok {
+		if entry, ok := r.cache.getWithMask(key, mask); ok {
 			if entry.route == nil {
 				return nil
 			}
@@ -489,7 +509,6 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 			return entry.route.handler
 		}
 	}
-	mask := methodMaskFor(method)
 	root := r.dynamicTree(method, mask)
 	if root == nil {
 		return nil
@@ -510,7 +529,7 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 			values: cloneParamRangesForCache(*captured, int(matched.paramCount)),
 		}
 		key := routeCacheKey{method: method, path: path}
-		r.cache.setMiss(key, entry)
+		r.cache.setMissWithMask(key, mask, entry)
 	}
 	return matched.handler
 }
@@ -523,11 +542,10 @@ func (r *Router) dispatchCacheEnabled() bool {
 	return r.cache != nil
 }
 
-func (r *Router) lookupDynamicDispatch(method, path string, needAllowed bool, captured *paramRanges) routeCacheEntry {
+func (r *Router) lookupDynamicDispatch(method string, mask methodMask, path string, needAllowed bool, captured *paramRanges) routeCacheEntry {
 	if r.dynamicRouteCount == 0 {
 		return routeCacheEntry{}
 	}
-	mask := methodMaskFor(method)
 	if captured == nil {
 		captured = &paramRanges{}
 	}
@@ -1831,19 +1849,38 @@ func buildAllowHeaderWithExtra(mask methodMask, extra []string) string {
 }
 
 func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
+	return rc.getWithMask(key, methodMaskFor(key.method))
+}
+
+func (rc *RouteCache) getWithMask(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
 	if rc == nil {
 		return routeCacheEntry{}, false
+	}
+	if snapshot := rc.snapshot.Load(); snapshot != nil {
+		if entry, ok := snapshot.get(key, mask); ok {
+			return entry, true
+		}
+		if atomic.LoadUint32(&rc.count) == atomic.LoadUint32(&rc.frozenCount) {
+			return routeCacheEntry{}, false
+		}
+		rc.mu.RLock()
+		entry, ok := rc.getOverlayLocked(key, mask)
+		rc.mu.RUnlock()
+		return entry, ok
 	}
 	rc.ensureFresh()
 	if hot := rc.hot.Load(); hot != nil && hot.key == key {
 		return hot.entry, true
 	}
-	if rc.cache == nil {
+	if atomic.LoadUint32(&rc.count) == 0 {
 		return routeCacheEntry{}, false
 	}
 	rc.mu.RLock()
-	entry, ok := rc.cache[key]
+	entry, ok := rc.getLocked(key, mask)
 	rc.mu.RUnlock()
+	if ok {
+		rc.recordHit()
+	}
 	return entry, ok
 }
 
@@ -1858,35 +1895,46 @@ func (rc *RouteCache) getHot(key routeCacheKey) (routeCacheEntry, bool) {
 }
 
 func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
+	rc.setWithMask(key, methodMaskFor(key.method), entry)
+}
+
+func (rc *RouteCache) setWithMask(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
 	if rc == nil || rc.size <= 0 {
 		return
 	}
 	rc.ensureFresh()
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	if rc.cache == nil {
-		rc.cache = make(map[routeCacheKey]routeCacheEntry, rc.size)
+	if snapshot := rc.snapshot.Load(); snapshot != nil {
+		if _, exists := snapshot.get(key, mask); exists {
+			return
+		}
+		rc.setOverlayLocked(key, mask, entry)
+		return
+	}
+	if rc.keys == nil {
 		rc.keys = make([]routeCacheKey, 0, rc.size)
 		rc.next = 0
 	}
-	if _, exists := rc.cache[key]; exists {
-		rc.cache[key] = entry
+	if _, exists := rc.getLocked(key, mask); exists {
+		rc.setLocked(key, mask, entry)
 		if hot := rc.hot.Load(); hot != nil && hot.key == key {
 			rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
 		}
 		return
 	}
-	if len(rc.cache) < rc.size {
-		rc.cache[key] = entry
+	count := int(atomic.LoadUint32(&rc.count))
+	if count < rc.size {
+		rc.setLocked(key, mask, entry)
 		rc.keys = append(rc.keys, key)
-		atomic.StoreUint32(&rc.count, uint32(len(rc.cache)))
+		atomic.StoreUint32(&rc.count, uint32(count+1))
 		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
 		return
 	}
 
 	victim := rc.keys[rc.next]
-	delete(rc.cache, victim)
-	rc.cache[key] = entry
+	rc.deleteLocked(victim, methodMaskFor(victim.method))
+	rc.setLocked(key, mask, entry)
 	rc.keys[rc.next] = key
 	rc.next++
 	if rc.next == len(rc.keys) {
@@ -1898,6 +1946,10 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 }
 
 func (rc *RouteCache) setMiss(key routeCacheKey, entry routeCacheEntry) {
+	rc.setMissWithMask(key, methodMaskFor(key.method), entry)
+}
+
+func (rc *RouteCache) setMissWithMask(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
 	if rc == nil || rc.size <= 0 {
 		return
 	}
@@ -1906,7 +1958,145 @@ func (rc *RouteCache) setMiss(key routeCacheKey, entry routeCacheEntry) {
 		atomic.AddUint32(&rc.admit[admissionShard], 1)%routeCacheAdmissionInterval != 0 {
 		return
 	}
-	rc.set(key, entry)
+	rc.setWithMask(key, mask, entry)
+}
+
+func (rc *RouteCache) recordHit() {
+	count := atomic.LoadUint32(&rc.count)
+	if count < routeCacheMinRoutes ||
+		uint64(count)*routeCacheFreezeCapacityDenominator >
+			uint64(rc.size)*routeCacheFreezeCapacityNumerator {
+		return
+	}
+	hits := atomic.AddUint32(&rc.hits, 1)
+	if uint64(hits) < uint64(count)*routeCacheFreezeHitCycles {
+		return
+	}
+	rc.freezeReadSnapshot(count)
+}
+
+func (rc *RouteCache) freezeReadSnapshot(expectedCount uint32) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.snapshot.Load() != nil ||
+		atomic.LoadUint32(&rc.dirty) != 0 ||
+		atomic.LoadUint32(&rc.count) != expectedCount ||
+		uint64(atomic.LoadUint32(&rc.hits)) < uint64(expectedCount)*routeCacheFreezeHitCycles {
+		return
+	}
+	snapshot := &routeCacheReadSnapshot{
+		methodCache: rc.methodCache,
+		extraCache:  rc.extraCache,
+	}
+	rc.keys = nil
+	rc.next = 0
+	atomic.StoreUint32(&rc.frozenCount, expectedCount)
+	rc.snapshot.Store(snapshot)
+	rc.hot.Store(nil)
+}
+
+func (rc *RouteCache) getLocked(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		entry, ok := rc.methodCache[slot][key.path]
+		return entry, ok
+	}
+	entry, ok := rc.extraCache[key]
+	return entry, ok
+}
+
+func (snapshot *routeCacheReadSnapshot) get(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		entry, ok := snapshot.methodCache[slot][key.path]
+		return entry, ok
+	}
+	entry, ok := snapshot.extraCache[key]
+	return entry, ok
+}
+
+func (rc *RouteCache) getOverlayLocked(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		entry, ok := rc.overlay[slot][key.path]
+		return entry, ok
+	}
+	entry, ok := rc.extraOverlay[key]
+	return entry, ok
+}
+
+func (rc *RouteCache) setLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		cache := rc.methodCache[slot]
+		if cache == nil {
+			cache = make(map[string]routeCacheEntry)
+			rc.methodCache[slot] = cache
+		}
+		cache[key.path] = entry
+		return
+	}
+	if rc.extraCache == nil {
+		rc.extraCache = make(map[routeCacheKey]routeCacheEntry)
+	}
+	rc.extraCache[key] = entry
+}
+
+func (rc *RouteCache) setOverlayLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
+	if _, exists := rc.getOverlayLocked(key, mask); exists {
+		rc.storeOverlayLocked(key, mask, entry)
+		return
+	}
+	count := int(atomic.LoadUint32(&rc.count))
+	if count < rc.size {
+		rc.storeOverlayLocked(key, mask, entry)
+		rc.keys = append(rc.keys, key)
+		atomic.StoreUint32(&rc.count, uint32(count+1))
+		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
+		return
+	}
+	if len(rc.keys) == 0 {
+		return
+	}
+	victim := rc.keys[rc.next]
+	rc.deleteOverlayLocked(victim, methodMaskFor(victim.method))
+	rc.storeOverlayLocked(key, mask, entry)
+	rc.keys[rc.next] = key
+	rc.next++
+	if rc.next == len(rc.keys) {
+		rc.next = 0
+	}
+	if hot := rc.hot.Load(); hot != nil && hot.key == victim {
+		rc.hot.Store(nil)
+	}
+}
+
+func (rc *RouteCache) storeOverlayLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		cache := rc.overlay[slot]
+		if cache == nil {
+			cache = make(map[string]routeCacheEntry)
+			rc.overlay[slot] = cache
+		}
+		cache[key.path] = entry
+		return
+	}
+	if rc.extraOverlay == nil {
+		rc.extraOverlay = make(map[routeCacheKey]routeCacheEntry)
+	}
+	rc.extraOverlay[key] = entry
+}
+
+func (rc *RouteCache) deleteLocked(key routeCacheKey, mask methodMask) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		delete(rc.methodCache[slot], key.path)
+		return
+	}
+	delete(rc.extraCache, key)
+}
+
+func (rc *RouteCache) deleteOverlayLocked(key routeCacheKey, mask methodMask) {
+	if slot := singleBitIndex(mask); slot >= 0 {
+		delete(rc.overlay[slot], key.path)
+		return
+	}
+	delete(rc.extraOverlay, key)
 }
 
 func routeCacheAdmissionShard(key routeCacheKey) int {
@@ -1928,6 +2118,7 @@ func (rc *RouteCache) invalidate() {
 		return
 	}
 	atomic.StoreUint32(&rc.dirty, 1)
+	rc.snapshot.Store(nil)
 	rc.hot.Store(nil)
 }
 
@@ -1937,14 +2128,20 @@ func (rc *RouteCache) ensureFresh() {
 	}
 	rc.mu.Lock()
 	if atomic.LoadUint32(&rc.dirty) != 0 {
-		rc.cache = nil
+		rc.methodCache = [routeMethodCount]map[string]routeCacheEntry{}
+		rc.extraCache = nil
+		rc.overlay = [routeMethodCount]map[string]routeCacheEntry{}
+		rc.extraOverlay = nil
 		rc.keys = nil
 		rc.next = 0
 		atomic.StoreUint32(&rc.count, 0)
+		atomic.StoreUint32(&rc.hits, 0)
+		atomic.StoreUint32(&rc.frozenCount, 0)
 		for i := range rc.admit {
 			atomic.StoreUint32(&rc.admit[i], 0)
 		}
 		atomic.StoreUint32(&rc.dirty, 0)
+		rc.snapshot.Store(nil)
 		rc.hot.Store(nil)
 	}
 	rc.mu.Unlock()

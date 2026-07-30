@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -195,6 +196,104 @@ func TestRouteCacheSetUpdateAndEviction(t *testing.T) {
 	}
 	if got, ok := cache.get(key2); !ok || got.route != route2 {
 		t.Fatalf("entry2=%v ok=%v", got, ok)
+	}
+}
+
+func TestRouteCachePartitionsStandardAndCustomMethods(t *testing.T) {
+	cache := NewRouteCache(3)
+	keys := []routeCacheKey{
+		{method: MethodGet, path: "/shared"},
+		{method: MethodPost, path: "/shared"},
+		{method: "PURGE", path: "/shared"},
+	}
+	for i, key := range keys {
+		cache.set(key, routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+
+	for i, key := range keys {
+		entry, ok := cache.get(key)
+		if !ok || entry.route == nil || entry.route.infoIndex != uint32(i+1) {
+			t.Fatalf("key=%+v entry=%+v ok=%v", key, entry, ok)
+		}
+	}
+}
+
+func TestRouteCachePromotesStablePartialCacheAndKeepsOverlayAdaptive(t *testing.T) {
+	cache := NewRouteCache(100)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/stable/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range keys {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("stable key missing before promotion: %+v", key)
+			}
+		}
+	}
+	if cache.snapshot.Load() == nil {
+		t.Fatal("expected stable partial cache to promote a read snapshot")
+	}
+
+	overlayKey := routeCacheKey{method: MethodPost, path: "/after-promotion"}
+	overlayEntry := routeCacheEntry{route: &radixRoute{infoIndex: 1000}}
+	cache.set(overlayKey, overlayEntry)
+	if got, ok := cache.get(overlayKey); !ok || got.route != overlayEntry.route {
+		t.Fatalf("overlay entry=%+v ok=%v", got, ok)
+	}
+
+	cache.invalidate()
+	if _, ok := cache.get(keys[0]); ok {
+		t.Fatal("expected invalidation to clear the promoted snapshot")
+	}
+}
+
+func TestRouteCacheDoesNotFreezeAtCapacity(t *testing.T) {
+	cache := NewRouteCache(routeCacheMinRoutes)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/full/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+2; cycle++ {
+		for _, key := range keys {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("full-cache key missing: %+v", key)
+			}
+		}
+	}
+	if cache.snapshot.Load() != nil {
+		t.Fatal("full cache must remain adaptive")
+	}
+}
+
+func TestRouteCacheConcurrentSnapshotPromotion(t *testing.T) {
+	cache := NewRouteCache(100)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/concurrent/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+
+	var workers sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		workers.Add(1)
+		go func(offset int) {
+			defer workers.Done()
+			for i := 0; i < len(keys)*4; i++ {
+				key := keys[(i+offset)%len(keys)]
+				if _, ok := cache.get(key); !ok {
+					t.Errorf("stable key missing during promotion: %+v", key)
+					return
+				}
+			}
+		}(worker)
+	}
+	workers.Wait()
+
+	if cache.snapshot.Load() == nil {
+		t.Fatal("expected concurrent hits to promote a read snapshot")
 	}
 }
 
