@@ -766,6 +766,36 @@ func TestRouterDispatchIntoRefreshesCachedDynamicHitAfterAdd(t *testing.T) {
 	}
 }
 
+func TestRouterStaticRouteLengthFilter(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(8),
+		config: &DefaultConfig,
+	}
+	shortPath := "/fixed"
+	longPath := "/" + strings.Repeat("x", 140)
+	mustDo(t, router.Add(MethodGet, shortPath, func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, longPath, func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+
+	slot := singleBitIndex(methodMaskGet)
+	if !router.hasStaticRouteLength(slot, methodMaskGet, len(shortPath)) {
+		t.Fatal("expected short static path length to pass the filter")
+	}
+	if !router.hasStaticRouteLength(slot, methodMaskGet, len(longPath)) {
+		t.Fatal("expected long static path length to pass the filter")
+	}
+	if router.hasStaticRouteLength(slot, methodMaskGet, len("/items/42")) {
+		t.Fatal("expected unmatched dynamic path length to skip static lookup")
+	}
+
+	for _, path := range []string{shortPath, longPath, "/items/42"} {
+		handled, _, err := router.dispatchInto(MethodGet, path, false, &Context{})
+		if err != nil || !handled {
+			t.Fatalf("dispatch %q handled=%v err=%v", path, handled, err)
+		}
+	}
+}
+
 func TestRouterDispatchIntoCachedManyParamsIsolation(t *testing.T) {
 	router := &Router{
 		cache:  NewRouteCache(routeCacheMinRoutes + 8),

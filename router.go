@@ -82,6 +82,8 @@ type Router struct {
 	routeTree         *radixNode
 	routeInfos        []routeMeta
 	dynamicRouteCount int
+	staticRouteLens   [routeMethodCount]uint64
+	staticLongMethods methodMask
 }
 
 type routeCacheKey struct {
@@ -309,6 +311,7 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 				infoIndex: infoIndex,
 			}
 			methodRoutes[path] = route
+			r.recordStaticRouteLength(mask, path)
 			r.routeInfos = append(r.routeInfos, info)
 			r.recordNamedRoute(name, infoIndex)
 			r.invalidateCache()
@@ -330,6 +333,7 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 		for i := 0; i < routeCandidateCount; i++ {
 			candidate := routeCandidates[i]
 			methodRoutes[candidate] = route
+			r.recordStaticRouteLength(mask, candidate)
 			r.staticAllowed[candidate] = addAllowedMethod(r.staticAllowed[candidate], method, mask)
 		}
 		r.routeInfos = append(r.routeInfos, info)
@@ -354,6 +358,26 @@ func (r *Router) staticRoutesFor(method string, mask methodMask) map[string]*Rou
 		return r.staticRoutes[slot]
 	}
 	return r.routes[method]
+}
+
+func (r *Router) recordStaticRouteLength(mask methodMask, path string) {
+	slot := singleBitIndex(mask)
+	if slot < 0 {
+		return
+	}
+	length := len(path)
+	if length >= 64 {
+		r.staticLongMethods |= mask
+		return
+	}
+	r.staticRouteLens[slot] |= uint64(1) << length
+}
+
+func (r *Router) hasStaticRouteLength(slot int, mask methodMask, length int) bool {
+	if length >= 64 {
+		return r.staticLongMethods&mask != 0
+	}
+	return r.staticRouteLens[slot]&(uint64(1)<<length) != 0
 }
 
 func (r *Router) recordNamedRoute(name string, index uint32) {
@@ -443,8 +467,21 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		path = path[:len(path)-1]
 	}
 	mask := methodMaskFor(method)
-	routes := r.staticRoutesFor(method, mask)
-	if routes != nil {
+	slot := singleBitIndex(mask)
+	var routes map[string]*Route
+	if slot >= 0 {
+		routes = r.staticRoutes[slot]
+	} else {
+		routes = r.routes[method]
+	}
+	staticLengthPossible := true
+	if routes != nil && r.dynamicRouteCount != 0 && slot >= 0 {
+		staticLengthPossible = r.hasStaticRouteLength(slot, mask, len(originalPath))
+		if !staticLengthPossible && path != originalPath {
+			staticLengthPossible = r.hasStaticRouteLength(slot, mask, len(path))
+		}
+	}
+	if routes != nil && staticLengthPossible {
 		if route := lookupStaticRouteExact(routes, originalPath, path); route != nil {
 			ctx.setRouteIndex(route.infoIndex)
 			return true, allowedMethodSet{}, route.handler(ctx)
