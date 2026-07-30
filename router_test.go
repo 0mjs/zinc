@@ -914,36 +914,6 @@ func TestRouterAllowedMethodsCaseInsensitiveStaticIndex(t *testing.T) {
 	}
 }
 
-func TestRouterLookupAllowedWithCombinedDynamicTree(t *testing.T) {
-	root := &radixNode{kind: radixRoot}
-	mustDo(t, root.add("/items/:id", newRadixRoute(MethodGet, func(*Context) error { return nil }, 0, collectedRouteParams{count: 1, inline: [2]string{"id"}})))
-	mustDo(t, root.add("/items/:id", newRadixRoute(MethodPost, func(*Context) error { return nil }, 1, collectedRouteParams{count: 1, inline: [2]string{"id"}})))
-	mustDo(t, root.add("/files/*path", newRadixRoute("PURGE", func(*Context) error { return nil }, 2, collectedRouteParams{count: 1, inline: [2]string{"*"}})))
-
-	router := &Router{
-		routeTree:    root,
-		dynamicRoots: [routeMethodCount]*radixNode{{kind: radixRoot}},
-	}
-
-	allowed := router.lookupAllowedInDynamicTrees("/items/42", "")
-	if header := allowed.header(true, true); header != "GET, HEAD, POST, OPTIONS" {
-		t.Fatalf("allow header=%q", header)
-	}
-	allowed.removeMethod(MethodGet)
-	if header := allowed.header(true, true); header != "POST, OPTIONS" {
-		t.Fatalf("removed get allow header=%q", header)
-	}
-
-	extraAllowed := root.lookupAllowed("/files/a/b", 0)
-	if header := extraAllowed.header(false, false); header != "PURGE" {
-		t.Fatalf("extra allow header=%q", header)
-	}
-	extraAllowed.removeMethod("PURGE")
-	if !extraAllowed.empty() {
-		t.Fatalf("extra after remove=%v", extraAllowed)
-	}
-}
-
 func buildSequentialParamRoute(count int) (string, string, []string, paramRanges) {
 	var (
 		pattern strings.Builder
