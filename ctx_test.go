@@ -1358,6 +1358,31 @@ func TestContextBodyBytesLimitAndCloseErrors(t *testing.T) {
 	})
 }
 
+func TestReadAllBodyContentLengthHint(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		contentLength int64
+	}{
+		{name: "exact", body: "abc", contentLength: 3},
+		{name: "shorter than declared", body: "abc", contentLength: 5},
+		{name: "longer than declared", body: "abc", contentLength: 2},
+		{name: "unknown", body: "abc", contentLength: -1},
+		{name: "empty", body: "", contentLength: 1},
+		{name: "hint above preallocation limit", body: "abc", contentLength: bodyReadPreallocateLimit + 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := readAllBody(strings.NewReader(test.body), test.contentLength)
+			mustDo(t, err)
+			if string(body) != test.body {
+				t.Fatalf("body=%q want=%q", body, test.body)
+			}
+		})
+	}
+}
+
 func TestContextProxyAndSchemeBranches(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
 	req.RemoteAddr = "10.0.0.1:1234"

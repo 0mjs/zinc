@@ -58,6 +58,8 @@ const inlineParamSlotCount = 8
 
 const directParamStart int32 = -1
 
+const bodyReadPreallocateLimit int64 = 64 << 10
+
 var contextPool = sync.Pool{
 	New: func() any {
 		c := &Context{
@@ -626,7 +628,7 @@ func (c *Context) readAndCacheBodyBytes() ([]byte, error) {
 		reader = io.LimitReader(reader, c.app.config.BodyLimit+1)
 	}
 
-	body, readErr := io.ReadAll(reader)
+	body, readErr := readAllBody(reader, c.request.ContentLength)
 	if readErr == nil && c.app != nil && c.app.config.BodyLimit > 0 && int64(len(body)) > c.app.config.BodyLimit {
 		readErr = ErrRequestEntityTooLarge
 		body = nil
@@ -641,6 +643,24 @@ func (c *Context) readAndCacheBodyBytes() ([]byte, error) {
 		c.request.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	return body, readErr
+}
+
+func readAllBody(reader io.Reader, contentLength int64) ([]byte, error) {
+	if contentLength <= 0 || contentLength > bodyReadPreallocateLimit {
+		return io.ReadAll(reader)
+	}
+
+	body := make([]byte, int(contentLength)+1)
+	n, err := io.ReadFull(reader, body)
+	switch err {
+	case nil:
+		rest, readErr := io.ReadAll(reader)
+		return append(body, rest...), readErr
+	case io.EOF, io.ErrUnexpectedEOF:
+		return body[:n], nil
+	default:
+		return body[:n], err
+	}
 }
 
 func (c *Context) readAndCacheJSONBody(codec JSONCodec, v any) (int, error, error) {
