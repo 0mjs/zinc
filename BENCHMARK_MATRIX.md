@@ -124,6 +124,43 @@ Fresh same-run GitHub ranking:
 
 Zinc now completes the GitHub workload with 21.0% lower latency than HttpRouter while avoiding all of its request allocations. Run-to-run machine conditions varied materially, so the ranking is meaningful within this shared run; the 3.8% Zinc before/after improvement should be confirmed again when making a release claim.
 
+## Context Lifecycle Optimization
+
+A CPU profile attributed a meaningful share of request time to context acquisition, reset, release, and the surrounding `sync.Pool` operations. Inspection found that eight request-owned fields were cleared during `release`, then cleared a second time immediately after the same context was acquired.
+
+Zinc must clear request references before returning a context to the pool so it does not retain bodies, requests, handlers, or parsed values. The optimization preserves that release-time cleanup and removes only the duplicate reset writes. A dedicated reuse test dirties request, response, route, parameter, body, cookie, handler, error, and store state before proving that none survives the release/acquire boundary.
+
+Ten-sample lifecycle medians:
+
+| Workload | Before | Optimized | Change | B/op | allocs/op |
+| :------- | -----: | --------: | -----: | ---: | --------: |
+| Context acquire + release | 16.35 ns | 14.60 ns | **10.7% faster** | 0 | 0 |
+
+The stable post-change routing matrix retained zero request allocations:
+
+| Workload | Median | B/op | allocs/op |
+| :------- | -----: | ---: | --------: |
+| `DefaultCache` | 108.70 ns | 0 | 0 |
+| `CacheDisabled` | 119.05 ns | 0 | 0 |
+| `HighCardinality` | 231.00 ns | 0 | 0 |
+| `ParallelHighCardinality` | 313.70 ns | 0 | 0 |
+| Static hit, default cache | 37.43 ns | 0 | 0 |
+| Static hit, cache disabled | 37.52 ns | 0 | 0 |
+
+One later paired matrix attempt was excluded because the machine entered visible thermal throttling midway through the post-change run: unrelated cache-disabled and static rows slowed abruptly by 30–50%. It is not used as evidence for or against the change.
+
+The complete external Gin suite passed again:
+
+| External workload | Previous run | Optimized | Change | Optimized allocs |
+| :---------------- | -----------: | --------: | -----: | ---------------: |
+| GitHub static route | 38.79 ns | 35.76 ns | **7.8% faster** | 0 |
+| Static, 157 routes | 6,721 ns | 6,266 ns | **6.8% faster** | 0 |
+| Parse API, 26 routes | 1,930 ns | 1,816 ns | **5.9% faster** | 0 |
+| Google+ API, 13 routes | 1,181 ns | 1,126 ns | **4.7% faster** | 0 |
+| GitHub API, 203 routes | 19,912 ns | 19,800 ns | Within noise | 0 |
+
+Zinc remained fourth on the same-run GitHub workload, behind Gin at 13,624 ns, BunRouter at 14,368 ns, and Echo at 16,397 ns. HttpRouter measured 22,071 ns with 13,792 B and 167 allocations. The context change clearly helps per-request overhead, but the 203-route result confirms that large mixed-tree lookup—not context reuse—is now the dominant optimization target.
+
 ## What We Learned
 
 ### Fixed-Path Cache Benefit
@@ -179,4 +216,6 @@ The cache replacement target was:
 - Bring sequential high cardinality below 250 ns/op.
 - Preserve zero allocations in fixed and cache-disabled routing.
 
-All four conditions now pass. The next target is the remaining 5.5% GitHub gap to HttpRouter, using `CacheDisabled` and the complete external suite as guardrails. This keeps the public benchmark effort honest: Zinc can improve its headline score without hiding weak behavior behind repeated concrete URLs.
+All four conditions now pass. Zinc has also moved ahead of HttpRouter in two consecutive complete-suite runs while retaining zero allocations.
+
+The next target is dynamic lookup in large mixed route trees. Profile and optimize `GithubAll` first, using `ParseAll`, `GPlusAll`, cache-disabled routing, and high-cardinality routing as guardrails. The context round improved static and smaller suites but moved `GithubAll` by less than 1%, so further context micro-tuning is not the highest-value work.

@@ -127,12 +127,12 @@ func (c *Context) Copy() *Context {
 }
 
 func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
+	// release clears request-owned references before pooling. Keep reset focused
+	// on state that handlers mutate without release-time retention concerns.
 	c.initPathParams()
 	c.writer = w
 	c.request = r
-	c.queryParams = nil
 	c.written = false
-	c.handlers = nil
 	c.index = -1
 	c.status = http.StatusOK
 	c.app = nil
@@ -140,12 +140,6 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.routeIndex = -1
 	c.routeIndexed = false
 	c.lastErr = nil
-	c.body = nil
-	c.bodyRead = false
-	c.bodyErr = nil
-	c.sameSite = 0
-	c.paramPath = ""
-	c.paramRoute = nil
 	for i := 0; i < c.paramCount; i++ {
 		c.PathParams[i] = emptyParam
 	}

@@ -47,6 +47,69 @@ func (i *textInt) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func BenchmarkContextAcquireRelease(b *testing.B) {
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	rec := httptest.NewRecorder()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctx := NewContext(rec, req)
+		ctx.release()
+	}
+}
+
+func TestContextReleaseResetDoesNotLeakRequestState(t *testing.T) {
+	firstRequest := httptest.NewRequest(http.MethodPost, "/first?dirty=true", strings.NewReader("body"))
+	secondRequest := httptest.NewRequest(http.MethodGet, "/second", nil)
+	firstWriter := httptest.NewRecorder()
+	secondWriter := httptest.NewRecorder()
+	ctx := NewContext(firstWriter, firstRequest)
+
+	ctx.queryParams = url.Values{"dirty": {"true"}}
+	ctx.handlers = []HandlerFunc{func(*Context) error { return nil }}
+	ctx.body = []byte("body")
+	ctx.bodyRead = true
+	ctx.bodyErr = errors.New("dirty body")
+	ctx.sameSite = http.SameSiteStrictMode
+	ctx.paramPath = "/first"
+	ctx.paramRoute = &radixRoute{}
+	ctx.written = true
+	ctx.index = 4
+	ctx.status = http.StatusCreated
+	ctx.app = New()
+	ctx.routeInfo = routeMeta{path: "/first"}
+	ctx.routeIndex = 3
+	ctx.routeIndexed = true
+	ctx.lastErr = errors.New("dirty handler")
+	ctx.setParam("id", "42")
+	ctx.Set("dirty", true)
+
+	ctx.release()
+	reused := NewContext(secondWriter, secondRequest)
+	defer reused.release()
+
+	if reused.writer != secondWriter || reused.request != secondRequest {
+		t.Fatal("writer or request leaked across context reuse")
+	}
+	if reused.queryParams != nil || reused.handlers != nil || reused.body != nil || reused.bodyRead || reused.bodyErr != nil {
+		t.Fatal("request data leaked across context reuse")
+	}
+	if reused.sameSite != 0 || reused.paramPath != "" || reused.paramRoute != nil || reused.paramCount != 0 {
+		t.Fatal("routing data leaked across context reuse")
+	}
+	if reused.written || reused.index != -1 || reused.status != http.StatusOK || reused.app != nil {
+		t.Fatal("response state leaked across context reuse")
+	}
+	if reused.routeInfo.path != "" || reused.routeInfo.method != "" || len(reused.routeInfo.params) != 0 ||
+		reused.routeIndex != -1 || reused.routeIndexed || reused.lastErr != nil {
+		t.Fatal("route metadata leaked across context reuse")
+	}
+	if len(reused.store) != 0 {
+		t.Fatal("context store leaked across context reuse")
+	}
+}
+
 func TestContextRequestHelpersAndMetadata(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/users/42?page=3&ready=true", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
