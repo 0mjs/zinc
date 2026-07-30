@@ -4,16 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	. "github.com/0mjs/zinc"
 	"github.com/gin-gonic/gin"
@@ -33,10 +29,7 @@ const (
 	largeStaticRouteCount  = 256
 	largeParamRouteCount   = 128
 	coldPathRequestCount   = 256
-	throughputDuration     = 1500 * time.Millisecond
 )
-
-var throughputConcurrencyLevels = []int{1, 8, 32, 128}
 
 var (
 	benchmarkSinkString  string
@@ -831,38 +824,6 @@ func buildGinLargeParamHandler() http.Handler {
 	return r
 }
 
-func buildZincRPSHandler() http.Handler {
-	app := New()
-	mustNoErr(app.Get("/rps", func(c *Context) error {
-		return c.String(benchmarkOKResponse)
-	}))
-	return app
-}
-
-func buildChiRPSHandler() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/rps", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, benchmarkOKResponse)
-	})
-	return r
-}
-
-func buildEchoRPSHandler() http.Handler {
-	e := echo.New()
-	e.GET("/rps", func(c *echo.Context) error {
-		return c.String(http.StatusOK, benchmarkOKResponse)
-	})
-	return e
-}
-
-func buildGinRPSHandler() http.Handler {
-	r := newGinBenchmarkRouter()
-	r.GET("/rps", func(c *gin.Context) {
-		c.String(http.StatusOK, benchmarkOKResponse)
-	})
-	return r
-}
-
 func requestContextMiddlewareSatisfied(r *http.Request) bool {
 	ctx := r.Context()
 	return ctx.Value(middlewareKey1) != nil &&
@@ -1260,15 +1221,6 @@ func apiBindJSONHappyPathCases() []benchmarkCase {
 	}
 }
 
-func rpsCases() []benchmarkCase {
-	return []benchmarkCase{
-		{name: "Zinc", build: buildZincRPSHandler},
-		{name: "Chi", build: buildChiRPSHandler},
-		{name: "Echo", build: buildEchoRPSHandler},
-		{name: "Gin", build: buildGinRPSHandler},
-	}
-}
-
 func BenchmarkHelloWorld(b *testing.B) {
 	runServeHTTPBenchmarks(b, http.MethodGet, "/", helloWorldCases())
 }
@@ -1353,78 +1305,6 @@ func BenchmarkAPIBindJSONHappyPath(b *testing.B) {
 	)
 }
 
-func BenchmarkRequestsPerSecond(b *testing.B) {
-	for _, concurrency := range throughputConcurrencyLevels {
-		concurrency := concurrency
-		b.Run("Concurrency"+strconv.Itoa(concurrency), func(b *testing.B) {
-			for _, bc := range rpsCases() {
-				b.Run(bc.name, func(b *testing.B) {
-					server := httptest.NewServer(bc.build())
-					defer server.Close()
-					measureRPS(b, server.URL+"/rps", concurrency, throughputDuration)
-				})
-			}
-		})
-	}
-}
-
-func measureRPS(b *testing.B, url string, concurrency int, duration time.Duration) {
-	var (
-		totalRequests int64
-		wg            sync.WaitGroup
-		client        = &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        concurrency,
-				MaxIdleConnsPerHost: concurrency,
-				MaxConnsPerHost:     concurrency,
-				DisableKeepAlives:   false,
-			},
-		}
-	)
-	baseReq, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		b.Fatalf("create base request: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
-	defer cancel()
-
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					req := baseReq.Clone(ctx)
-					resp, err := client.Do(req)
-					if err != nil {
-						if !errors.Is(err, context.DeadlineExceeded) {
-							b.Logf("request error: %v", err)
-						}
-						continue
-					}
-
-					_, _ = io.Copy(io.Discard, resp.Body)
-					resp.Body.Close()
-
-					if resp.StatusCode == http.StatusOK {
-						atomic.AddInt64(&totalRequests, 1)
-					}
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	requestsPerSec := float64(totalRequests) / duration.Seconds()
-	b.ReportMetric(requestsPerSec, "reqs/s")
-}
-
 func TestRunBenchmarks(t *testing.T) {
 	t.Skip(`
 From benchmarks/:
@@ -1445,8 +1325,8 @@ Dispatch-only slice:
 Idiomatic framework-path slice:
     go test -run=^$ -bench 'BenchmarkJSONResponse|BenchmarkQueryParams|BenchmarkMiddlewareChain|BenchmarkAPIParamQueryJSON|BenchmarkAPIHappyPath|BenchmarkAPIBindJSONHappyPath' -benchmem
 
-To run the end-to-end throughput benchmark from benchmarks/:
-    go test -run=^$ -bench BenchmarkRequestsPerSecond
+Optional end-to-end RPS benchmark from benchmarks/:
+    go test -tags rps -run=^$ -bench '^BenchmarkRequestsPerSecond$' -count=3
 
 Notes:
 - The request/response harness now reuses requests and a discard response writer to reduce benchmark noise.
@@ -1454,6 +1334,7 @@ Notes:
 - The suite focuses on Zinc versus Gin, Echo, and Chi.
 - BenchmarkHelloWorld exercises Zinc's special-case root fast path, while BenchmarkStaticRoute measures a normal non-root static route.
 - The cold route benchmarks rotate request paths to avoid flattering Zinc's route cache.
-- The throughput benchmark uses a real loopback listener with a concurrency sweep; run it with -count=3 or higher and compare reqs/s, not ns/op.
+- The RPS benchmark is excluded from the main suite unless the rps build tag is supplied.
+- It uses a real loopback listener with a concurrency sweep; compare reqs/s, not ns/op.
 `)
 }
