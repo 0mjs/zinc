@@ -10,6 +10,7 @@ examples/*
 !examples/jobs-cron/main.go
 .vscode/*
 *.txt
+benchmarks/*.test
 
 # Docs
 website/node_modules/

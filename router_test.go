@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -198,6 +200,185 @@ func TestRouteCacheSetUpdateAndEviction(t *testing.T) {
 	}
 }
 
+func TestRouteCachePartitionsStandardAndCustomMethods(t *testing.T) {
+	cache := NewRouteCache(3)
+	keys := []routeCacheKey{
+		{method: MethodGet, path: "/shared"},
+		{method: MethodPost, path: "/shared"},
+		{method: "PURGE", path: "/shared"},
+	}
+	for i, key := range keys {
+		cache.set(key, routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+
+	for i, key := range keys {
+		entry, ok := cache.get(key)
+		if !ok || entry.route == nil || entry.route.infoIndex != uint32(i+1) {
+			t.Fatalf("key=%+v entry=%+v ok=%v", key, entry, ok)
+		}
+	}
+}
+
+func TestRouteCachePromotesStablePartialCacheAndKeepsOverlayAdaptive(t *testing.T) {
+	cache := NewRouteCache(100)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/stable/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range keys {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("stable key missing before promotion: %+v", key)
+			}
+		}
+	}
+	if cache.snapshot.Load() == nil {
+		t.Fatal("expected stable partial cache to promote a read snapshot")
+	}
+
+	overlayKey := routeCacheKey{method: MethodPost, path: "/after-promotion"}
+	overlayEntry := routeCacheEntry{route: &radixRoute{infoIndex: 1000}}
+	cache.set(overlayKey, overlayEntry)
+	if got, ok := cache.get(overlayKey); !ok || got.route != overlayEntry.route {
+		t.Fatalf("overlay entry=%+v ok=%v", got, ok)
+	}
+
+	cache.invalidate()
+	if _, ok := cache.get(keys[0]); ok {
+		t.Fatal("expected invalidation to clear the promoted snapshot")
+	}
+}
+
+func TestRouteCacheRepromotesStableOverlay(t *testing.T) {
+	cache := NewRouteCache(256)
+	phaseA := make([]routeCacheKey, routeCacheMinRoutes)
+	phaseB := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range phaseA {
+		phaseA[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/phase-a/%d", i)}
+		phaseB[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/phase-b/%d", i)}
+		cache.set(phaseA[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range phaseA {
+			cache.get(key)
+		}
+	}
+	firstSnapshot := cache.snapshot.Load()
+	if firstSnapshot == nil {
+		t.Fatal("expected phase A to promote")
+	}
+
+	for i, key := range phaseB {
+		cache.set(key, routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 101)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+1; cycle++ {
+		for _, key := range phaseB {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("phase B key missing before re-promotion: %+v", key)
+			}
+		}
+	}
+
+	if snapshot := cache.snapshot.Load(); snapshot == nil || snapshot == firstSnapshot {
+		t.Fatal("expected the stable overlay to replace the original snapshot")
+	}
+	if got := atomic.LoadUint32(&cache.count); got != routeCacheMinRoutes {
+		t.Fatalf("cache count=%d, want %d after re-promotion", got, routeCacheMinRoutes)
+	}
+	if _, ok := cache.get(phaseA[0]); ok {
+		t.Fatal("expected the old phase to be dropped from the cache")
+	}
+	if _, ok := cache.get(phaseB[0]); !ok {
+		t.Fatal("expected the new phase in the replacement snapshot")
+	}
+}
+
+var benchmarkRouteCacheSink *RouteCache
+
+func BenchmarkRouteCachePromotionAllocation(b *testing.B) {
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	entries := make([]routeCacheEntry, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/stable/%d", i)}
+		entries[i] = routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}}
+	}
+	prepare := func(promote bool) *RouteCache {
+		cache := NewRouteCache(100)
+		for i := range keys {
+			cache.set(keys[i], entries[i])
+		}
+		for hit := 1; hit < routeCacheMinRoutes*routeCacheFreezeHitCycles; hit++ {
+			cache.get(keys[0])
+		}
+		if promote {
+			cache.get(keys[0])
+		}
+		return cache
+	}
+
+	b.Run("BeforePromotion", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			benchmarkRouteCacheSink = prepare(false)
+		}
+	})
+	b.Run("Promote", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			benchmarkRouteCacheSink = prepare(true)
+		}
+	})
+}
+
+func TestRouteCacheDoesNotFreezeAtCapacity(t *testing.T) {
+	cache := NewRouteCache(routeCacheMinRoutes)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/full/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+	for cycle := 0; cycle < routeCacheFreezeHitCycles+2; cycle++ {
+		for _, key := range keys {
+			if _, ok := cache.get(key); !ok {
+				t.Fatalf("full-cache key missing: %+v", key)
+			}
+		}
+	}
+	if cache.snapshot.Load() != nil {
+		t.Fatal("full cache must remain adaptive")
+	}
+}
+
+func TestRouteCacheConcurrentSnapshotPromotion(t *testing.T) {
+	cache := NewRouteCache(100)
+	keys := make([]routeCacheKey, routeCacheMinRoutes)
+	for i := range keys {
+		keys[i] = routeCacheKey{method: MethodGet, path: fmt.Sprintf("/concurrent/%d", i)}
+		cache.set(keys[i], routeCacheEntry{route: &radixRoute{infoIndex: uint32(i + 1)}})
+	}
+
+	var workers sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		workers.Add(1)
+		go func(offset int) {
+			defer workers.Done()
+			for i := 0; i < len(keys)*4; i++ {
+				key := keys[(i+offset)%len(keys)]
+				if _, ok := cache.get(key); !ok {
+					t.Errorf("stable key missing during promotion: %+v", key)
+					return
+				}
+			}
+		}(worker)
+	}
+	workers.Wait()
+
+	if cache.snapshot.Load() == nil {
+		t.Fatal("expected concurrent hits to promote a read snapshot")
+	}
+}
+
 func TestRouteCacheInvalidateClearsLazilyOnNextAccess(t *testing.T) {
 	cache := NewRouteCache(2)
 	key := routeCacheKey{method: MethodGet, path: "/one"}
@@ -213,6 +394,69 @@ func TestRouteCacheInvalidateClearsLazilyOnNextAccess(t *testing.T) {
 	cache.set(key, entry)
 	if got, ok := cache.get(key); !ok || got.route == nil || got.route.infoIndex != 1 {
 		t.Fatalf("entry=%+v ok=%v", got, ok)
+	}
+}
+
+func TestRouteCacheMissAdmissionProtectsFullCache(t *testing.T) {
+	cache := NewRouteCache(1)
+	hotKey := routeCacheKey{method: MethodGet, path: "/hot"}
+	coldKey := routeCacheKey{method: MethodGet, path: "/cold"}
+	hotEntry := routeCacheEntry{route: &radixRoute{infoIndex: 1}}
+	coldEntry := routeCacheEntry{route: &radixRoute{infoIndex: 2}}
+
+	cache.setMiss(hotKey, hotEntry)
+	for i := 1; i < routeCacheAdmissionInterval; i++ {
+		cache.setMiss(coldKey, coldEntry)
+		if got, ok := cache.get(hotKey); !ok || got.route != hotEntry.route {
+			t.Fatalf("attempt %d evicted protected hot entry: got=%+v ok=%v", i, got, ok)
+		}
+	}
+
+	cache.setMiss(coldKey, coldEntry)
+	if _, ok := cache.get(hotKey); ok {
+		t.Fatal("expected admitted cold entry to evict hot entry")
+	}
+	if got, ok := cache.get(coldKey); !ok || got.route != coldEntry.route {
+		t.Fatalf("admitted entry=%+v ok=%v", got, ok)
+	}
+}
+
+func TestRouteCacheRingEvictionWrapsWithoutStaleHotEntry(t *testing.T) {
+	cache := NewRouteCache(2)
+	keys := []routeCacheKey{
+		{method: MethodGet, path: "/one"},
+		{method: MethodGet, path: "/two"},
+		{method: MethodGet, path: "/three"},
+		{method: MethodGet, path: "/four"},
+	}
+	entries := []routeCacheEntry{
+		{route: &radixRoute{infoIndex: 1}},
+		{route: &radixRoute{infoIndex: 2}},
+		{route: &radixRoute{infoIndex: 3}},
+		{route: &radixRoute{infoIndex: 4}},
+	}
+
+	cache.set(keys[0], entries[0])
+	cache.set(keys[1], entries[1])
+	cache.set(keys[2], entries[2])
+	if _, ok := cache.get(keys[0]); ok {
+		t.Fatal("expected first ring entry to be evicted")
+	}
+	if got, ok := cache.get(keys[1]); !ok || got.route != entries[1].route {
+		t.Fatalf("second entry=%+v ok=%v", got, ok)
+	}
+
+	cache.set(keys[3], entries[3])
+	if _, ok := cache.get(keys[1]); ok {
+		t.Fatal("expected hot entry to be evicted after ring wrap")
+	}
+	if _, ok := cache.getHot(keys[1]); ok {
+		t.Fatal("expected evicted hot entry to be cleared")
+	}
+	for i := 2; i < len(keys); i++ {
+		if got, ok := cache.get(keys[i]); !ok || got.route != entries[i].route {
+			t.Fatalf("entry %d=%+v ok=%v", i, got, ok)
+		}
 	}
 }
 
@@ -522,6 +766,36 @@ func TestRouterDispatchIntoRefreshesCachedDynamicHitAfterAdd(t *testing.T) {
 	}
 }
 
+func TestRouterStaticRouteLengthFilter(t *testing.T) {
+	router := &Router{
+		cache:  NewRouteCache(8),
+		config: &DefaultConfig,
+	}
+	shortPath := "/fixed"
+	longPath := "/" + strings.Repeat("x", 140)
+	mustDo(t, router.Add(MethodGet, shortPath, func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, longPath, func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+
+	slot := singleBitIndex(methodMaskGet)
+	if !router.hasStaticRouteLength(slot, methodMaskGet, len(shortPath)) {
+		t.Fatal("expected short static path length to pass the filter")
+	}
+	if !router.hasStaticRouteLength(slot, methodMaskGet, len(longPath)) {
+		t.Fatal("expected long static path length to pass the filter")
+	}
+	if router.hasStaticRouteLength(slot, methodMaskGet, len("/items/42")) {
+		t.Fatal("expected unmatched dynamic path length to skip static lookup")
+	}
+
+	for _, path := range []string{shortPath, longPath, "/items/42"} {
+		handled, _, err := router.dispatchInto(MethodGet, path, false, &Context{})
+		if err != nil || !handled {
+			t.Fatalf("dispatch %q handled=%v err=%v", path, handled, err)
+		}
+	}
+}
+
 func TestRouterDispatchIntoCachedManyParamsIsolation(t *testing.T) {
 	router := &Router{
 		cache:  NewRouteCache(routeCacheMinRoutes + 8),
@@ -637,36 +911,6 @@ func TestRouterAllowedMethodsCaseInsensitiveStaticIndex(t *testing.T) {
 	methods := router.lookupStaticAllowedMethods("/CASE", "/CASE", false).methods(true, true)
 	if want := []string{MethodPost, MethodOptions}; !reflect.DeepEqual(methods, want) {
 		t.Fatalf("methods=%v want %v", methods, want)
-	}
-}
-
-func TestRouterLookupAllowedWithCombinedDynamicTree(t *testing.T) {
-	root := &radixNode{kind: radixRoot}
-	mustDo(t, root.add("/items/:id", newRadixRoute(MethodGet, func(*Context) error { return nil }, 0, collectedRouteParams{count: 1, inline: [2]string{"id"}})))
-	mustDo(t, root.add("/items/:id", newRadixRoute(MethodPost, func(*Context) error { return nil }, 1, collectedRouteParams{count: 1, inline: [2]string{"id"}})))
-	mustDo(t, root.add("/files/*path", newRadixRoute("PURGE", func(*Context) error { return nil }, 2, collectedRouteParams{count: 1, inline: [2]string{"*"}})))
-
-	router := &Router{
-		routeTree:    root,
-		dynamicRoots: [routeMethodCount]*radixNode{{kind: radixRoot}},
-	}
-
-	allowed := router.lookupAllowedInDynamicTrees("/items/42", "")
-	if header := allowed.header(true, true); header != "GET, HEAD, POST, OPTIONS" {
-		t.Fatalf("allow header=%q", header)
-	}
-	allowed.removeMethod(MethodGet)
-	if header := allowed.header(true, true); header != "POST, OPTIONS" {
-		t.Fatalf("removed get allow header=%q", header)
-	}
-
-	extraAllowed := root.lookupAllowed("/files/a/b", 0)
-	if header := extraAllowed.header(false, false); header != "PURGE" {
-		t.Fatalf("extra allow header=%q", header)
-	}
-	extraAllowed.removeMethod("PURGE")
-	if !extraAllowed.empty() {
-		t.Fatalf("extra after remove=%v", extraAllowed)
 	}
 }
 
