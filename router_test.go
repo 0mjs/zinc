@@ -216,6 +216,69 @@ func TestRouteCacheInvalidateClearsLazilyOnNextAccess(t *testing.T) {
 	}
 }
 
+func TestRouteCacheMissAdmissionProtectsFullCache(t *testing.T) {
+	cache := NewRouteCache(1)
+	hotKey := routeCacheKey{method: MethodGet, path: "/hot"}
+	coldKey := routeCacheKey{method: MethodGet, path: "/cold"}
+	hotEntry := routeCacheEntry{route: &radixRoute{infoIndex: 1}}
+	coldEntry := routeCacheEntry{route: &radixRoute{infoIndex: 2}}
+
+	cache.setMiss(hotKey, hotEntry)
+	for i := 1; i < routeCacheAdmissionInterval; i++ {
+		cache.setMiss(coldKey, coldEntry)
+		if got, ok := cache.get(hotKey); !ok || got.route != hotEntry.route {
+			t.Fatalf("attempt %d evicted protected hot entry: got=%+v ok=%v", i, got, ok)
+		}
+	}
+
+	cache.setMiss(coldKey, coldEntry)
+	if _, ok := cache.get(hotKey); ok {
+		t.Fatal("expected admitted cold entry to evict hot entry")
+	}
+	if got, ok := cache.get(coldKey); !ok || got.route != coldEntry.route {
+		t.Fatalf("admitted entry=%+v ok=%v", got, ok)
+	}
+}
+
+func TestRouteCacheRingEvictionWrapsWithoutStaleHotEntry(t *testing.T) {
+	cache := NewRouteCache(2)
+	keys := []routeCacheKey{
+		{method: MethodGet, path: "/one"},
+		{method: MethodGet, path: "/two"},
+		{method: MethodGet, path: "/three"},
+		{method: MethodGet, path: "/four"},
+	}
+	entries := []routeCacheEntry{
+		{route: &radixRoute{infoIndex: 1}},
+		{route: &radixRoute{infoIndex: 2}},
+		{route: &radixRoute{infoIndex: 3}},
+		{route: &radixRoute{infoIndex: 4}},
+	}
+
+	cache.set(keys[0], entries[0])
+	cache.set(keys[1], entries[1])
+	cache.set(keys[2], entries[2])
+	if _, ok := cache.get(keys[0]); ok {
+		t.Fatal("expected first ring entry to be evicted")
+	}
+	if got, ok := cache.get(keys[1]); !ok || got.route != entries[1].route {
+		t.Fatalf("second entry=%+v ok=%v", got, ok)
+	}
+
+	cache.set(keys[3], entries[3])
+	if _, ok := cache.get(keys[1]); ok {
+		t.Fatal("expected hot entry to be evicted after ring wrap")
+	}
+	if _, ok := cache.getHot(keys[1]); ok {
+		t.Fatal("expected evicted hot entry to be cleared")
+	}
+	for i := 2; i < len(keys); i++ {
+		if got, ok := cache.get(keys[i]); !ok || got.route != entries[i].route {
+			t.Fatalf("entry %d=%+v ok=%v", i, got, ok)
+		}
+	}
+}
+
 func TestRadixNodeBranches(t *testing.T) {
 	root := &radixNode{kind: radixRoot}
 	mustDo(t, root.add("/foo", &radixRoute{}))

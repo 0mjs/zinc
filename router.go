@@ -115,7 +115,9 @@ type RouteCache struct {
 	mu    sync.RWMutex
 	size  int
 	keys  []routeCacheKey
+	next  int
 	count uint32
+	admit [routeCacheAdmissionShards]uint32
 	dirty uint32
 	hot   atomic.Pointer[routeCacheHotEntry]
 }
@@ -187,6 +189,13 @@ const (
 const allowHeaderTableSize = 1 << 9
 
 const routeCacheMinRoutes = 64
+
+// A full cache admits one miss per interval in each shard. This protects hot
+// entries from one-hit paths while still letting repeatedly missed paths enter.
+const routeCacheAdmissionInterval = 4
+
+// Keep this a power of two so routeCacheAdmissionShard can use a mask.
+const routeCacheAdmissionShards = 16
 
 var allowHeaderByMask [allowHeaderTableSize]string
 
@@ -457,7 +466,7 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		if entry.route != nil {
 			entry.values = cloneParamRangesForCache(entry.values, int(entry.route.paramCount))
 		}
-		r.cache.set(routeCacheKey{method: method, path: originalPath}, entry)
+		r.cache.setMiss(routeCacheKey{method: method, path: originalPath}, entry)
 	}
 	if entry.route == nil {
 		return false, entry.allowed, nil
@@ -501,7 +510,7 @@ func (r *Router) findDynamicInto(method, path string, ctx *Context) HandlerFunc 
 			values: cloneParamRangesForCache(*captured, int(matched.paramCount)),
 		}
 		key := routeCacheKey{method: method, path: path}
-		r.cache.set(key, entry)
+		r.cache.setMiss(key, entry)
 	}
 	return matched.handler
 }
@@ -1858,20 +1867,60 @@ func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
 	if rc.cache == nil {
 		rc.cache = make(map[routeCacheKey]routeCacheEntry, rc.size)
 		rc.keys = make([]routeCacheKey, 0, rc.size)
+		rc.next = 0
 	}
 	if _, exists := rc.cache[key]; exists {
 		rc.cache[key] = entry
+		if hot := rc.hot.Load(); hot != nil && hot.key == key {
+			rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
+		}
+		return
+	}
+	if len(rc.cache) < rc.size {
+		rc.cache[key] = entry
+		rc.keys = append(rc.keys, key)
+		atomic.StoreUint32(&rc.count, uint32(len(rc.cache)))
 		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
 		return
 	}
-	if len(rc.cache) >= rc.size && len(rc.keys) > 0 {
-		delete(rc.cache, rc.keys[0])
-		rc.keys = rc.keys[1:]
-	}
+
+	victim := rc.keys[rc.next]
+	delete(rc.cache, victim)
 	rc.cache[key] = entry
-	rc.keys = append(rc.keys, key)
-	atomic.StoreUint32(&rc.count, uint32(len(rc.cache)))
-	rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
+	rc.keys[rc.next] = key
+	rc.next++
+	if rc.next == len(rc.keys) {
+		rc.next = 0
+	}
+	if hot := rc.hot.Load(); hot != nil && hot.key == victim {
+		rc.hot.Store(nil)
+	}
+}
+
+func (rc *RouteCache) setMiss(key routeCacheKey, entry routeCacheEntry) {
+	if rc == nil || rc.size <= 0 {
+		return
+	}
+	admissionShard := routeCacheAdmissionShard(key)
+	if atomic.LoadUint32(&rc.count) >= uint32(rc.size) &&
+		atomic.AddUint32(&rc.admit[admissionShard], 1)%routeCacheAdmissionInterval != 0 {
+		return
+	}
+	rc.set(key, entry)
+}
+
+func routeCacheAdmissionShard(key routeCacheKey) int {
+	path := key.path
+	hash := uint32(len(path))*16777619 ^ uint32(len(key.method))
+	if len(path) != 0 {
+		hash = (hash ^ uint32(path[0])) * 16777619
+		hash = (hash ^ uint32(path[len(path)/2])) * 16777619
+		hash = (hash ^ uint32(path[len(path)-1])) * 16777619
+	}
+	if len(key.method) != 0 {
+		hash = (hash ^ uint32(key.method[0])) * 16777619
+	}
+	return int(hash & (routeCacheAdmissionShards - 1))
 }
 
 func (rc *RouteCache) invalidate() {
@@ -1890,7 +1939,11 @@ func (rc *RouteCache) ensureFresh() {
 	if atomic.LoadUint32(&rc.dirty) != 0 {
 		rc.cache = nil
 		rc.keys = nil
+		rc.next = 0
 		atomic.StoreUint32(&rc.count, 0)
+		for i := range rc.admit {
+			atomic.StoreUint32(&rc.admit[i], 0)
+		}
 		atomic.StoreUint32(&rc.dirty, 0)
 		rc.hot.Store(nil)
 	}
