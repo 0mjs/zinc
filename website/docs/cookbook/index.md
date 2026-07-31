@@ -25,7 +25,7 @@ Run cron schedules and an HTTP API from one process, enqueue ad-hoc jobs from a 
 
 ### [Server-Rendered UI with Templ](/cookbook/templ-ui)
 
-Render type-safe Templ components from a Zinc handler, pair them with a Templ UI–style Button, and serve Tailwind output with `app.Static`.
+Render type-safe Templ components from a Zinc handler, use a real Templ UI Button, and serve Tailwind output with `app.Static`.
 
 ## Why this section exists
 

@@ -4,31 +4,21 @@ id: intro
 title: Welcome
 description: Build fast, explicit Go APIs on net/http with Zinc.
 sidebar_position: 1
+hide_title: true
+hide_table_of_contents: true
 ---
 
 import DocCards from "@site/src/components/DocCards";
+import DocsHomeHero from "@site/src/components/DocsHomeHero";
 
-Zinc is a Go API framework for developers who want expressive routing and practical helpers without leaving `net/http`.
+<div className="zinc-home">
 
-It gives you route groups, middleware chains, request binding, response helpers, static files, rendering, route metadata, and first-party middleware while keeping normal Go deployment and testing habits.
+<DocsHomeHero />
 
-```bash
-go get github.com/0mjs/zinc
-```
-
-```go
-package main
-
-import "github.com/0mjs/zinc"
-
-func main() {
-	app := zinc.New()
-
-	app.Get("/", "Hello, World!")
-
-	app.Listen()
-}
-```
+<div className="zinc-section-heading">
+  <span>Start here</span>
+  <h2>Find the shortest path to what you need.</h2>
+</div>
 
 <DocCards
   cards={[
@@ -50,10 +40,20 @@ func main() {
       description:
         "Add CORS, auth, logging, recovery, metrics, rate limiting, static files, and more.",
     },
+    {
+      to: "/api/app",
+      title: "Look something up",
+      description:
+        "Jump into focused reference pages for the app, context, config, and errors.",
+    },
   ]}
 />
 
-## What Zinc is good at
+<div className="zinc-home-prose">
+
+## What Zinc gives you
+
+Zinc adds route groups, middleware chains, request binding, response helpers, static files, rendering, route metadata, and first-party middleware while keeping normal Go deployment and testing habits.
 
 - **API ergonomics:** handlers and middleware use one `func(*zinc.Context) error` shape.
 - **Standard library compatibility:** mount `http.Handler` values and keep normal `net/http` server behavior.
@@ -82,3 +82,7 @@ Each item in that chain can call `c.Next()` to continue, return a response to st
 - [First Route](./getting-started/first-route) explains params, query values, JSON, and errors in one handler.
 - [Routing](./guide/routing) is the first full guide page once you are ready for groups and named routes.
 - [API Reference](./api/app) keeps the method-level details separate from the learning path.
+
+</div>
+
+</div>

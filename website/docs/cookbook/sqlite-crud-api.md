@@ -78,6 +78,9 @@ func main() {
 			}
 			todos = append(todos, t)
 		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
 
 		return c.JSON(todos)
 	})
@@ -132,7 +135,7 @@ func main() {
 		return c.NoContent()
 	})
 
-	app.Listen()
+	log.Fatal(app.Listen(":8080"))
 }
 ```
 

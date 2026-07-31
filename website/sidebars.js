@@ -3,11 +3,11 @@ module.exports = {
     {
       type: "doc",
       id: "intro",
-      label: "🏠 Welcome",
+      label: "Welcome",
     },
     {
       type: "category",
-      label: "🚀 Getting Started",
+      label: "Getting Started",
       link: {
         type: "generated-index",
         title: "Getting Started",
@@ -21,7 +21,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "🧭 Guide",
+      label: "Core Guides",
       link: {
         type: "generated-index",
         title: "Guide",
@@ -40,25 +40,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "🛠 API Reference",
-      link: {
-        type: "generated-index",
-        title: "API Reference",
-        description: "Reference pages for Zinc's main public types and extension points.",
-      },
-      items: [
-        "api/app",
-        "api/group",
-        "api/context",
-        "api/binding",
-        "api/config",
-        "api/errors",
-        "api/response-writer",
-      ],
-    },
-    {
-      type: "category",
-      label: "🛡 Middleware",
+      label: "Middleware",
       link: {
         type: "doc",
         id: "middleware/overview",
@@ -133,7 +115,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "📚 Cookbook",
+      label: "Cookbook",
       link: {
         type: "doc",
         id: "cookbook/cookbook",
@@ -147,7 +129,25 @@ module.exports = {
     },
     {
       type: "category",
-      label: "📊 Project",
+      label: "API Reference",
+      link: {
+        type: "generated-index",
+        title: "API Reference",
+        description: "Reference pages for Zinc's main public types and extension points.",
+      },
+      items: [
+        "api/app",
+        "api/group",
+        "api/context",
+        "api/binding",
+        "api/config",
+        "api/errors",
+        "api/response-writer",
+      ],
+    },
+    {
+      type: "category",
+      label: "About Zinc",
       link: {
         type: "generated-index",
         title: "Project",

@@ -1,11 +1,11 @@
 // @ts-check
 
-const { nordDark, nordLight } = require("./src/prism/nord");
+const { nordDark } = require("./src/prism/nord");
 
 const config = {
   title: "Zinc",
   tagline: "Fast, explicit Go APIs on net/http.",
-  favicon: "img/z_logo.png",
+  favicon: "img/zinc.png",
 
   url: "https://zinc.carbonsoft.sh",
   baseUrl: "/",
@@ -61,33 +61,52 @@ const config = {
   ],
 
   themeConfig: {
-    image: "img/z_logo.png",
+    image: "img/zinc.png",
     navbar: {
       title: "Zinc",
       logo: {
         alt: "Zinc",
-        src: "img/z_logo.png",
+        src: "img/zinc.png",
       },
       items: [
-        { to: "/", label: "Docs", position: "left" },
         { to: "/getting-started/quick-start", label: "Quick Start", position: "left" },
-        { to: "/guide/routing", label: "Guide", position: "left" },
-        { href: "https://pkg.go.dev/github.com/0mjs/zinc", label: "pkg.go.dev", position: "right" },
-        { href: "https://github.com/0mjs/zinc", label: "GitHub", position: "right" },
+        { to: "/guide/routing", label: "Guides", position: "left" },
+        { to: "/middleware/overview", label: "Middleware", position: "left" },
+        { to: "/api/app", label: "Reference", position: "left" },
+        {
+          href: "https://pkg.go.dev/github.com/0mjs/zinc",
+          label: "pkg.go.dev",
+          position: "right",
+          className: "navbar__link--package",
+        },
+        {
+          href: "https://github.com/0mjs/zinc",
+          label: "GitHub",
+          position: "right",
+          className: "navbar__link--github",
+        },
       ],
     },
     footer: {
       style: "dark",
       links: [
         {
-          title: "Docs",
+          title: "Learn",
           items: [
             { label: "Welcome", to: "/" },
             { label: "Quick Start", to: "/getting-started/quick-start" },
             { label: "Routing", to: "/guide/routing" },
             { label: "Binding", to: "/guide/binding" },
-            { label: "App API", to: "/api/app" },
             { label: "Cookbook", to: "/cookbook" },
+          ],
+        },
+        {
+          title: "Reference",
+          items: [
+            { label: "App", to: "/api/app" },
+            { label: "Context", to: "/api/context" },
+            { label: "Configuration", to: "/api/config" },
+            { label: "Errors", to: "/api/errors" },
           ],
         },
         {
@@ -102,7 +121,7 @@ const config = {
       copyright: `Copyright ${new Date().getFullYear()} Zinc.`,
     },
     prism: {
-      theme: nordLight,
+      theme: nordDark,
       darkTheme: nordDark,
       additionalLanguages: ["bash", "go", "json", "toml", "yaml"],
     },
@@ -110,11 +129,6 @@ const config = {
       defaultMode: "light",
       disableSwitch: false,
       respectPrefersColorScheme: true,
-    },
-    announcementBar: {
-      id: "docs-preview",
-      content: "Zinc is pre-1.0. The docs track the current API and call out behavior directly.",
-      isCloseable: true,
     },
   },
 };
