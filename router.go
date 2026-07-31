@@ -255,12 +255,16 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 		return err
 	}
 	registeredPath := path
-	compiledPath, bracePattern, paramNames, err := compileBraceRoutePattern(path)
-	if err != nil {
-		return err
-	}
+	bracePattern := strings.ContainsAny(path, "{}")
+	var (
+		paramNames collectedRouteParams
+		err        error
+	)
 	if bracePattern {
-		path = compiledPath
+		paramNames, err = collectBraceRouteParams(path)
+		if err != nil {
+			return err
+		}
 	}
 	isDynamic := bracePattern
 	if !bracePattern {
@@ -345,7 +349,13 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 	}
 
 	route := newRadixRoute(precomposed, infoIndex, paramNames)
-	if err := r.ensureDynamicTree(method, mask).addWithCase(path, route, r.config == nil || !r.config.CaseSensitive); err != nil {
+	tree := r.ensureDynamicTree(method, mask)
+	if bracePattern {
+		err = tree.addBrace(path, route)
+	} else {
+		err = tree.addWithCase(path, route, r.config == nil || !r.config.CaseSensitive)
+	}
+	if err != nil {
 		return err
 	}
 	r.routeInfos = append(r.routeInfos, info)
@@ -974,63 +984,43 @@ func rejectLegacyRoutePattern(path string) error {
 	return nil
 }
 
-// compileBraceRoutePattern translates Zinc's public Go-style route syntax to
-// the compact internal radix syntax. The registered pattern is retained in
-// route metadata, so this translation is invisible outside the router.
-func compileBraceRoutePattern(path string) (string, bool, collectedRouteParams, error) {
+func collectBraceRouteParams(path string) (collectedRouteParams, error) {
 	var names collectedRouteParams
-	if !strings.ContainsAny(path, "{}") {
-		return path, false, names, nil
-	}
-
-	var builder strings.Builder
-	builder.Grow(len(path))
-	last := 0
 
 	for i := 0; i < len(path); i++ {
 		switch path[i] {
 		case '}':
-			return "", false, names, fmt.Errorf("unmatched closing brace in route path %q", path)
+			return names, fmt.Errorf("unmatched closing brace in route path %q", path)
 		case '{':
 			if i == 0 || path[i-1] != '/' {
-				return "", false, names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
+				return names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
 			}
 			endOffset := strings.IndexByte(path[i+1:], '}')
 			if endOffset < 0 {
-				return "", false, names, fmt.Errorf("unclosed route parameter in path %q", path)
+				return names, fmt.Errorf("unclosed route parameter in path %q", path)
 			}
 			end := i + 1 + endOffset
 			if end+1 < len(path) && path[end+1] != '/' {
-				return "", false, names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
+				return names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
 			}
 
 			rawName := path[i+1 : end]
 			catchAll := strings.HasSuffix(rawName, "...")
 			name := strings.TrimSuffix(rawName, "...")
 			if !validRouteParamName(name) {
-				return "", false, names, fmt.Errorf("invalid route parameter %q in path %q", name, path)
+				return names, fmt.Errorf("invalid route parameter %q in path %q", name, path)
 			}
 			if names.contains(name) {
-				return "", false, names, fmt.Errorf("duplicate route parameter %q in path %q", name, path)
+				return names, fmt.Errorf("duplicate route parameter %q in path %q", name, path)
 			}
 			names.add(name)
 			if catchAll && end != len(path)-1 {
-				return "", false, names, fmt.Errorf("route wildcard %q must be final in path %q", name, path)
+				return names, fmt.Errorf("route wildcard %q must be final in path %q", name, path)
 			}
-
-			builder.WriteString(path[last:i])
-			if catchAll {
-				builder.WriteByte(wildcardIdentifier)
-			} else {
-				builder.WriteByte(paramIdentifier)
-			}
-			builder.WriteString(name)
-			last = end + 1
 			i = end
 		}
 	}
-	builder.WriteString(path[last:])
-	return builder.String(), true, names, nil
+	return names, nil
 }
 
 func validRouteParamName(name string) bool {
@@ -1443,6 +1433,36 @@ func (n *radixNode) addWithCase(path string, route *radixRoute, caseInsensitive 
 			return fmt.Errorf("invalid route segment in path %q", path)
 		}
 		remaining = remaining[segment.width:]
+	}
+	if !current.trySetRoute(route) {
+		return fmt.Errorf("route already registered for %s", path)
+	}
+	return nil
+}
+
+// addBrace builds the radix path after collectBraceRouteParams has validated it.
+func (n *radixNode) addBrace(path string, route *radixRoute) error {
+	current := n
+	staticStart := 0
+	for i := 0; i < len(path); i++ {
+		if path[i] != '{' {
+			continue
+		}
+		if i > staticStart {
+			current = current.addStaticPath(path[staticStart:i])
+		}
+		end := i + 1 + strings.IndexByte(path[i+1:], '}')
+		rawName := path[i+1 : end]
+		if strings.HasSuffix(rawName, "...") {
+			current = current.addCatchAllChild()
+		} else {
+			current = current.addParamChild()
+		}
+		staticStart = end + 1
+		i = end
+	}
+	if staticStart < len(path) {
+		current = current.addStaticPath(path[staticStart:])
 	}
 	if !current.trySetRoute(route) {
 		return fmt.Errorf("route already registered for %s", path)
