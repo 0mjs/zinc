@@ -160,7 +160,7 @@ The jobs package is independent of the HTTP application. Applications that do no
 
 Zinc is pre-1.0. Pin a release and read the [release notes](https://github.com/0mjs/zinc/releases) when upgrading.
 
-Bug reports and focused proposals are welcome in [GitHub Issues](https://github.com/0mjs/zinc/issues).
+Bug reports and focused proposals are welcome in [GitHub Issues](https://github.com/0mjs/zinc/issues). See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
