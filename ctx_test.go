@@ -344,7 +344,7 @@ func TestContextRequestIntrospectionHelpers(t *testing.T) {
 	}
 }
 
-func TestContextAcquireReleaseAndCopy(t *testing.T) {
+func TestContextAcquireRelease(t *testing.T) {
 	app := New()
 
 	acquiredReq := httptest.NewRequest(http.MethodGet, "/acquire?x=1", nil)
@@ -356,73 +356,7 @@ func TestContextAcquireReleaseAndCopy(t *testing.T) {
 		t.Fatalf("path=%q", acquired.Path())
 	}
 	app.ReleaseContext(acquired)
-
-	var copied *Context
-	mustDo(t, app.Post("/users/:id", func(c *Context) error {
-		c.Set("trace", "abc")
-		_ = c.QueryValues()
-		_, err := c.BodyBytes()
-		mustDo(t, err)
-		copied = c.Copy()
-		return c.String("ok")
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/users/42?page=3", strings.NewReader(`{"name":"matt"}`))
-	req.Header.Set(HeaderContentType, "application/json")
-	resp := httptest.NewRecorder()
-	app.ServeHTTP(resp, req)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status=%d", resp.Code)
-	}
-	if copied == nil {
-		t.Fatal("expected copied context")
-	}
-	defer app.ReleaseContext(copied)
-
-	if copied.app != app {
-		t.Fatal("copied app missing")
-	}
-	if copied.Request() == req {
-		t.Fatal("copied request should be cloned")
-	}
-	if copied.Path() != "/users/42" {
-		t.Fatalf("path=%q", copied.Path())
-	}
-	if copied.Query("page") != "3" {
-		t.Fatalf("query=%q", copied.Query("page"))
-	}
-	if copied.Param("id") != "42" {
-		t.Fatalf("param=%q", copied.Param("id"))
-	}
-	if copied.FullPath() != "/users/:id" {
-		t.Fatalf("fullPath=%q", copied.FullPath())
-	}
-	if route := copied.Route(); route.Path != "/users/:id" || route.Method != http.MethodPost {
-		t.Fatalf("route=%+v", route)
-	}
-	if got, ok := copied.Get("trace"); !ok || got != "abc" {
-		t.Fatalf("store=%v %v", got, ok)
-	}
-	copied.Set("trace", "clone")
-
-	body, err := copied.BodyString()
-	mustDo(t, err)
-	if body != `{"name":"matt"}` {
-		t.Fatalf("body=%q", body)
-	}
-	cloneBody, err := io.ReadAll(copied.Request().Body)
-	mustDo(t, err)
-	if string(cloneBody) != `{"name":"matt"}` {
-		t.Fatalf("request body=%q", string(cloneBody))
-	}
-	if copied.Request().URL == req.URL {
-		t.Fatal("copied URL should be cloned")
-	}
-
-	copied.queryParams.Set("page", "99")
-	if got := req.URL.Query().Get("page"); got != "3" {
-		t.Fatalf("original query was mutated: %q", got)
-	}
+	app.ReleaseContext(nil)
 }
 
 func TestContextFailReturnsError(t *testing.T) {
@@ -594,13 +528,13 @@ func TestContextBodyBindingAndUploads(t *testing.T) {
 
 func TestContextRouteAndJSONEncodingHelpers(t *testing.T) {
 	app := New()
-	mustDo(t, app.Get("/meta/:id", func(c *Context) error {
+	app.Get("/meta/{id}", func(c *Context) error {
 		return c.JSON(Map{"path": c.FullPath(), "route": c.Route(), "id": c.Param("id")})
-	}))
+	})
 	resp := performRequest(t, app, http.MethodGet, "/meta/11", nil, nil)
 	var payload map[string]any
 	mustDo(t, json.Unmarshal(resp.Body.Bytes(), &payload))
-	if payload["path"] != "/meta/:id" || payload["id"] != "11" {
+	if payload["path"] != "/meta/{id}" || payload["id"] != "11" {
 		t.Fatalf("payload=%v", payload)
 	}
 }

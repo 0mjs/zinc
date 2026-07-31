@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
 )
 
 type RouteHandlerMap map[string]HandlerFunc
@@ -250,16 +251,25 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 	}
 
 	path = r.normalizePath(path)
-	var (
-		paramNames collectedRouteParams
-		isDynamic  bool
-		err        error
-	)
-	if firstDynamic := strings.IndexAny(path, ":*"); firstDynamic >= 0 {
-		isDynamic = true
-		paramNames, err = collectRouteParams(path, firstDynamic)
-		if err != nil {
-			return err
+	if err := rejectLegacyRoutePattern(path); err != nil {
+		return err
+	}
+	registeredPath := path
+	compiledPath, bracePattern, paramNames, err := compileBraceRoutePattern(path)
+	if err != nil {
+		return err
+	}
+	if bracePattern {
+		path = compiledPath
+	}
+	isDynamic := bracePattern
+	if !bracePattern {
+		if firstDynamic := strings.IndexAny(path, ":*"); firstDynamic >= 0 {
+			isDynamic = true
+			paramNames, err = collectRouteParams(path, firstDynamic, bracePattern)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -274,7 +284,7 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 	}
 
 	infoIndex := uint32(len(r.routeInfos))
-	info := newRouteMeta(method, path, name, finalHandler, paramNames.slice(), false)
+	info := newRouteMeta(method, registeredPath, name, finalHandler, paramNames.slice(), false)
 	mask := methodMaskFor(method)
 
 	if !isDynamic {
@@ -934,6 +944,110 @@ func (r *Router) normalizePath(path string) string {
 	return result
 }
 
+func rejectLegacyRoutePattern(path string) error {
+	if !strings.ContainsAny(path, ":*") {
+		return nil
+	}
+
+	for start := 0; start < len(path); {
+		end := start
+		firstParam := -1
+		for end < len(path) && path[end] != '/' {
+			switch path[end] {
+			case paramIdentifier:
+				if firstParam < 0 {
+					firstParam = end
+				}
+			case wildcardIdentifier:
+				for end < len(path) && path[end] != '/' {
+					end++
+				}
+				return fmt.Errorf("legacy route wildcard %q in path %q: use {name...} syntax", path[start:end], path)
+			}
+			end++
+		}
+		if firstParam >= 0 && firstParam+1 < end {
+			return fmt.Errorf("legacy route parameter %q in path %q: use {name} syntax", path[start:end], path)
+		}
+		start = end + 1
+	}
+	return nil
+}
+
+// compileBraceRoutePattern translates Zinc's public Go-style route syntax to
+// the compact internal radix syntax. The registered pattern is retained in
+// route metadata, so this translation is invisible outside the router.
+func compileBraceRoutePattern(path string) (string, bool, collectedRouteParams, error) {
+	var names collectedRouteParams
+	if !strings.ContainsAny(path, "{}") {
+		return path, false, names, nil
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(path))
+	last := 0
+
+	for i := 0; i < len(path); i++ {
+		switch path[i] {
+		case '}':
+			return "", false, names, fmt.Errorf("unmatched closing brace in route path %q", path)
+		case '{':
+			if i == 0 || path[i-1] != '/' {
+				return "", false, names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
+			}
+			endOffset := strings.IndexByte(path[i+1:], '}')
+			if endOffset < 0 {
+				return "", false, names, fmt.Errorf("unclosed route parameter in path %q", path)
+			}
+			end := i + 1 + endOffset
+			if end+1 < len(path) && path[end+1] != '/' {
+				return "", false, names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
+			}
+
+			rawName := path[i+1 : end]
+			catchAll := strings.HasSuffix(rawName, "...")
+			name := strings.TrimSuffix(rawName, "...")
+			if !validRouteParamName(name) {
+				return "", false, names, fmt.Errorf("invalid route parameter %q in path %q", name, path)
+			}
+			if names.contains(name) {
+				return "", false, names, fmt.Errorf("duplicate route parameter %q in path %q", name, path)
+			}
+			names.add(name)
+			if catchAll && end != len(path)-1 {
+				return "", false, names, fmt.Errorf("route wildcard %q must be final in path %q", name, path)
+			}
+
+			builder.WriteString(path[last:i])
+			if catchAll {
+				builder.WriteByte(wildcardIdentifier)
+			} else {
+				builder.WriteByte(paramIdentifier)
+			}
+			builder.WriteString(name)
+			last = end + 1
+			i = end
+		}
+	}
+	builder.WriteString(path[last:])
+	return builder.String(), true, names, nil
+}
+
+func validRouteParamName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for index, r := range name {
+		if index == 0 && unicode.IsDigit(r) {
+			return false
+		}
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *collectedRouteParams) add(name string) {
 	if c.count < len(c.inline) {
 		c.inline[c.count] = name
@@ -944,10 +1058,29 @@ func (c *collectedRouteParams) add(name string) {
 	c.count++
 }
 
-func collectRouteParams(path string, startIndex int) (collectedRouteParams, error) {
+func (c *collectedRouteParams) contains(name string) bool {
+	inlineCount := c.count
+	if inlineCount > len(c.inline) {
+		inlineCount = len(c.inline)
+	}
+	for i := 0; i < inlineCount; i++ {
+		if c.inline[i] == name {
+			return true
+		}
+	}
+	for _, existing := range c.extra {
+		if existing == name {
+			return true
+		}
+	}
+	return false
+}
+
+func collectRouteParams(path string, startIndex int, canonicalWildcardName ...bool) (collectedRouteParams, error) {
 	var names collectedRouteParams
+	useCanonicalWildcardName := len(canonicalWildcardName) > 0 && canonicalWildcardName[0]
 	for i := startIndex; i < len(path); i++ {
-		if path[i] != ParamIdentifier && path[i] != WildcardIdentifier {
+		if path[i] != paramIdentifier && path[i] != wildcardIdentifier {
 			continue
 		}
 		segment, err := parseDynamicSegment(path[i:])
@@ -958,7 +1091,11 @@ func collectRouteParams(path string, startIndex int) (collectedRouteParams, erro
 		case radixParam, radixRegexp:
 			names.add(segment.name)
 		case radixCatchAll:
-			names.add("*")
+			if useCanonicalWildcardName {
+				names.add(segment.name)
+			} else {
+				names.add("*")
+			}
 			return names, nil
 		}
 		i += segment.width - 1
@@ -971,14 +1108,14 @@ func parseDynamicSegment(path string) (parsedDynamicSegment, error) {
 		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
 	}
 	switch path[0] {
-	case ParamIdentifier:
+	case paramIdentifier:
 		start := 1
 		if start >= len(path) || path[start] == '/' {
 			return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
 		}
 		end := start
 		for end < len(path) && path[end] != '/' && path[end] != '<' {
-			if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+			if path[end] == paramIdentifier || path[end] == wildcardIdentifier {
 				return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
 			}
 			end++
@@ -1001,14 +1138,14 @@ func parseDynamicSegment(path string) (parsedDynamicSegment, error) {
 			segment.width = constraintEnd
 		}
 		return segment, nil
-	case WildcardIdentifier:
+	case wildcardIdentifier:
 		start := 1
 		if start >= len(path) || path[start] == '/' {
 			return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
 		}
 		end := start
 		for end < len(path) && path[end] != '/' {
-			if path[end] == ParamIdentifier || path[end] == WildcardIdentifier {
+			if path[end] == paramIdentifier || path[end] == wildcardIdentifier {
 				return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
 			}
 			end++
@@ -1016,7 +1153,7 @@ func parseDynamicSegment(path string) (parsedDynamicSegment, error) {
 		if end != len(path) {
 			return parsedDynamicSegment{}, fmt.Errorf("wildcard must be final")
 		}
-		return parsedDynamicSegment{kind: radixCatchAll, width: end}, nil
+		return parsedDynamicSegment{kind: radixCatchAll, name: path[start:end], width: end}, nil
 	default:
 		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
 	}
@@ -2069,89 +2206,48 @@ func handlerNameFromPC(pc uintptr) string {
 	return name
 }
 
-func normalizeGetHandlers(handlers ...any) ([]HandlerFunc, error) {
-	if len(handlers) == 0 {
-		return nil, nil
-	}
-	out := make([]HandlerFunc, 0, len(handlers))
-	for idx, handler := range handlers {
-		switch h := handler.(type) {
-		case HandlerFunc:
-			if h == nil {
-				return nil, fmt.Errorf("handler at index %d is nil", idx)
-			}
-			out = append(out, h)
-		case func(*Context) error:
-			if h == nil {
-				return nil, fmt.Errorf("handler at index %d is nil", idx)
-			}
-			out = append(out, HandlerFunc(h))
-		case string:
-			out = append(out, StringHandler(h))
-		case nil:
-			return nil, fmt.Errorf("handler at index %d is nil", idx)
-		default:
-			return nil, fmt.Errorf("unsupported GET handler type %T at index %d", handler, idx)
-		}
-	}
-	return out, nil
+func (a *App) Add(method, path string, handlers ...HandlerFunc) {
+	mustRegister(a.router.Add(method, path, handlers...))
 }
 
-func (a *App) Add(method, path string, handlers ...HandlerFunc) error {
-	return a.router.Add(method, path, handlers...)
+func (a *App) Get(path string, handlers ...HandlerFunc) {
+	a.Add(MethodGet, path, handlers...)
+}
+func (a *App) Post(path string, handlers ...HandlerFunc) {
+	a.Add(MethodPost, path, handlers...)
+}
+func (a *App) Put(path string, handlers ...HandlerFunc) {
+	a.Add(MethodPut, path, handlers...)
+}
+func (a *App) Delete(path string, handlers ...HandlerFunc) {
+	a.Add(MethodDelete, path, handlers...)
+}
+func (a *App) Patch(path string, handlers ...HandlerFunc) {
+	a.Add(MethodPatch, path, handlers...)
+}
+func (a *App) Head(path string, handlers ...HandlerFunc) {
+	a.Add(MethodHead, path, handlers...)
+}
+func (a *App) Options(path string, handlers ...HandlerFunc) {
+	a.Add(MethodOptions, path, handlers...)
+}
+func (a *App) Connect(path string, handlers ...HandlerFunc) {
+	a.Add(MethodConnect, path, handlers...)
+}
+func (a *App) Trace(path string, handlers ...HandlerFunc) {
+	a.Add(MethodTrace, path, handlers...)
 }
 
-func (a *App) Get(path string, handlers ...any) error {
-	normalized, err := normalizeGetHandlers(handlers...)
-	if err != nil {
-		return err
-	}
-	return a.Add(MethodGet, path, normalized...)
-}
-func (a *App) Post(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodPost, path, handlers...)
-}
-func (a *App) Put(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodPut, path, handlers...)
-}
-func (a *App) Delete(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodDelete, path, handlers...)
-}
-func (a *App) Patch(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodPatch, path, handlers...)
-}
-func (a *App) Head(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodHead, path, handlers...)
-}
-func (a *App) Options(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodOptions, path, handlers...)
-}
-func (a *App) Connect(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodConnect, path, handlers...)
-}
-func (a *App) Trace(path string, handlers ...HandlerFunc) error {
-	return a.Add(MethodTrace, path, handlers...)
-}
-
-func (a *App) Match(methods []string, path string, handlers ...HandlerFunc) error {
+func (a *App) Match(methods []string, path string, handlers ...HandlerFunc) {
 	for _, method := range methods {
-		if err := a.Add(method, path, handlers...); err != nil {
-			return err
-		}
+		a.Add(method, path, handlers...)
 	}
-	return nil
 }
 
-func (a *App) All(path string, handlers ...HandlerFunc) error {
-	return a.Match(routeMethods, path, handlers...)
+func (a *App) All(path string, handlers ...HandlerFunc) {
+	a.Match(routeMethods, path, handlers...)
 }
 
-func (a *App) Any(path string, handlers ...HandlerFunc) error {
-	return a.All(path, handlers...)
-}
-
-func StringHandler(str string) HandlerFunc {
-	return func(c *Context) error {
-		return c.String(str)
-	}
+func (a *App) Any(path string, handlers ...HandlerFunc) {
+	a.All(path, handlers...)
 }

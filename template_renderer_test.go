@@ -16,9 +16,9 @@ func TestTemplateRendererHelpers(t *testing.T) {
 		app := NewWithConfig(Config{
 			Renderer: NewHTMLTemplateRenderer(tmpl),
 		})
-		mustDo(t, app.Get("/home", func(c *Context) error {
+		app.Get("/home", func(c *Context) error {
 			return c.Render("home", Map{"Name": "Zinc"})
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/home", nil, nil)
 		if resp.Code != http.StatusOK {
@@ -34,9 +34,9 @@ func TestTemplateRendererHelpers(t *testing.T) {
 		app := NewWithConfig(Config{
 			Renderer: NewTemplateRenderer(tmpl),
 		})
-		mustDo(t, app.Get("/created", func(c *Context) error {
+		app.Get("/created", func(c *Context) error {
 			return c.Status(http.StatusCreated).Render("created", nil)
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/created", nil, nil)
 		if resp.Code != http.StatusCreated {
@@ -52,9 +52,9 @@ func TestTemplateRendererHelpers(t *testing.T) {
 		app := NewWithConfig(Config{
 			Renderer: NewHTMLTemplateRenderer(tmpl, WithTemplateSuffixes("html", ".tmpl")),
 		})
-		mustDo(t, app.Get("/dashboard", func(c *Context) error {
+		app.Get("/dashboard", func(c *Context) error {
 			return c.Render("dashboard", nil)
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/dashboard", nil, nil)
 		if body := strings.TrimSpace(resp.Body.String()); body != "Dashboard" {
@@ -67,9 +67,9 @@ func TestTemplateRendererHelpers(t *testing.T) {
 		app := NewWithConfig(Config{
 			Renderer: NewTextTemplateRenderer(tmpl),
 		})
-		mustDo(t, app.Get("/plain", func(c *Context) error {
+		app.Get("/plain", func(c *Context) error {
 			return c.Render("plain", Map{"Name": "Zinc"})
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/plain", nil, nil)
 		if body := strings.TrimSpace(resp.Body.String()); body != "Hello, Zinc!" {

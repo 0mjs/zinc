@@ -20,13 +20,13 @@ import (
 func TestRequestIDDefaultGeneratorAndFallbackValue(t *testing.T) {
 	app := zinc.New()
 	app.Use(RequestID())
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		id := RequestIDValue(c)
 		if len(id) != 32 {
 			t.Fatalf("request id length=%d id=%q", len(id), id)
 		}
 		return c.String(id)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -42,12 +42,12 @@ func TestRequestIDDefaultGeneratorAndFallbackValue(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderXRequestID, "fallback")
 	app = zinc.New()
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		if got := RequestIDValue(c); got != "fallback" {
 			t.Fatalf("fallback request id=%q", got)
 		}
 		return c.String("ok")
-	}))
+	})
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 }
@@ -62,10 +62,10 @@ func TestKeyAuthExtractorsAndFirstFallback(t *testing.T) {
 		),
 		Validator: KeyAuthStaticKeys("secret", "backup"),
 	}))
-	mustNoErrHardening(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		state := MustKeyAuthCurrent(c)
 		return c.String(state.Key + ":" + string(state.Source))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Set("X-API-Key", "Token backup")
@@ -93,9 +93,9 @@ func TestKeyAuthExtractorsAndFirstFallback(t *testing.T) {
 
 	app = zinc.New()
 	app.Use(KeyAuth(KeyAuthStatic("subject-key")))
-	mustNoErrHardening(t, app.Get("/subject", func(c *zinc.Context) error {
+	app.Get("/subject", func(c *zinc.Context) error {
 		return c.String(CasbinSubjectFromKeyAuth()(c).(string))
-	}))
+	})
 	req = httptest.NewRequest(http.MethodGet, "/subject", nil)
 	req.Header.Set(zinc.HeaderAuthorization, "Bearer subject-key")
 	rec = httptest.NewRecorder()
@@ -176,9 +176,9 @@ func TestKeyAuthCustomErrorHandlerCanReturnHTTPError(t *testing.T) {
 			return err
 		},
 	}))
-	mustNoErrHardening(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	rec := httptest.NewRecorder()
@@ -199,9 +199,9 @@ func TestMethodOverrideQueryAndFirstGetter(t *testing.T) {
 		SourceMethods: []string{"post"},
 		Methods:       []string{"patch"},
 	}))
-	mustNoErrHardening(t, app.Patch("/resource", func(c *zinc.Context) error {
+	app.Patch("/resource", func(c *zinc.Context) error {
 		return c.String(c.Method())
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/resource?_method=PATCH", nil)
 	rec := httptest.NewRecorder()
@@ -218,9 +218,9 @@ func TestMethodOverrideQueryAndFirstGetter(t *testing.T) {
 func TestTrailingSlashAddAndPathHelpers(t *testing.T) {
 	app := zinc.New()
 	app.Use(AddTrailingSlash())
-	mustNoErrHardening(t, app.Get("/users/", func(c *zinc.Context) error {
+	app.Get("/users/", func(c *zinc.Context) error {
 		return c.String(c.Path())
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/users", nil)
 	rec := httptest.NewRecorder()
@@ -254,10 +254,10 @@ func TestGzipAcceptQValuesAndExistingVary(t *testing.T) {
 
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		c.Vary(zinc.HeaderAcceptEncoding)
 		return c.String("hello")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip;q=1")
@@ -275,9 +275,9 @@ func TestGzipAcceptQValuesAndExistingVary(t *testing.T) {
 func TestGzipHeadSkipsBody(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrHardening(t, app.Head("/head", func(c *zinc.Context) error {
+	app.Head("/head", func(c *zinc.Context) error {
 		return c.String("no body")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
@@ -298,12 +298,12 @@ func TestGzipHeadSkipsBody(t *testing.T) {
 func TestDecompressClose(t *testing.T) {
 	app := zinc.New()
 	app.Use(Decompress())
-	mustNoErrHardening(t, app.Post("/", func(c *zinc.Context) error {
+	app.Post("/", func(c *zinc.Context) error {
 		if err := c.Request().Body.Close(); err != nil {
 			return err
 		}
 		return c.String("closed")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/", gzipBody(t, "close me"))
 	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
@@ -318,9 +318,9 @@ func TestDecompressClose(t *testing.T) {
 func TestSecureDefaultsAndHSTSOptions(t *testing.T) {
 	app := zinc.New()
 	app.Use(Secure())
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	rec := httptest.NewRecorder()
@@ -338,9 +338,9 @@ func TestSecureDefaultsAndHSTSOptions(t *testing.T) {
 		HSTSMaxAge:            60,
 		HSTSExcludeSubdomains: true,
 	}))
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 	req = httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
@@ -358,14 +358,14 @@ func TestSessionDeleteValuesAndOptions(t *testing.T) {
 
 	app := zinc.New()
 	app.Use(SessionWithConfig(cfg))
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		session := MustSession(c)
 		session.Set("one", "1")
 		session.Set("two", "2")
 		session.Delete("two")
 		values := session.Values()
 		return c.String(values["one"] + values["two"])
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -433,9 +433,9 @@ func TestPrometheusConvenienceMiddleware(t *testing.T) {
 	metrics := NewPrometheusMetrics()
 	app := zinc.New()
 	app.Use(Prometheus(metrics))
-	mustNoErrHardening(t, app.Get("/ok", func(c *zinc.Context) error {
+	app.Get("/ok", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	rec := httptest.NewRecorder()
@@ -542,9 +542,9 @@ func TestProxyConfigHooksAndSkipper(t *testing.T) {
 		Target:  upstream.URL,
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrHardening(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("skipped")
-	}))
+	})
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
@@ -739,7 +739,7 @@ func TestJaegerGeneratedTraceAndObserverError(t *testing.T) {
 	app.Use(Jaeger(func(*zinc.Context, JaegerSpan) error {
 		return observeErr
 	}))
-	mustNoErrHardening(t, app.Get("/trace", func(c *zinc.Context) error {
+	app.Get("/trace", func(c *zinc.Context) error {
 		span, ok := JaegerCurrent(c)
 		if !ok {
 			t.Fatal("missing span")
@@ -748,7 +748,7 @@ func TestJaegerGeneratedTraceAndObserverError(t *testing.T) {
 			t.Fatalf("span=%+v", span)
 		}
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/trace", nil)
 	rec := httptest.NewRecorder()
@@ -774,9 +774,9 @@ func TestCasbinSubjectHelpers(t *testing.T) {
 			return "read"
 		},
 	}))
-	mustNoErrHardening(t, app.Get("/docs", func(c *zinc.Context) error {
+	app.Get("/docs", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
 	req.SetBasicAuth("alice", "secret")

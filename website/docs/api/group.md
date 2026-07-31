@@ -29,7 +29,8 @@ Groups let you:
 | `Group`, `Route` | Create nested route trees |
 | `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Connect`, `Trace` | Register routes under the group prefix |
 | `Add`, `Match`, `All`, `Any` | Register more general route sets |
-| `Handle` | Register a named route with `RouteSpec` |
+| `Handle`, `TryHandle` | Register a named source or runtime-defined route |
+| `HandleHTTP` | Register a standard `http.Handler` using `METHOD /pattern` |
 | `RouteNotFound` | Register a prefix-scoped not-found route |
 | `Mount`, `Static`, `StaticFS`, `File`, `FileFS` | Mount handlers or serve files below the group prefix |
 
@@ -39,20 +40,25 @@ Groups let you:
 api := app.Group("/api", requireAPIKey)
 v1 := api.Group("/v1")
 
-v1.Get("/users/:id", showUser)
+v1.Get("/users/{id}", showUser)
 v1.Post("/users", createUser)
 
-if err := v1.Handle(zinc.RouteSpec{
+v1.Handle(zinc.RouteSpec{
 	Name:    "users.show",
 	Method:  zinc.MethodGet,
-	Path:    "/users/:id",
+	Path:    "/users/{id}",
 	Handler: showUser,
-}); err != nil {
-	log.Fatal(err)
-}
+})
 ```
 
 Group route registration inherits the group prefix and middleware stack automatically.
+Use `v1.TryHandle(spec)` instead when the route declaration comes from runtime input and must return an error.
+
+Standard handlers inherit them too:
+
+```go
+v1.HandleHTTP("GET /metrics", promhttp.Handler())
+```
 
 Route-local middleware still works inside groups.
 

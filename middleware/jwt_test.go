@@ -21,7 +21,7 @@ func TestJWTMiddlewareWithMapClaims(t *testing.T) {
 			jwtgo.WithValidMethods([]string{jwtgo.SigningMethodHS256.Alg()}),
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		token := MustJWTToken(c)
 		claims := MustJWTClaims[jwtgo.MapClaims](c)
 		return c.JSON(zinc.Map{
@@ -29,7 +29,7 @@ func TestJWTMiddlewareWithMapClaims(t *testing.T) {
 			"sub": claims["sub"],
 			"raw": MustJWTTokenString(c),
 		})
-	}))
+	})
 
 	tokenString := mustSignedStringJWT(t, jwtgo.MapClaims{
 		"sub": "user-123",
@@ -65,10 +65,10 @@ func TestJWTMiddlewareWithTypedClaims(t *testing.T) {
 			return &claims{}
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		got := MustJWTClaims[*claims](c)
 		return c.String(got.Role + ":" + got.Subject)
-	}))
+	})
 
 	tokenString := mustSignedStringJWT(t, &claims{
 		Role: "admin",
@@ -100,9 +100,9 @@ func TestJWTMiddlewareMissingToken(t *testing.T) {
 		},
 		Realm: "api",
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
@@ -126,9 +126,9 @@ func TestJWTMiddlewareMalformedHeader(t *testing.T) {
 			return []byte("secret"), nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
@@ -150,9 +150,9 @@ func TestJWTMiddlewareInvalidToken(t *testing.T) {
 			return []byte("secret"), nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	tokenString := mustSignedStringJWT(t, jwtgo.MapClaims{
 		"sub": "user-123",
@@ -179,12 +179,12 @@ func TestJWTMiddlewareSkipper(t *testing.T) {
 			return []byte("secret"), nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		if _, ok := JWTToken(c); ok {
 			t.Fatal("token should not be present")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
@@ -209,9 +209,9 @@ func TestJWTMiddlewareFromFirst(t *testing.T) {
 			return []byte("secret"), nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String(MustJWTTokenString(c))
-	}))
+	})
 
 	tokenString := mustSignedStringJWT(t, jwtgo.MapClaims{
 		"sub": "cookie-user",
@@ -245,9 +245,9 @@ func TestJWTMiddlewareValidateCanRejectWithForbidden(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	tokenString := mustSignedStringJWT(t, jwtgo.MapClaims{
 		"role": "member",
@@ -279,9 +279,9 @@ func TestJWTMiddlewareCustomErrorHandler(t *testing.T) {
 			return c.Status(http.StatusTeapot).String("bad token")
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
@@ -309,10 +309,10 @@ func TestJWTMiddlewareParseTokenFunc(t *testing.T) {
 			}, nil
 		},
 	}))
-	mustNoErrJWT(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		got := MustJWTClaims[jwtgo.MapClaims](c)
 		return c.String(got["name"].(string))
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/private?token=alice", nil)

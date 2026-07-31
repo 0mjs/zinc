@@ -61,7 +61,7 @@ func runPreparedZincBenchmark(b *testing.B, handler http.Handler, request prepar
 
 func buildZincBindQueryOnlyHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/search", func(c *Context) error {
+	app.Get("/search", func(c *Context) error {
 		var input zincDiagnosticBindQueryInput
 		if err := c.Bind().Query(&input); err != nil {
 			return err
@@ -70,13 +70,13 @@ func buildZincBindQueryOnlyHandler() http.Handler {
 		benchmarkSinkString = input.Search
 		benchmarkSinkBool = input.Enabled
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
 func buildZincBindPathQueryJSONHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Post("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input zincDiagnosticBindAPIInput
 		if err := c.Bind().All(&input); err != nil {
 			return err
@@ -85,13 +85,13 @@ func buildZincBindPathQueryJSONHandler() http.Handler {
 		benchmarkSinkString = input.Name
 		benchmarkSinkBool = input.Verbose
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
 func buildZincBindJSONCachedBodyHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/payload", func(c *Context) error {
+	app.Post("/payload", func(c *Context) error {
 		var proof zincDiagnosticBindAPIInput
 		if err := c.Bind().JSON(&proof); err != nil {
 			return err
@@ -106,13 +106,13 @@ func buildZincBindJSONCachedBodyHandler() http.Handler {
 		benchmarkSinkString = input.Name
 		benchmarkSinkBool = proof.Name == input.Name && len(proof.Roles) == len(input.Roles)
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
 func buildZincBindFormHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/submit", func(c *Context) error {
+	app.Post("/submit", func(c *Context) error {
 		var input zincDiagnosticBindFormInput
 		if err := c.Bind().Form(&input); err != nil {
 			return err
@@ -121,7 +121,7 @@ func buildZincBindFormHandler() http.Handler {
 		benchmarkSinkString = input.Name
 		benchmarkSinkBool = len(input.Tags) == 2
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 

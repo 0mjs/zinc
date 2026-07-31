@@ -14,9 +14,9 @@ import (
 func TestMiddlewareSurfaceBasicAuth(t *testing.T) {
 	app := zinc.New()
 	app.Use(BasicAuth(BasicAuthStatic("joe", "secret")))
-	mustNoErrSurface(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String(MustBasicAuthUsername(c))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.SetBasicAuth("joe", "secret")
@@ -37,9 +37,9 @@ func TestMiddlewareSurfaceCORSWithOptions(t *testing.T) {
 		CORSAllowOrigins("https://app.example.com"),
 		CORSAllowCredentials(true),
 	))
-	mustNoErrSurface(t, app.Get("/ok", func(c *zinc.Context) error {
+	app.Get("/ok", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	req.Header.Set(zinc.HeaderOrigin, "https://app.example.com")
@@ -62,13 +62,13 @@ func TestMiddlewareSurfaceBodyDumpAndBodyLimit(t *testing.T) {
 		observed = snapshot
 	}))
 	app.Use(BodyLimit(4))
-	mustNoErrSurface(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		body, err := c.BodyString()
 		if err != nil {
 			return err
 		}
 		return c.String(body)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("ping"))
 	rec := httptest.NewRecorder()
@@ -94,12 +94,12 @@ func TestMiddlewareSurfaceContextTimeoutAndCSRF(t *testing.T) {
 	app := zinc.New()
 	app.Use(ContextTimeout(100 * time.Millisecond))
 	app.Use(CSRF())
-	mustNoErrSurface(t, app.Get("/form", func(c *zinc.Context) error {
+	app.Get("/form", func(c *zinc.Context) error {
 		if MustContextTimeoutCurrent(c).Timeout != 100*time.Millisecond {
 			t.Fatalf("timeout=%s", MustContextTimeoutCurrent(c).Timeout)
 		}
 		return c.String(MustCSRFToken(c))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/form", nil)
 	rec := httptest.NewRecorder()
@@ -123,10 +123,10 @@ func TestMiddlewareSurfaceJWT(t *testing.T) {
 	app.Use(JWT(func(*zinc.Context, *jwtgo.Token) (any, error) {
 		return []byte("secret"), nil
 	}))
-	mustNoErrSurface(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		claims := MustJWTClaims[jwtgo.MapClaims](c)
 		return c.String(claims["sub"].(string))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Set(zinc.HeaderAuthorization, "Bearer "+tokenString)

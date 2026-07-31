@@ -121,4 +121,4 @@ The response helpers live on `Context` too:
 
 ## Safety
 
-Use `Copy()` when context data needs to outlive the handler.
+`*Context` is pooled and valid only while its handler is running. Do not store it or pass it to another goroutine. Extract the exact values background work needs; use `c.Request().Context()` only for work that shares the request lifetime.

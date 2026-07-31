@@ -79,7 +79,23 @@ server := &http.Server{
 log.Fatal(server.ListenAndServe())
 ```
 
-Standard handlers can be mounted inside the application:
+Standard handlers can own individual routes:
+
+```go
+app.HandleHTTP("GET /metrics", promhttp.Handler())
+
+app.HandleHTTP("GET /users/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, r.PathValue("id"))
+}))
+```
+
+Standard middleware can wrap the entire application:
+
+```go
+app.UseHTTP(requestTracing, authenticateRequest)
+```
+
+Handlers that own a whole subtree can be mounted:
 
 ```go
 app.Mount("/debug", http.DefaultServeMux)
@@ -103,6 +119,8 @@ This keeps standard middleware, observability tools, test helpers, server config
 
 Routes can be grouped and middleware can be applied to the whole app or one part of it:
 
+Every route method accepts typed `zinc.HandlerFunc` handlers. Zinc does not use untyped response shorthands.
+
 ```go
 app.Use(middleware.RequestID())
 app.Use(middleware.Recover())
@@ -113,6 +131,8 @@ api.Get("/health", func(c *zinc.Context) error {
 	return c.JSON(zinc.Map{"status": "ok"})
 })
 ```
+
+Routes declared in source fail fast if a pattern is invalid or conflicts with another route. Use `app.TryHandle(spec)` when route definitions come from configuration or plugins and need ordinary error handling.
 
 Zinc includes middleware for common concerns such as recovery, request IDs, logging, CORS, compression, authentication, rate limiting, security headers, metrics, and tracing. See the [middleware documentation](https://zinc.carbonsoft.sh/middleware) for configuration and examples.
 
@@ -136,6 +156,8 @@ app.Post("/users", func(c *zinc.Context) error {
 })
 ```
 
+`*zinc.Context` is pooled and lives only for the active request. Extract values before starting background work; use `c.Request().Context()` when that work should share request cancellation, or deliberately use `context.WithoutCancel` when it must not.
+
 Binding supports path, query, header, JSON, XML, YAML, TOML, form, and multipart input. The binder, validator, JSON codec, renderer, and error handler can all be replaced through `zinc.Config`.
 
 ## Performance
@@ -158,7 +180,7 @@ The jobs package is independent of the HTTP application. Applications that do no
 
 ## Project status
 
-Zinc is pre-1.0. Pin a release and read the [release notes](https://github.com/0mjs/zinc/releases) when upgrading.
+Zinc is pre-1.0. Pin a release and read the [Zinc 0.2 migration guide](https://zinc.carbonsoft.sh/extra/migration-0.2) and [release notes](https://github.com/0mjs/zinc/releases) when upgrading.
 
 Bug reports and focused proposals are welcome in [GitHub Issues](https://github.com/0mjs/zinc/issues). See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 

@@ -7,6 +7,7 @@ sidebar_position: 2
 
 Zinc keeps middleware composition simple:
 
+- `app.UseHTTP(...)` wraps the application in standard `net/http` middleware
 - `app.Use(...)` applies globally
 - `app.UsePrefix(...)` applies to matching prefixes
 - `group.Use(...)` applies inside a specific group tree
@@ -26,10 +27,14 @@ Every item in the chain runs in order. Call `c.Next()` to continue.
 app.Use(middleware.RequestID())
 
 api := app.Group("/api", requireAPIKey)
-api.Get("/users/:id", loadUser, showUser)
+api.Get("/users/{id}", loadUser, showUser)
 ```
 
 Middleware belongs at the narrowest level that still matches the behavior: app-wide for every request, group-level for route families, and route-level for endpoint-specific guards.
+
+Use `UseHTTP` when middleware already follows the standard
+`func(http.Handler) http.Handler` contract. It runs outside every Zinc
+middleware layer. See [net/http Interoperability](./http-interoperability).
 
 ## Global middleware
 
@@ -108,7 +113,7 @@ Use groups when many routes share a guard.
 ```go
 admin := app.Group("/admin", authUser, requireRole("admin"))
 admin.Get("/users", listUsers)
-admin.Delete("/users/:id", deleteUser)
+admin.Delete("/users/{id}", deleteUser)
 ```
 
 ## Returning from middleware

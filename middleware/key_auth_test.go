@@ -11,10 +11,10 @@ import (
 func TestKeyAuthBearerHeader(t *testing.T) {
 	app := zinc.New()
 	app.Use(KeyAuth(KeyAuthStatic("secret")))
-	mustNoErrKeyAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		state := MustKeyAuthCurrent(c)
 		return c.String(string(state.Source))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Set(zinc.HeaderAuthorization, "Bearer secret")
@@ -35,9 +35,9 @@ func TestKeyAuthQueryExtractor(t *testing.T) {
 		Extractor: KeyAuthFromQuery("api_key"),
 		Validator: KeyAuthStatic("secret"),
 	}))
-	mustNoErrKeyAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private?api_key=secret", nil)
 	rec := httptest.NewRecorder()
@@ -51,9 +51,9 @@ func TestKeyAuthQueryExtractor(t *testing.T) {
 func TestKeyAuthRejectsMissingKey(t *testing.T) {
 	app := zinc.New()
 	app.Use(KeyAuth(KeyAuthStatic("secret")))
-	mustNoErrKeyAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	rec := httptest.NewRecorder()

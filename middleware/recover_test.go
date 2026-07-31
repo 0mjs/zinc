@@ -12,9 +12,9 @@ import (
 func TestRecoverCatchesPanic(t *testing.T) {
 	app := zinc.New()
 	app.Use(Recover())
-	mustNoErrRecover(t, app.Get("/panic", func(*zinc.Context) error {
+	app.Get("/panic", func(*zinc.Context) error {
 		panic("boom")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
 	rec := httptest.NewRecorder()
@@ -35,9 +35,9 @@ func TestRecoverCustomHandler(t *testing.T) {
 			return c.Status(http.StatusTeapot).String("recovered")
 		},
 	}))
-	mustNoErrRecover(t, app.Get("/panic", func(*zinc.Context) error {
+	app.Get("/panic", func(*zinc.Context) error {
 		panic(errors.New("boom"))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
 	rec := httptest.NewRecorder()
@@ -62,9 +62,9 @@ func TestRecoverSkipper(t *testing.T) {
 	app.Use(RecoverWithConfig(RecoverConfig{
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrRecover(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()

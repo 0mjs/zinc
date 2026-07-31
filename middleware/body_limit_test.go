@@ -17,13 +17,13 @@ import (
 func TestBodyLimitWithinLimit(t *testing.T) {
 	app := zinc.New()
 	app.Use(BodyLimit(8))
-	mustNoErrBodyLimit(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		body, err := c.BodyString()
 		if err != nil {
 			return err
 		}
 		return c.String(body)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()
@@ -42,10 +42,10 @@ func TestBodyLimitRejectsByContentLength(t *testing.T) {
 
 	called := false
 	app.Use(BodyLimit(4))
-	mustNoErrBodyLimit(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		called = true
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()
@@ -66,12 +66,12 @@ func TestBodyLimitRejectsByReadAndOnlyExposesAllowedBytes(t *testing.T) {
 	var seenErr error
 
 	app.Use(BodyLimit(4))
-	mustNoErrBodyLimit(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		body, err := io.ReadAll(c.Request().Body)
 		seen = string(body)
 		seenErr = err
 		return err
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("hello world"))
 	req.ContentLength = -1
@@ -104,14 +104,14 @@ func TestBodyLimitWrappedMultipartErrorStillReturns413(t *testing.T) {
 
 	var captured error
 	app.Use(BodyLimit(64))
-	mustNoErrBodyLimit(t, app.Post("/upload", func(c *zinc.Context) error {
+	app.Post("/upload", func(c *zinc.Context) error {
 		_, err := c.MultipartForm()
 		if err != nil {
 			captured = err
 			return fmt.Errorf("parse multipart: %w", err)
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := newMultipartRequestBodyLimit(t, http.MethodPost, "/upload", "file", "payload", strings.Repeat("x", 256))
 	req.ContentLength = -1
@@ -138,13 +138,13 @@ func TestBodyLimitSkipper(t *testing.T) {
 		Skipper: func(*zinc.Context) bool { return true },
 		Limit:   2,
 	}))
-	mustNoErrBodyLimit(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		body, err := c.BodyString()
 		if err != nil {
 			return err
 		}
 		return c.String(body)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()

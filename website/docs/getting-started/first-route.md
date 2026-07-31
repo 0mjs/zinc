@@ -16,7 +16,7 @@ That same shape is used for route handlers and middleware.
 ## Read request data
 
 ```go
-app.Get("/teams/:teamID/users/:userID", func(c *zinc.Context) error {
+app.Get("/teams/{teamID}/users/{userID}", func(c *zinc.Context) error {
 	return c.JSON(zinc.Map{
 		"team_id": c.Param("teamID"),
 		"user_id": c.Param("userID"),
@@ -25,7 +25,7 @@ app.Get("/teams/:teamID/users/:userID", func(c *zinc.Context) error {
 })
 ```
 
-Route params come from `:name` segments. Query values come from the request URL.
+Route params come from `{name}` segments. Query values come from the request URL.
 
 ## Bind JSON
 
@@ -36,7 +36,7 @@ type CreateUserInput struct {
 	Email  string `json:"email"`
 }
 
-app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
+app.Post("/teams/{teamID}/users", func(c *zinc.Context) error {
 	var input CreateUserInput
 	if err := c.Bind().All(&input); err != nil {
 		return err
@@ -53,7 +53,7 @@ app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
 Handlers return errors instead of writing error responses by hand.
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	user, err := findUser(c.Param("id"))
 	if err != nil {
 		return zinc.ErrNotFound.WithMessage("user not found")

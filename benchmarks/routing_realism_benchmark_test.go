@@ -155,10 +155,10 @@ func newGinErrorBenchmarkRouter() *gin.Engine {
 
 func buildZincMultiParamHandler(pattern string, paramNames []string) http.Handler {
 	app := New()
-	mustNoErr(app.Get(pattern, func(c *Context) error {
+	app.Get(pattern, func(c *Context) error {
 		scenarioParamScoreZinc(paramNames, c)
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -193,7 +193,7 @@ func param5Cases() []benchmarkCase {
 	paramNames := []string{"org", "repo", "issue", "comment", "reaction"}
 	return focusedFrameworkCases(
 		func() http.Handler {
-			return buildZincMultiParamHandler("/orgs/:org/repos/:repo/issues/:issue/comments/:comment/reactions/:reaction", paramNames)
+			return buildZincMultiParamHandler("/orgs/{org}/repos/{repo}/issues/{issue}/comments/{comment}/reactions/{reaction}", paramNames)
 		},
 		func() http.Handler {
 			return buildChiMultiParamHandler("/orgs/{org}/repos/{repo}/issues/{issue}/comments/{comment}/reactions/{reaction}", paramNames)
@@ -211,7 +211,7 @@ func param10Cases() []benchmarkCase {
 	paramNames := []string{"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10"}
 	return focusedFrameworkCases(
 		func() http.Handler {
-			return buildZincMultiParamHandler("/v1/:p1/a/:p2/b/:p3/c/:p4/d/:p5/e/:p6/f/:p7/g/:p8/h/:p9/i/:p10", paramNames)
+			return buildZincMultiParamHandler("/v1/{p1}/a/{p2}/b/{p3}/c/{p4}/d/{p5}/e/{p6}/f/{p7}/g/{p8}/h/{p9}/i/{p10}", paramNames)
 		},
 		func() http.Handler {
 			return buildChiMultiParamHandler("/v1/{p1}/a/{p2}/b/{p3}/c/{p4}/d/{p5}/e/{p6}/f/{p7}/g/{p8}/h/{p9}/i/{p10}", paramNames)
@@ -229,37 +229,37 @@ func buildZincNestedGroupHandler() http.Handler {
 	app := newZincErrorBenchmarkApp()
 	api := app.Group("/api")
 	v1 := api.Group("/v1")
-	mustNoErr(v1.Get("/health", func(c *Context) error {
+	v1.Get("/health", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 
 	teams := v1.Group("/teams")
-	mustNoErr(teams.Get("/status/health", func(c *Context) error {
+	teams.Get("/status/health", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(teams.Get("/:teamID", func(c *Context) error {
+	})
+	teams.Get("/{teamID}", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 
-	users := teams.Group("/:teamID/users")
-	mustNoErr(users.Get("/", func(c *Context) error {
+	users := teams.Group("/{teamID}/users")
+	users.Get("/", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(users.Get("/:userID", func(c *Context) error {
+	})
+	users.Get("/{userID}", func(c *Context) error {
 		benchmarkSinkString = c.Param("teamID") + "|" + c.Param("userID")
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(users.Get("/:userID/preferences", func(c *Context) error {
+	})
+	users.Get("/{userID}/preferences", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 
 	projects := v1.Group("/projects")
-	mustNoErr(projects.Get("/:projectId/builds", func(c *Context) error {
+	projects.Get("/{projectId}/builds", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(projects.Get("/:projectId/builds/:number", func(c *Context) error {
+	})
+	projects.Get("/{projectId}/builds/{number}", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 
 	return app
 }
@@ -393,10 +393,10 @@ func nestedGroupCases() []benchmarkCase {
 
 func buildZincWildcardHandler() http.Handler {
 	app := newZincErrorBenchmarkApp()
-	mustNoErr(app.Get("/files/*tail", func(c *Context) error {
-		benchmarkSinkString = trimBenchmarkWildcard(c.Param("*"))
+	app.Get("/files/{tail...}", func(c *Context) error {
+		benchmarkSinkString = trimBenchmarkWildcard(c.Param("tail"))
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 

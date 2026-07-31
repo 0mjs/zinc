@@ -15,7 +15,7 @@ Routing in Zinc is intentionally straightforward:
 ## At a glance
 
 ```go
-app.Get("/users/:id", showUser)
+app.Get("/users/{id}", showUser)
 app.Post("/users", createUser)
 
 api := app.Group("/api")
@@ -32,14 +32,14 @@ app.Get("/", func(c *zinc.Context) error {
 })
 
 app.Post("/users", createUser)
-app.Put("/users/:id", updateUser)
-app.Delete("/users/:id", deleteUser)
+app.Put("/users/{id}", updateUser)
+app.Delete("/users/{id}", deleteUser)
 ```
 
 For custom methods or more dynamic registration:
 
 ```go
-app.Add("PURGE", "/cache/:key", purgeCache)
+app.Add("PURGE", "/cache/{key}", purgeCache)
 app.Match([]string{zinc.MethodGet, zinc.MethodHead}, "/health", healthHandler)
 ```
 
@@ -48,42 +48,53 @@ app.Match([]string{zinc.MethodGet, zinc.MethodHead}, "/health", healthHandler)
 Zinc supports named params and wildcard captures.
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	return c.String(c.Param("id"))
 })
 
-app.Get("/assets/*tail", func(c *zinc.Context) error {
+app.Get("/assets/{tail...}", func(c *zinc.Context) error {
 	return c.String(c.Param("tail"))
 })
 ```
 
-### Regex-constrained params
+Route patterns are structural: static segments, `{name}` parameters, and a final
+`{name...}` wildcard. Validate numeric IDs, slugs, and other formats in binding or
+application code rather than embedding regular expressions in the route.
 
-Use `:name<expr>` when a route should only match values that satisfy a regular expression.
+### Migrating from Zinc 0.1
 
-```go
-app.Get("/users/:id<\\d+>", showUser)
-app.Get("/posts/:slug<[a-z0-9-]+>", showPost)
-```
+Zinc 0.2 uses one route syntax and does not keep compatibility aliases:
 
-If the constraint does not match, Zinc treats the request as not found for that route.
+| Zinc 0.1 | Zinc 0.2 |
+|---|---|
+| `/users/:id` | `/users/{id}` |
+| `/files/*path` | `/files/{path...}` |
+| `/users/:id<\\d+>` | `/users/{id}` plus validation in the handler or binder |
 
-:::info
-Constrained params are useful for disambiguating routes without moving the logic into handlers.
-:::
+Legacy patterns panic during source registration with a message that points to the new form.
 
 ## Named routes and reverse URLs
 
 For application tooling, URL generation, and link building, use `RouteSpec`.
 
 ```go
-if err := app.Handle(zinc.RouteSpec{
+app.Handle(zinc.RouteSpec{
 	Name:    "users.show",
 	Method:  zinc.MethodGet,
-	Path:    "/users/:id<\\d+>",
+	Path:    "/users/{id}",
+	Handler: showUser,
+})
+```
+
+Route declarations written in source fail fast on invalid patterns and conflicts. For patterns loaded from configuration or plugins, use the error-returning form:
+
+```go
+if err := app.TryHandle(zinc.RouteSpec{
+	Method:  zinc.MethodGet,
+	Path:    patternFromConfig,
 	Handler: showUser,
 }); err != nil {
-	log.Fatal(err)
+	return err
 }
 ```
 
@@ -108,7 +119,7 @@ Groups let you apply prefixes and middleware once.
 api := app.Group("/api", requireAPIKey)
 v1 := api.Group("/v1")
 
-v1.Get("/users/:id", showUser)
+v1.Get("/users/{id}", showUser)
 v1.Post("/users", createUser)
 ```
 
@@ -121,7 +132,7 @@ Use `Route` when you want a clear nested declaration block.
 ```go
 app.Route("/api", func(api *zinc.Group) {
 	api.Route("/v1", func(v1 *zinc.Group) {
-		v1.Get("/users/:id", showUser)
+		v1.Get("/users/{id}", showUser)
 		v1.Post("/users", createUser)
 	})
 }, requireAPIKey)
@@ -132,7 +143,7 @@ app.Route("/api", func(api *zinc.Group) {
 Zinc supports app-wide and prefix-scoped not-found flows.
 
 ```go
-app.RouteNotFound("/api/*tail", func(c *zinc.Context) error {
+app.RouteNotFound("/api/{tail...}", func(c *zinc.Context) error {
 	return c.Status(zinc.StatusNotFound).JSON(zinc.Map{
 		"error": "unknown api route",
 	})
@@ -141,12 +152,29 @@ app.RouteNotFound("/api/*tail", func(c *zinc.Context) error {
 
 This is useful for APIs that should return structured JSON in one subtree while leaving the rest of the app with different not-found behavior.
 
-## Mounting stdlib handlers
+## Standard library handlers
 
-Mount standard `net/http` handlers without leaving Zinc.
+Register a standard handler at one endpoint with `HandleHTTP`:
 
 ```go
-app.Mount("/metrics", promhttp.Handler())
+app.HandleHTTP("GET /metrics", promhttp.Handler())
+```
+
+The handler can read brace parameters through `r.PathValue`.
+
+```go
+app.HandleHTTP("GET /users/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, r.PathValue("id"))
+}))
+```
+
+Zinc handlers use `c.Param("id")`. `PathValue` is populated when control crosses
+into a standard handler through `HandleHTTP` or `Wrap`, keeping the ordinary Zinc
+route path minimal.
+
+Use `Mount` when a standard handler owns a whole subtree.
+
+```go
 app.Mount("/debug", http.DefaultServeMux)
 ```
 

@@ -51,8 +51,8 @@ func (g *Group) Mount(prefix string, h http.Handler) {
 	g.app.Mount(joinPaths(g.prefix, prefix), h)
 }
 
-func (g *Group) Add(method, routePath string, handlers ...HandlerFunc) error {
-	return g.add(method, routePath, "", handlers...)
+func (g *Group) Add(method, routePath string, handlers ...HandlerFunc) {
+	mustRegister(g.add(method, routePath, "", handlers...))
 }
 
 func (g *Group) add(method, routePath, name string, handlers ...HandlerFunc) error {
@@ -63,68 +63,80 @@ func (g *Group) add(method, routePath, name string, handlers ...HandlerFunc) err
 	return g.app.router.AddNamed(method, fullPath, name, allHandlers...)
 }
 
-func (g *Group) Handle(spec RouteSpec) error {
+// Handle registers a source-defined route below the group prefix and panics
+// when its declaration is invalid.
+func (g *Group) Handle(spec RouteSpec) {
+	mustRegister(g.TryHandle(spec))
+}
+
+// TryHandle registers a dynamically defined route below the group prefix.
+func (g *Group) TryHandle(spec RouteSpec) error {
 	if spec.Handler == nil {
 		return errors.New("route handler is nil")
 	}
 	return g.add(spec.Method, spec.Path, spec.Name, spec.Handler)
 }
 
-func (g *Group) RouteNotFound(routePath string, handlers ...HandlerFunc) error {
+// HandleHTTP registers a standard net/http handler below the group prefix.
+func (g *Group) HandleHTTP(pattern string, handler http.Handler) {
+	if handler == nil {
+		panic("zinc: HTTP handler is nil")
+	}
+	method, routePath, err := parseHTTPRoutePattern(pattern)
+	if err != nil {
+		panic(err)
+	}
+	g.Add(method, routePath, Wrap(handler))
+}
+
+func (g *Group) RouteNotFound(routePath string, handlers ...HandlerFunc) {
 	fullPath := joinPaths(g.prefix, routePath)
 	allHandlers := make([]HandlerFunc, 0, len(g.middleware)+len(handlers))
 	allHandlers = append(allHandlers, g.middleware...)
 	allHandlers = append(allHandlers, handlers...)
-	return g.app.RouteNotFound(fullPath, allHandlers...)
+	g.app.RouteNotFound(fullPath, allHandlers...)
 }
 
-func (g *Group) Get(path string, handlers ...any) error {
-	normalized, err := normalizeGetHandlers(handlers...)
-	if err != nil {
-		return err
-	}
-	return g.Add(MethodGet, path, normalized...)
+func (g *Group) Get(path string, handlers ...HandlerFunc) {
+	g.Add(MethodGet, path, handlers...)
 }
-func (g *Group) Post(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodPost, path, handlers...)
+func (g *Group) Post(path string, handlers ...HandlerFunc) {
+	g.Add(MethodPost, path, handlers...)
 }
-func (g *Group) Put(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodPut, path, handlers...)
+func (g *Group) Put(path string, handlers ...HandlerFunc) {
+	g.Add(MethodPut, path, handlers...)
 }
-func (g *Group) Delete(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodDelete, path, handlers...)
+func (g *Group) Delete(path string, handlers ...HandlerFunc) {
+	g.Add(MethodDelete, path, handlers...)
 }
-func (g *Group) Patch(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodPatch, path, handlers...)
+func (g *Group) Patch(path string, handlers ...HandlerFunc) {
+	g.Add(MethodPatch, path, handlers...)
 }
-func (g *Group) Head(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodHead, path, handlers...)
+func (g *Group) Head(path string, handlers ...HandlerFunc) {
+	g.Add(MethodHead, path, handlers...)
 }
-func (g *Group) Options(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodOptions, path, handlers...)
+func (g *Group) Options(path string, handlers ...HandlerFunc) {
+	g.Add(MethodOptions, path, handlers...)
 }
-func (g *Group) Connect(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodConnect, path, handlers...)
+func (g *Group) Connect(path string, handlers ...HandlerFunc) {
+	g.Add(MethodConnect, path, handlers...)
 }
-func (g *Group) Trace(path string, handlers ...HandlerFunc) error {
-	return g.Add(MethodTrace, path, handlers...)
+func (g *Group) Trace(path string, handlers ...HandlerFunc) {
+	g.Add(MethodTrace, path, handlers...)
 }
 
-func (g *Group) Match(methods []string, routePath string, handlers ...HandlerFunc) error {
+func (g *Group) Match(methods []string, routePath string, handlers ...HandlerFunc) {
 	for _, method := range methods {
-		if err := g.Add(method, routePath, handlers...); err != nil {
-			return err
-		}
+		g.Add(method, routePath, handlers...)
 	}
-	return nil
 }
 
-func (g *Group) All(path string, handlers ...HandlerFunc) error {
-	return g.Match(routeMethods, path, handlers...)
+func (g *Group) All(path string, handlers ...HandlerFunc) {
+	g.Match(routeMethods, path, handlers...)
 }
 
-func (g *Group) Any(path string, handlers ...HandlerFunc) error {
-	return g.All(path, handlers...)
+func (g *Group) Any(path string, handlers ...HandlerFunc) {
+	g.All(path, handlers...)
 }
 
 func (g *Group) Static(prefix, root string, opts ...StaticOption) error {

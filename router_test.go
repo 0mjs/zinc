@@ -3,7 +3,6 @@ package zinc
 import (
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
@@ -13,12 +12,12 @@ import (
 
 func TestRouterDynamicRoutesAndHelpers(t *testing.T) {
 	app := New()
-	mustDo(t, app.Get("/files/*path", func(c *Context) error {
-		return c.String(c.Param("*"))
-	}))
-	mustDo(t, app.Any("/any", func(c *Context) error {
+	app.Get("/files/{path...}", func(c *Context) error {
+		return c.String(c.Param("path"))
+	})
+	app.Any("/any", func(c *Context) error {
 		return c.String(c.Method())
-	}))
+	})
 
 	wild := performRequest(t, app, http.MethodGet, "/files/a/b/c.txt", nil, nil)
 	if wild.Body.String() != "a/b/c.txt" {
@@ -39,10 +38,85 @@ func TestRouterDynamicRoutesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestRouterBraceParamsAndWrappedRequestPathValues(t *testing.T) {
+	app := New()
+	app.Get("/users/{userID}", func(c *Context) error {
+		if got := c.Request().PathValue("userID"); got != "" {
+			t.Fatalf("native path value populated for Zinc handler: %q", got)
+		}
+		return c.String(c.Param("userID"))
+	})
+	app.Get("/files/{path...}", func(c *Context) error {
+		if got := c.Request().PathValue("path"); got != "" {
+			t.Fatalf("native wildcard path value populated for Zinc handler: %q", got)
+		}
+		return c.String(c.Param("path"))
+	})
+	app.Get("/native/{id}/files/{path...}", Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "%s|%s", r.PathValue("id"), r.PathValue("path"))
+	})))
+
+	user := performRequest(t, app, http.MethodGet, "/users/42", nil, nil)
+	if got := user.Body.String(); got != "42" {
+		t.Fatalf("user id=%q", got)
+	}
+
+	file := performRequest(t, app, http.MethodGet, "/files/assets/app.css", nil, nil)
+	if got := file.Body.String(); got != "assets/app.css" {
+		t.Fatalf("file path=%q", got)
+	}
+
+	native := performRequest(t, app, http.MethodGet, "/native/84/files/assets/app.css", nil, nil)
+	if got := native.Body.String(); got != "84|assets/app.css" {
+		t.Fatalf("native path value=%q", got)
+	}
+}
+
+func TestBraceRoutePatternValidationAndMetadata(t *testing.T) {
+	router := &Router{config: &DefaultConfig}
+	handler := func(*Context) error { return nil }
+
+	mustDo(t, router.AddNamed(MethodGet, "/teams/{teamID}/users/{userID}", "users.show", handler))
+	routes := router.Routes()
+	if len(routes) != 1 {
+		t.Fatalf("routes=%d", len(routes))
+	}
+	if routes[0].Path != "/teams/{teamID}/users/{userID}" {
+		t.Fatalf("path=%q", routes[0].Path)
+	}
+	if !reflect.DeepEqual(routes[0].Params, []string{"teamID", "userID"}) {
+		t.Fatalf("params=%v", routes[0].Params)
+	}
+
+	meta, ok := router.routeMetaByName("users.show")
+	if !ok {
+		t.Fatal("named route missing")
+	}
+	url, err := meta.url([]string{"platform", "matt smith"})
+	mustDo(t, err)
+	if url != "/teams/platform/users/matt%20smith" {
+		t.Fatalf("url=%q", url)
+	}
+
+	invalid := []string{
+		"/users/{id",
+		"/users/id}",
+		"/users/prefix-{id}",
+		"/users/{9id}",
+		"/users/{id}/{id}",
+		"/files/{path...}/meta",
+	}
+	for _, pattern := range invalid {
+		if err := router.Add(MethodPost, pattern, handler); err == nil {
+			t.Fatalf("expected %q to be rejected", pattern)
+		}
+	}
+}
+
 func TestRouterConflictsAndNormalization(t *testing.T) {
 	router := &Router{config: &DefaultConfig}
-	mustDo(t, router.Add(MethodGet, "users/:id", func(c *Context) error { return nil }))
-	if err := router.Add(MethodGet, "/users/:id", func(c *Context) error { return nil }); err == nil {
+	mustDo(t, router.Add(MethodGet, "users/{id}", func(c *Context) error { return nil }))
+	if err := router.Add(MethodGet, "/users/{id}", func(c *Context) error { return nil }); err == nil {
 		t.Fatal("expected duplicate route error")
 	}
 	if got := router.normalizePath("users"); got != "/users" {
@@ -50,38 +124,20 @@ func TestRouterConflictsAndNormalization(t *testing.T) {
 	}
 }
 
-func TestRouterRegexConstrainedParams(t *testing.T) {
+func TestRouterRejectsLegacyRoutePatterns(t *testing.T) {
 	router := &Router{config: &DefaultConfig}
-	mustDo(t, router.Add(MethodGet, "/users/:slug", func(*Context) error { return nil }))
-	mustDo(t, router.Add(MethodGet, "/users/:id<\\d+>", func(*Context) error { return nil }))
-
-	ctxDigits := &Context{}
-	if handler := router.findInto(MethodGet, "/users/42", ctxDigits); handler == nil {
-		t.Fatal("expected regex-constrained route to match")
+	handler := func(*Context) error { return nil }
+	patterns := []string{
+		"/users/:id",
+		"/users/prefix:id",
+		"/files/*path",
+		"/files/prefix*path",
+		"/users/:id<\\d+>",
 	}
-	if ctxDigits.Route().Path != "/users/:id<\\d+>" || ctxDigits.Param("id") != "42" {
-		t.Fatalf("digits route=%+v param=%q", ctxDigits.Route(), ctxDigits.Param("id"))
-	}
-
-	ctxAlpha := &Context{}
-	if handler := router.findInto(MethodGet, "/users/matt", ctxAlpha); handler == nil {
-		t.Fatal("expected plain param route to match")
-	}
-	if ctxAlpha.Route().Path != "/users/:slug" || ctxAlpha.Param("slug") != "matt" {
-		t.Fatalf("alpha route=%+v param=%q", ctxAlpha.Route(), ctxAlpha.Param("slug"))
-	}
-
-	params, err := collectRouteParams("/users/:id<\\d+>", strings.IndexAny("/users/:id<\\d+>", ":*"))
-	mustDo(t, err)
-	if got := params.slice(); !reflect.DeepEqual(got, []string{"id"}) {
-		t.Fatalf("params=%v", got)
-	}
-
-	if _, err := parseDynamicSegment(":id<"); err == nil || !strings.Contains(err.Error(), "invalid regex constraint") {
-		t.Fatalf("err=%v", err)
-	}
-	if err := router.Add(MethodGet, "/bad/:id<[0-9+>", func(*Context) error { return nil }); err == nil || !strings.Contains(err.Error(), "invalid regex constraint") {
-		t.Fatalf("err=%v", err)
+	for _, pattern := range patterns {
+		if err := router.Add(MethodGet, pattern, handler); err == nil || !strings.Contains(err.Error(), "legacy route") {
+			t.Fatalf("pattern=%q err=%v", pattern, err)
+		}
 	}
 }
 
@@ -92,60 +148,17 @@ func TestGroupHelpers(t *testing.T) {
 		return c.Next()
 	})
 	v1 := api.Route("/v1", nil)
-	mustDo(t, v1.Get("/ping", func(c *Context) error {
+	v1.Get("/ping", func(c *Context) error {
 		group, _ := c.Get("group")
 		if group != true {
 			t.Fatal("group middleware missing")
 		}
 		return c.String("pong")
-	}))
+	})
 
 	resp := performRequest(t, app, http.MethodGet, "/api/v1/ping", nil, nil)
 	if resp.Body.String() != "pong" {
 		t.Fatalf("body=%q", resp.Body.String())
-	}
-}
-
-func TestNormalizeGetHandlersBranches(t *testing.T) {
-	handlers, err := normalizeGetHandlers()
-	mustDo(t, err)
-	if handlers != nil {
-		t.Fatalf("handlers=%v", handlers)
-	}
-
-	var nilHandler HandlerFunc
-	if _, err := normalizeGetHandlers(nilHandler); err == nil || !strings.Contains(err.Error(), "handler at index 0 is nil") {
-		t.Fatalf("err=%v", err)
-	}
-
-	var nilFunc func(*Context) error
-	if _, err := normalizeGetHandlers(nilFunc); err == nil || !strings.Contains(err.Error(), "handler at index 0 is nil") {
-		t.Fatalf("err=%v", err)
-	}
-
-	if _, err := normalizeGetHandlers(nil); err == nil || !strings.Contains(err.Error(), "handler at index 0 is nil") {
-		t.Fatalf("err=%v", err)
-	}
-
-	if _, err := normalizeGetHandlers(123); err == nil || !strings.Contains(err.Error(), "unsupported GET handler type") {
-		t.Fatalf("err=%v", err)
-	}
-
-	okHandlers, err := normalizeGetHandlers(
-		"hello",
-		HandlerFunc(func(*Context) error { return nil }),
-		func(*Context) error { return nil },
-	)
-	mustDo(t, err)
-	if len(okHandlers) != 3 {
-		t.Fatalf("handlers len=%d", len(okHandlers))
-	}
-
-	ctx, rec := newRecorderContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
-	defer ctx.release()
-	mustDo(t, okHandlers[0](ctx))
-	if rec.Body.String() != "hello" {
-		t.Fatalf("body=%q", rec.Body.String())
 	}
 }
 
@@ -539,16 +552,16 @@ func TestRouterAddAndMatchErrorBranches(t *testing.T) {
 	}
 
 	app := New()
-	if err := app.Match([]string{MethodGet}, "/users"); err == nil {
-		t.Fatal("expected Match to fail when handlers are missing")
-	}
+	mustPanic(t, "no handler provided", func() {
+		app.Match([]string{MethodGet}, "/users")
+	})
 }
 
 func TestRouterAllowedMethodsSharedPathIndex(t *testing.T) {
 	router := &Router{config: &DefaultConfig}
 	mustDo(t, router.Add(MethodGet, "/shared/one", func(*Context) error { return nil }))
 	mustDo(t, router.Add(MethodPost, "/shared/two", func(*Context) error { return nil }))
-	mustDo(t, router.Add(MethodGet, "/users/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/users/{id}", func(*Context) error { return nil }))
 	mustDo(t, router.Add(MethodPost, "/users/me", func(*Context) error { return nil }))
 
 	shared := router.allowedMethods("/shared/one", true, true)
@@ -623,9 +636,9 @@ func TestRouterSupportsMoreThanInlinePathParams(t *testing.T) {
 	pattern, path, names, _ := buildSequentialParamRoute(10)
 
 	app := New()
-	mustDo(t, app.Get(pattern, func(c *Context) error {
+	app.Get(pattern, func(c *Context) error {
 		return c.String(c.Param(names[len(names)-1]))
-	}))
+	})
 
 	resp := performRequest(t, app, http.MethodGet, path, nil, nil)
 	if resp.Body.String() != "10" {
@@ -693,7 +706,7 @@ func TestRouterDispatchIntoCachesSmallDynamicRouteSets(t *testing.T) {
 		cache:  NewRouteCache(8),
 		config: &DefaultConfig,
 	}
-	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/items/{id}", func(*Context) error { return nil }))
 
 	ctx := &Context{}
 	handled, allowed, err := router.dispatchInto(MethodGet, "/items/42", false, ctx)
@@ -722,7 +735,7 @@ func TestRouterDispatchIntoRefreshesCachedDynamicHitAfterAdd(t *testing.T) {
 		cache:  NewRouteCache(8),
 		config: &DefaultConfig,
 	}
-	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/items/{id}", func(*Context) error { return nil }))
 
 	ctxParam := &Context{}
 	handled, allowed, err := router.dispatchInto(MethodGet, "/items/new", false, ctxParam)
@@ -775,7 +788,7 @@ func TestRouterStaticRouteLengthFilter(t *testing.T) {
 	longPath := "/" + strings.Repeat("x", 140)
 	mustDo(t, router.Add(MethodGet, shortPath, func(*Context) error { return nil }))
 	mustDo(t, router.Add(MethodGet, longPath, func(*Context) error { return nil }))
-	mustDo(t, router.Add(MethodGet, "/items/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(MethodGet, "/items/{id}", func(*Context) error { return nil }))
 
 	slot := singleBitIndex(methodMaskGet)
 	if !router.hasStaticRouteLength(slot, methodMaskGet, len(shortPath)) {
@@ -859,7 +872,7 @@ func TestRouterSupportsCustomDynamicMethods(t *testing.T) {
 	const methodPurge = "PURGE"
 
 	router := &Router{config: &DefaultConfig}
-	mustDo(t, router.Add(methodPurge, "/items/:id", func(*Context) error { return nil }))
+	mustDo(t, router.Add(methodPurge, "/items/{id}", func(*Context) error { return nil }))
 
 	ctx := &Context{}
 	handled, allowed, err := router.dispatchInto(methodPurge, "/items/42", false, ctx)
@@ -927,8 +940,9 @@ func buildSequentialParamRoute(count int) (string, string, []string, paramRanges
 		names[i] = name
 
 		pattern.WriteByte('/')
-		pattern.WriteByte(':')
+		pattern.WriteByte('{')
 		pattern.WriteString(name)
+		pattern.WriteByte('}')
 
 		path.WriteByte('/')
 		start := path.Len()

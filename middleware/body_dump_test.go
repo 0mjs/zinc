@@ -23,13 +23,13 @@ func TestBodyDumpCapturesRequestAndResponse(t *testing.T) {
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		body, err := c.BodyString()
 		if err != nil {
 			return err
 		}
 		return c.String(body)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()
@@ -80,13 +80,13 @@ func TestBodyDumpRequestSnapshotCanTruncateWithoutChangingHandlerBody(t *testing
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Post("/upload", func(c *zinc.Context) error {
+	app.Post("/upload", func(c *zinc.Context) error {
 		body, err := io.ReadAll(c.Request().Body)
 		if err != nil {
 			return err
 		}
 		return c.String(string(body))
-	}))
+	})
 
 	full := "abcdefghij"
 	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(full))
@@ -120,14 +120,14 @@ func TestBodyDumpResponseTruncationStillSendsFullResponse(t *testing.T) {
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Get("/stream", func(c *zinc.Context) error {
+	app.Get("/stream", func(c *zinc.Context) error {
 		for _, chunk := range []string{"ab", "cd", "ef", "gh"} {
 			if _, err := io.WriteString(c.Writer(), chunk); err != nil {
 				return err
 			}
 		}
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
 	rec := httptest.NewRecorder()
@@ -163,9 +163,9 @@ func TestBodyDumpRedactor(t *testing.T) {
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Post("/secret", func(c *zinc.Context) error {
+	app.Post("/secret", func(c *zinc.Context) error {
 		return c.String("top-secret")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/secret", strings.NewReader("password=123"))
 	rec := httptest.NewRecorder()
@@ -189,9 +189,9 @@ func TestBodyDumpSkipper(t *testing.T) {
 			called = true
 		},
 	}))
-	mustNoErrBodyDump(t, app.Get("/x", func(c *zinc.Context) error {
+	app.Get("/x", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	rec := httptest.NewRecorder()
@@ -214,9 +214,9 @@ func TestBodyDumpInfersErrorStatus(t *testing.T) {
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return zinc.ErrUnauthorized
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	rec := httptest.NewRecorder()
@@ -248,10 +248,10 @@ func TestBodyDumpObservesBodyReadFailure(t *testing.T) {
 			got = snapshot
 		},
 	}))
-	mustNoErrBodyDump(t, app.Post("/upload", func(c *zinc.Context) error {
+	app.Post("/upload", func(c *zinc.Context) error {
 		t.Fatal("handler should not run")
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/upload", &failingReadCloser{
 		data:     []byte("partial"),

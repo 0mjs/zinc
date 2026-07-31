@@ -40,12 +40,12 @@ func TestRedirectSkipperAndFallthrough(t *testing.T) {
 		Rules:   map[string]string{"/old": "/new"},
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrRedirect(t, app.Get("/old", func(c *zinc.Context) error {
+	app.Get("/old", func(c *zinc.Context) error {
 		return c.String("skipped")
-	}))
-	mustNoErrRedirect(t, app.Get("/other", func(c *zinc.Context) error {
+	})
+	app.Get("/other", func(c *zinc.Context) error {
 		return c.String("next")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
 	rec := httptest.NewRecorder()

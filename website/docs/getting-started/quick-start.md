@@ -33,7 +33,7 @@ func main() {
 	})
 
 	api := app.Group("/api")
-	api.Get("/users/:id", func(c *zinc.Context) error {
+	api.Get("/users/{id}", func(c *zinc.Context) error {
 		return c.JSON(zinc.Map{
 			"id": c.Param("id"),
 		})
@@ -63,7 +63,7 @@ curl http://localhost:8080/api/users/42
 - `app.Use(...)` added middleware that runs before matched routes.
 - `app.Get(...)` registered handlers for `GET` requests.
 - `app.Group("/api")` created a route group with a shared prefix.
-- `c.Param("id")` read the `:id` route parameter.
+- `c.Param("id")` reads the `{id}` route parameter.
 - `c.JSON(...)` encoded and wrote a JSON response.
 - `app.Listen()` started the server on `:8080`.
 

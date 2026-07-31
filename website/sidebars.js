@@ -30,6 +30,7 @@ module.exports = {
       items: [
         "guide/routing",
         "guide/groups-and-middleware",
+        "guide/http-interoperability",
         "guide/context",
         "guide/binding",
         "guide/responses-and-rendering",
@@ -153,7 +154,7 @@ module.exports = {
         title: "Project",
         description: "Benchmarks, FAQ, and project-level notes.",
       },
-      items: ["extra/benchmarks", "extra/faq"],
+      items: ["extra/migration-0.2", "extra/benchmarks", "extra/faq"],
     },
   ],
 };
