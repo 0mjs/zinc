@@ -1,25 +1,21 @@
 ---
 id: benchmarks
 title: Benchmarks
-description: What Zinc measures, what the current peer-only suite says, and where to find the full data.
+description: Current Zinc benchmark results against Gin, Echo, and Chi.
 sidebar_position: 1
 ---
 
-Zinc maintains a peer-only benchmark suite against:
+Zinc maintains an in-process comparison suite against Gin, Echo, and Chi. Each framework performs equivalent work through its idiomatic API.
 
-- `Gin`
-- `Echo`
-- `Chi`
+## Current results
 
-## Current headline
+The latest full run on an Apple M1 Pro recorded:
 
-From the latest full local rerun:
+- lowest latency for Zinc in `62/77` comparable rows
+- lowest latency, or a result within 2% of it, in `63/77` rows
+- zero request-time allocations on Zinc's primary static, parameter, and not-found dispatch paths
 
-- Zinc wins `65/85` comparable rows overall
-- Zinc wins `65/77` non-throughput rows
-- Zinc wins `0/8` throughput rows
-
-The strongest Zinc results are on request-path and API-path latency. Throughput is currently the weakest category in the suite.
+Lower values are better. Results vary by workload and machine, and small differences should be confirmed with repeated samples.
 
 ## What the suite covers
 
@@ -30,17 +26,14 @@ The strongest Zinc results are on request-path and API-path latency. Throughput 
 - realistic route-set scenarios
 - binding and response feature paths
 - static file hit and miss
-- loopback throughput at multiple concurrency levels
 
 ## Full report
 
-The complete benchmark report lives in the repository:
+The [complete benchmark report](https://github.com/0mjs/zinc/blob/main/BENCKMARKS.md) contains the environment, command, scorecard, and all 77 comparable rows from the current run.
 
-- [BENCKMARKS.md](https://github.com/0mjs/zinc/blob/main/BENCKMARKS.md)
+To run the suite locally:
 
-That file includes:
-
-- the raw scorecard
-- remaining peer gaps
-- per-benchmark tables
-- benchmark environment details
+```sh
+cd benchmarks
+go test -run=^$ -bench=. -benchmem -count=1
+```

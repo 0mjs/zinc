@@ -38,9 +38,9 @@ func TestRequestLoggerCapturesValues(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErr(t, app.Get("/users/:id", func(c *zinc.Context) error {
+	app.Get("/users/{id}", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/users/42?q=one", nil)
 	req.RemoteAddr = "10.2.3.4:12345"
@@ -71,7 +71,7 @@ func TestRequestLoggerCapturesValues(t *testing.T) {
 	if got.URI != expectedURI {
 		t.Fatalf("uri=%q", got.URI)
 	}
-	if got.RoutePath != "/users/:id" {
+	if got.RoutePath != "/users/{id}" {
 		t.Fatalf("route path=%q", got.RoutePath)
 	}
 	if got.Status != http.StatusOK {
@@ -118,9 +118,9 @@ func TestRequestLoggerCapturesRouteErrorStatus(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErr(t, app.Get("/boom", func(c *zinc.Context) error {
+	app.Get("/boom", func(c *zinc.Context) error {
 		return zinc.ErrForbidden
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
@@ -153,9 +153,9 @@ func TestRequestLoggerHandleErrorForMiddlewareError(t *testing.T) {
 	app.Use(func(c *zinc.Context) error {
 		return zinc.ErrUnauthorized
 	})
-	mustNoErr(t, app.Get("/protected", func(c *zinc.Context) error {
+	app.Get("/protected", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -184,9 +184,9 @@ func TestRequestLoggerSkipper(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErr(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -237,9 +237,9 @@ func TestRequestLoggerAliases(t *testing.T) {
 		},
 	}))
 
-	mustNoErr(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -263,9 +263,9 @@ func TestRequestLoggerLogValuesErrorIsReturned(t *testing.T) {
 			return wantErr
 		},
 	}))
-	mustNoErr(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return nil
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -291,9 +291,9 @@ func TestRequestLoggerUsesBeforeNextFunc(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErr(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -322,10 +322,10 @@ func TestRequestLoggerRequestIDFallsBackToResponseHeader(t *testing.T) {
 			return nil
 		},
 	}))
-	mustNoErr(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		c.SetHeader(zinc.HeaderXRequestID, "resp-123")
 		return c.NoContent()
-	}))
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

@@ -14,7 +14,7 @@ func TestRequestIDGeneratesAndPublishesID(t *testing.T) {
 	app.Use(RequestIDWithConfig(RequestIDConfig{
 		Generator: StaticRequestID("req-generated"),
 	}))
-	mustNoErrRequestID(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		state := MustRequestIDCurrent(c)
 		if state.ID != "req-generated" {
 			t.Fatalf("state id=%q", state.ID)
@@ -26,7 +26,7 @@ func TestRequestIDGeneratesAndPublishesID(t *testing.T) {
 			t.Fatalf("context request id=%q", c.RequestID())
 		}
 		return c.String(RequestIDValue(c))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -48,13 +48,13 @@ func TestRequestIDPreservesIncomingID(t *testing.T) {
 	app.Use(RequestIDWithConfig(RequestIDConfig{
 		Generator: StaticRequestID("unused"),
 	}))
-	mustNoErrRequestID(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		state := MustRequestIDCurrent(c)
 		if state.Generated {
 			t.Fatal("state should not mark incoming id as generated")
 		}
 		return c.String(state.ID)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderXRequestID, "req-incoming")
@@ -77,9 +77,9 @@ func TestRequestIDGeneratorError(t *testing.T) {
 			return "", generatorErr
 		},
 	}))
-	mustNoErrRequestID(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -96,12 +96,12 @@ func TestRequestIDSkipper(t *testing.T) {
 		Skipper:   func(*zinc.Context) bool { return true },
 		Generator: StaticRequestID("req-generated"),
 	}))
-	mustNoErrRequestID(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		if _, ok := RequestIDCurrent(c); ok {
 			t.Fatal("request id state should not be set")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()

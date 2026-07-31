@@ -30,13 +30,13 @@ func (rendererStub) Render(w io.Writer, name string, data any, c *Context) error
 func TestResponseHelpers(t *testing.T) {
 	t.Run("headers cookies and content helpers", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/headers", func(c *Context) error {
+		app.Get("/headers", func(c *Context) error {
 			c.SetHeader("X-One", "1").AppendHeader("X-Many", "a", "b").Type("json").Location("/next").Vary("Origin", "Accept")
 			c.SetSameSite(http.SameSiteLaxMode)
 			c.SetCookie(&http.Cookie{Name: "session", Value: "abc", Path: "/"})
 			c.ClearCookie("stale")
 			return c.String("ok")
-		}))
+		})
 		resp := performRequest(t, app, http.MethodGet, "/headers", nil, nil)
 		if resp.Header().Get("X-One") != "1" || resp.Header().Get(HeaderLocation) != "/next" {
 			t.Fatal("header helpers failed")
@@ -61,19 +61,19 @@ func TestResponseHelpers(t *testing.T) {
 
 	t.Run("data encoders and streams", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/data", func(c *Context) error { return c.Data("application/custom", []byte("data")) }))
-		mustDo(t, app.Get("/blob", func(c *Context) error { return c.Blob(http.StatusCreated, "application/custom", []byte("blob")) }))
-		mustDo(t, app.Get("/json-blob", func(c *Context) error { return c.JSONBlob(http.StatusAccepted, []byte(`{"ok":true}`)) }))
-		mustDo(t, app.Get("/xml-blob", func(c *Context) error { return c.XMLBlob(http.StatusAccepted, []byte(`<ok>true</ok>`)) }))
-		mustDo(t, app.Get("/html-blob", func(c *Context) error { return c.HTMLBlob(http.StatusAccepted, []byte(`<p>ok</p>`)) }))
-		mustDo(t, app.Get("/json", func(c *Context) error { return c.JSONPretty(Map{"ok": true}, "  ") }))
-		mustDo(t, app.Get("/xml", func(c *Context) error { return c.XML(xmlPayload{Value: "x"}) }))
-		mustDo(t, app.Get("/yaml", func(c *Context) error { return c.YAML(Map{"ok": true}) }))
-		mustDo(t, app.Get("/toml", func(c *Context) error { return c.TOML(Map{"ok": true}) }))
-		mustDo(t, app.Get("/html", func(c *Context) error { return c.HTML("<p>x</p>") }))
-		mustDo(t, app.Get("/stream", func(c *Context) error { return c.Stream("text/plain", strings.NewReader("stream")) }))
-		mustDo(t, app.Get("/send-nil", func(c *Context) error { return c.Send(nil) }))
-		mustDo(t, app.Get("/send-bytes", func(c *Context) error { return c.Send([]byte("bytes")) }))
+		app.Get("/data", func(c *Context) error { return c.Data("application/custom", []byte("data")) })
+		app.Get("/blob", func(c *Context) error { return c.Blob(http.StatusCreated, "application/custom", []byte("blob")) })
+		app.Get("/json-blob", func(c *Context) error { return c.JSONBlob(http.StatusAccepted, []byte(`{"ok":true}`)) })
+		app.Get("/xml-blob", func(c *Context) error { return c.XMLBlob(http.StatusAccepted, []byte(`<ok>true</ok>`)) })
+		app.Get("/html-blob", func(c *Context) error { return c.HTMLBlob(http.StatusAccepted, []byte(`<p>ok</p>`)) })
+		app.Get("/json", func(c *Context) error { return c.JSONPretty(Map{"ok": true}, "  ") })
+		app.Get("/xml", func(c *Context) error { return c.XML(xmlPayload{Value: "x"}) })
+		app.Get("/yaml", func(c *Context) error { return c.YAML(Map{"ok": true}) })
+		app.Get("/toml", func(c *Context) error { return c.TOML(Map{"ok": true}) })
+		app.Get("/html", func(c *Context) error { return c.HTML("<p>x</p>") })
+		app.Get("/stream", func(c *Context) error { return c.Stream("text/plain", strings.NewReader("stream")) })
+		app.Get("/send-nil", func(c *Context) error { return c.Send(nil) })
+		app.Get("/send-bytes", func(c *Context) error { return c.Send([]byte("bytes")) })
 
 		cases := map[string]string{
 			"/data":       "data",
@@ -114,7 +114,7 @@ func TestResponseHelpers(t *testing.T) {
 
 	t.Run("sse", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/events", func(c *Context) error {
+		app.Get("/events", func(c *Context) error {
 			c.Status(http.StatusCreated)
 			if err := c.SSE(SSEvent{
 				Event: "message",
@@ -125,7 +125,7 @@ func TestResponseHelpers(t *testing.T) {
 				return err
 			}
 			return c.SSE(SSEvent{Data: "line 1\nline 2"})
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/events", nil, nil)
 		if resp.Code != http.StatusCreated {
@@ -142,12 +142,12 @@ func TestResponseHelpers(t *testing.T) {
 
 	t.Run("content negotiation", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/negotiate", func(c *Context) error {
+		app.Get("/negotiate", func(c *Context) error {
 			return c.Negotiate(http.StatusAccepted, map[string]any{
 				"application/json": Map{"ok": true},
 				"text/plain":       "plain",
 			})
-		}))
+		})
 
 		jsonResp := performRequest(t, app, http.MethodGet, "/negotiate", nil, map[string]string{
 			HeaderAccept: "text/plain;q=0.1, application/json;q=0.9",
@@ -181,13 +181,13 @@ func TestResponseHelpers(t *testing.T) {
 
 	t.Run("no content redirect render and repeated write", func(t *testing.T) {
 		app := NewWithConfig(Config{Renderer: rendererStub{}})
-		mustDo(t, app.Get("/nocontent", func(c *Context) error { return c.NoContent() }))
-		mustDo(t, app.Get("/redirect", func(c *Context) error { return c.Redirect(http.StatusMovedPermanently, "/to") }))
-		mustDo(t, app.Get("/render", func(c *Context) error { return c.Render("home", nil) }))
-		mustDo(t, app.Get("/double", func(c *Context) error {
+		app.Get("/nocontent", func(c *Context) error { return c.NoContent() })
+		app.Get("/redirect", func(c *Context) error { return c.Redirect(http.StatusMovedPermanently, "/to") })
+		app.Get("/render", func(c *Context) error { return c.Render("home", nil) })
+		app.Get("/double", func(c *Context) error {
 			mustDo(t, c.String("once"))
 			return c.String("twice")
-		}))
+		})
 
 		noContent := performRequest(t, app, http.MethodGet, "/nocontent", nil, nil)
 		if noContent.Code != http.StatusNoContent || noContent.Body.Len() != 0 {
@@ -210,8 +210,8 @@ func TestResponseHelpers(t *testing.T) {
 	t.Run("file helpers", func(t *testing.T) {
 		filesystem := fstest.MapFS{"hello.txt": &fstest.MapFile{Data: []byte("world")}}
 		app := New()
-		mustDo(t, app.Get("/filefs", func(c *Context) error { return c.FileFS("hello.txt", filesystem) }))
-		mustDo(t, app.Get("/attach", func(c *Context) error { return c.Attachment("testdata.txt", "download.txt") }))
+		app.Get("/filefs", func(c *Context) error { return c.FileFS("hello.txt", filesystem) })
+		app.Get("/attach", func(c *Context) error { return c.Attachment("testdata.txt", "download.txt") })
 
 		fileResp := performRequest(t, app, http.MethodGet, "/filefs", nil, nil)
 		if fileResp.Body.String() != "world" {
@@ -221,12 +221,12 @@ func TestResponseHelpers(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "testdata.txt")
 		mustDo(t, os.WriteFile(path, []byte("attachment"), 0o644))
-		mustDo(t, app.Get("/file", func(c *Context) error { return c.File(path) }))
-		mustDo(t, app.Get("/download", func(c *Context) error { return c.Download(path) }))
-		mustDo(t, app.Get("/download-named", func(c *Context) error { return c.Download(path, "custom-name.txt") }))
-		mustDo(t, app.Get("/inline", func(c *Context) error { return c.Inline(path, "inline-name.txt") }))
+		app.Get("/file", func(c *Context) error { return c.File(path) })
+		app.Get("/download", func(c *Context) error { return c.Download(path) })
+		app.Get("/download-named", func(c *Context) error { return c.Download(path, "custom-name.txt") })
+		app.Get("/inline", func(c *Context) error { return c.Inline(path, "inline-name.txt") })
 		attachApp := New()
-		mustDo(t, attachApp.Get("/attach", func(c *Context) error { return c.Attachment(path, "download.txt") }))
+		attachApp.Get("/attach", func(c *Context) error { return c.Attachment(path, "download.txt") })
 
 		file := performRequest(t, app, http.MethodGet, "/file", nil, nil)
 		if file.Body.String() != "attachment" {
@@ -252,7 +252,7 @@ func TestResponseHelpers(t *testing.T) {
 
 	t.Run("head semantics", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/head", func(c *Context) error { return c.JSON(Map{"ok": true}) }))
+		app.Get("/head", func(c *Context) error { return c.JSON(Map{"ok": true}) })
 		resp := performRequest(t, app, http.MethodHead, "/head", nil, nil)
 		if resp.Body.Len() != 0 {
 			t.Fatalf("head body=%q", resp.Body.String())

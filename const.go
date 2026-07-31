@@ -1,7 +1,7 @@
 package zinc
 
 const (
-	ParamIdentifier    = ':'
-	WildcardIdentifier = '*'
+	paramIdentifier    = ':'
+	wildcardIdentifier = '*'
 	DefaultListenAddr  = ":8080"
 )

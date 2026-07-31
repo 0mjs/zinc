@@ -43,12 +43,12 @@ func runServeHTTPParallelBenchmarksWithProof(
 
 func buildZincParallelParamHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/hello/:name", func(c *Context) error {
+	app.Get("/hello/{name}", func(c *Context) error {
 		if c.Param("name") == "" {
 			return c.Status(http.StatusInternalServerError).String("BAD")
 		}
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -97,12 +97,12 @@ func buildZincParallelMiddlewareHandler() http.Handler {
 		zincMiddleware("mw4"),
 		zincMiddleware("mw5"),
 	)
-	mustNoErr(app.Get("/middleware", func(c *Context) error {
+	app.Get("/middleware", func(c *Context) error {
 		if !zincMiddlewareSatisfied(c) {
 			return c.Status(http.StatusInternalServerError).String("BAD")
 		}
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -170,7 +170,7 @@ func buildZincParallelAPIHappyPathHandler() http.Handler {
 		zincMiddleware("mw4"),
 		zincMiddleware("mw5"),
 	)
-	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Get("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkAPIBindInput
 		if err := c.Bind().All(&input); err != nil {
 			return c.Status(http.StatusBadRequest).String("BAD")
@@ -179,7 +179,7 @@ func buildZincParallelAPIHappyPathHandler() http.Handler {
 			return c.Status(http.StatusInternalServerError).String("BAD")
 		}
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 

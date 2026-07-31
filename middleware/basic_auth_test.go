@@ -15,7 +15,7 @@ func TestBasicAuthStaticSuccess(t *testing.T) {
 	app.Use(BasicAuthWithConfig(BasicAuthConfig{
 		Validator: BasicAuthStatic("joe", "secret"),
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		identity := MustBasicAuthCurrent(c)
 		if identity.Username != "joe" {
 			t.Fatalf("username=%q", identity.Username)
@@ -27,7 +27,7 @@ func TestBasicAuthStaticSuccess(t *testing.T) {
 			t.Fatalf("must username=%q", got)
 		}
 		return c.String(identity.Username)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.SetBasicAuth("joe", "secret")
@@ -49,9 +49,9 @@ func TestBasicAuthMissingCredentials(t *testing.T) {
 		Validator: BasicAuthStatic("joe", "secret"),
 		Realm:     "admin",
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	rec := httptest.NewRecorder()
@@ -74,9 +74,9 @@ func TestBasicAuthMultipleAuthorizationHeaders(t *testing.T) {
 	app.Use(BasicAuthWithConfig(BasicAuthConfig{
 		Validator: BasicAuthStatic("joe", "secret"),
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String(MustBasicAuthUsername(c))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Add(zinc.HeaderAuthorization, "Bearer abc")
@@ -102,13 +102,13 @@ func TestBasicAuthFromFirst(t *testing.T) {
 		),
 		Validator: BasicAuthStatic("ann", "s3cret"),
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		identity := MustBasicAuthCurrent(c)
 		if identity.Source != BasicAuthSourceHeader {
 			t.Fatalf("source=%q", identity.Source)
 		}
 		return c.String(identity.Username)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Set("X-Admin-Auth", "Basic "+base64.StdEncoding.EncodeToString([]byte("ann:s3cret")))
@@ -129,9 +129,9 @@ func TestBasicAuthMalformedHeader(t *testing.T) {
 	app.Use(BasicAuthWithConfig(BasicAuthConfig{
 		Validator: BasicAuthStatic("joe", "secret"),
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.Header.Set(zinc.HeaderAuthorization, "Basic !!!")
@@ -156,10 +156,10 @@ func TestBasicAuthSuccessHandler(t *testing.T) {
 			return c.Next()
 		},
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		value, _ := c.Get("authed")
 		return c.String(value.(string))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.SetBasicAuth("joe", "secret")
@@ -186,9 +186,9 @@ func TestBasicAuthCustomErrorHandler(t *testing.T) {
 			return zinc.NewError(http.StatusTeapot).WithMessage("brew")
 		},
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.SetBasicAuth("joe", "wrong")
@@ -211,9 +211,9 @@ func TestBasicAuthValidatorErrorPassThrough(t *testing.T) {
 			return false, errors.New("lookup failed")
 		},
 	}))
-	mustNoErrBasicAuth(t, app.Get("/private", func(c *zinc.Context) error {
+	app.Get("/private", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/private", nil)
 	req.SetBasicAuth("joe", "secret")
@@ -238,12 +238,12 @@ func TestBasicAuthSkipper(t *testing.T) {
 			BasicAuthPair{Username: "ann", Password: "s3cret"},
 		),
 	}))
-	mustNoErrBasicAuth(t, app.Get("/public", func(c *zinc.Context) error {
+	app.Get("/public", func(c *zinc.Context) error {
 		if _, ok := BasicAuthCurrent(c); ok {
 			t.Fatal("identity should not be present")
 		}
 		return c.String("public")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/public", nil)
 	rec := httptest.NewRecorder()

@@ -28,9 +28,9 @@ func TestCasbinAuthAllowsRequest(t *testing.T) {
 	app.Use(CasbinAuth(enforcer, func(*zinc.Context) any {
 		return "alice"
 	}))
-	mustNoErrIntegrations(t, app.Get("/docs", func(c *zinc.Context) error {
+	app.Get("/docs", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
 	rec := httptest.NewRecorder()
@@ -49,9 +49,9 @@ func TestCasbinAuthRejectsRequest(t *testing.T) {
 	app.Use(CasbinAuth(&casbinStub{allow: false}, func(*zinc.Context) any {
 		return "alice"
 	}))
-	mustNoErrIntegrations(t, app.Get("/docs", func(c *zinc.Context) error {
+	app.Get("/docs", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
 	rec := httptest.NewRecorder()
@@ -78,10 +78,10 @@ func TestPrometheusRecordsRequestsAndServesMetrics(t *testing.T) {
 
 	app := zinc.New()
 	app.Use(PrometheusWithConfig(PrometheusConfig{Metrics: metrics, Now: now}))
-	mustNoErrIntegrations(t, app.Get("/users/:id", func(c *zinc.Context) error {
+	app.Get("/users/{id}", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
-	mustNoErrIntegrations(t, app.Get("/metrics", PrometheusHandler(metrics)))
+	})
+	app.Get("/metrics", PrometheusHandler(metrics))
 
 	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
 	rec := httptest.NewRecorder()
@@ -92,7 +92,7 @@ func TestPrometheusRecordsRequestsAndServesMetrics(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `zinc_http_requests_total{method="GET",route="/users/:id",status="200"} 1`) {
+	if !strings.Contains(body, `zinc_http_requests_total{method="GET",route="/users/{id}",status="200"} 1`) {
 		t.Fatalf("metrics body=%s", body)
 	}
 }
@@ -129,9 +129,9 @@ func TestStaticServesFilesAndFallsThrough(t *testing.T) {
 		Prefix:         "/assets",
 		NextOnNotFound: true,
 	}))
-	mustNoErrIntegrations(t, app.Get("/assets/missing.txt", func(c *zinc.Context) error {
+	app.Get("/assets/missing.txt", func(c *zinc.Context) error {
 		return c.String("fallback")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/assets/hello.txt", nil)
 	rec := httptest.NewRecorder()
@@ -156,7 +156,7 @@ func TestStaticServesFilesAndFallsThrough(t *testing.T) {
 func TestSessionPersistsSignedCookie(t *testing.T) {
 	app := zinc.New()
 	app.Use(SessionCookie("sid", "secret"))
-	mustNoErrIntegrations(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		session := MustSession(c)
 		visits := session.Get("visits")
 		if visits == "" {
@@ -166,7 +166,7 @@ func TestSessionPersistsSignedCookie(t *testing.T) {
 		}
 		session.Set("visits", visits)
 		return c.String(visits)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -193,9 +193,9 @@ func TestSessionPersistsSignedCookie(t *testing.T) {
 func TestSessionRejectsInvalidCookie(t *testing.T) {
 	app := zinc.New()
 	app.Use(SessionCookie("sid", "secret"))
-	mustNoErrIntegrations(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "sid", Value: "bad"})
@@ -214,13 +214,13 @@ func TestJaegerPropagatesUberTraceID(t *testing.T) {
 		observed = span
 		return nil
 	}))
-	mustNoErrIntegrations(t, app.Get("/trace", func(c *zinc.Context) error {
+	app.Get("/trace", func(c *zinc.Context) error {
 		span, ok := JaegerCurrent(c)
 		if !ok {
 			t.Fatal("missing jaeger span")
 		}
 		return c.String(span.TraceID)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/trace", nil)
 	req.Header.Set(HeaderUberTraceID, "abc123:def456:0:1")

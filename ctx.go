@@ -78,56 +78,6 @@ func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 	return c
 }
 
-func (c *Context) Copy() *Context {
-	if c == nil {
-		return nil
-	}
-
-	clone := &Context{
-		writer:       c.writer,
-		request:      cloneRequest(c.request, c.body),
-		written:      c.written,
-		index:        c.index,
-		status:       c.status,
-		app:          c.app,
-		lastErr:      c.lastErr,
-		bodyRead:     c.bodyRead,
-		bodyErr:      c.bodyErr,
-		sameSite:     c.sameSite,
-		paramPath:    c.paramPath,
-		paramCount:   c.paramCount,
-		paramRanges:  c.paramRanges,
-		matchRanges:  c.matchRanges,
-		paramRoute:   c.paramRoute,
-		routeIndex:   -1,
-		routeIndexed: false,
-	}
-	clone.PathParams = clone.inlineParams[:inlineParamSlotCount]
-	clone.ensurePathParamCapacity(c.paramCount)
-	copy(clone.PathParams[:c.paramCount], c.PathParams[:c.paramCount])
-	if len(c.queryParams) > 0 {
-		clone.queryParams = cloneValues(c.queryParams)
-	}
-	if len(c.body) > 0 {
-		clone.body = append([]byte(nil), c.body...)
-	}
-	if len(c.handlers) > 0 {
-		clone.handlers = append([]HandlerFunc(nil), c.handlers...)
-	}
-	if len(c.store) > 0 {
-		clone.store = make(map[any]any, len(c.store))
-		for key, value := range c.store {
-			clone.store[key] = value
-		}
-	}
-	if c.routeIndexed && c.app != nil && c.app.router != nil {
-		clone.routeInfo = c.app.router.routeMetaAt(uint32(c.routeIndex))
-	} else {
-		clone.routeInfo = c.routeInfo
-	}
-	return clone
-}
-
 func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	// release clears request-owned references before pooling. Keep reset focused
 	// on state that handlers mutate without release-time retention concerns.
@@ -949,6 +899,22 @@ func (c *Context) applyRouteParams(path string, route *radixRoute, values paramR
 	c.paramCount = count
 }
 
+// populateRequestPathValues crosses from Zinc's parameter representation into
+// net/http's. Keep it at the native-handler boundary so Zinc handlers pay only
+// for Context.Param, while wrapped handlers receive the standard contract.
+func (c *Context) populateRequestPathValues() {
+	if c == nil || c.request == nil {
+		return
+	}
+	for i := 0; i < c.paramCount; i++ {
+		name := c.PathParams[i].key
+		if name == "" {
+			continue
+		}
+		c.request.SetPathValue(name, c.pathParamValueAt(i))
+	}
+}
+
 func (c *Context) truncateParams(count int) {
 	if count < 0 {
 		count = 0
@@ -1049,29 +1015,6 @@ func cloneURL(u *url.URL) *url.URL {
 	}
 	clone := *u
 	return &clone
-}
-
-func cloneRequest(r *http.Request, body []byte) *http.Request {
-	if r == nil {
-		return nil
-	}
-	clone := r.Clone(r.Context())
-	if body != nil {
-		clone.Body = io.NopCloser(bytes.NewReader(body))
-		clone.ContentLength = int64(len(body))
-	}
-	return clone
-}
-
-func cloneValues(values url.Values) url.Values {
-	if len(values) == 0 {
-		return nil
-	}
-	clone := make(url.Values, len(values))
-	for key, list := range values {
-		clone[key] = append([]string(nil), list...)
-	}
-	return clone
 }
 
 func cloneRequestURI(u *url.URL) string {

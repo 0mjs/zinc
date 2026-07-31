@@ -407,9 +407,9 @@ func fillBenchmarkAPIQuery(input *benchmarkAPIBindInput, req *http.Request) {
 
 func buildZincHelloHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/", func(c *Context) error {
+	app.Get("/", func(c *Context) error {
 		return c.String(benchmarkHelloResponse)
-	}))
+	})
 	return app
 }
 
@@ -439,9 +439,9 @@ func buildGinHelloHandler() http.Handler {
 
 func buildZincStaticHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/hello", func(c *Context) error {
+	app.Get("/hello", func(c *Context) error {
 		return c.String(benchmarkHelloResponse)
-	}))
+	})
 	return app
 }
 
@@ -473,9 +473,9 @@ func buildZincStaticColdHandler() http.Handler {
 	app := New()
 	for i := 0; i < staticColdRouteCount; i++ {
 		path := staticColdPath(i)
-		mustNoErr(app.Get(path, func(c *Context) error {
+		app.Get(path, func(c *Context) error {
 			return c.String(benchmarkOKResponse)
-		}))
+		})
 	}
 	return app
 }
@@ -515,9 +515,44 @@ func buildGinStaticColdHandler() http.Handler {
 
 func buildZincParamHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/hello/:name", func(c *Context) error {
+	app.Get("/hello/{name}", func(c *Context) error {
 		benchmarkSinkString = c.Param("name")
 		return c.String(benchmarkHelloResponse)
+	})
+	return app
+}
+
+func buildZincHandleHTTPHandler() http.Handler {
+	app := New()
+	app.HandleHTTP("GET /native/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		benchmarkSinkString = r.PathValue("id")
+		_, _ = io.WriteString(w, benchmarkOKResponse)
+	}))
+	return app
+}
+
+func buildZincWrappedHTTPHandler() http.Handler {
+	app := New()
+	app.Get("/native/{id}", Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		benchmarkSinkString = r.PathValue("id")
+		_, _ = io.WriteString(w, benchmarkOKResponse)
+	})))
+	return app
+}
+
+func zincHTTPMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		benchmarkSinkBool = r.Method == http.MethodGet
+		next.ServeHTTP(w, r)
+	})
+}
+
+func buildZincHandleHTTPWithMiddlewareHandler() http.Handler {
+	app := New()
+	app.UseHTTP(zincHTTPMiddleware)
+	app.HandleHTTP("GET /native/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		benchmarkSinkString = r.PathValue("id")
+		_, _ = io.WriteString(w, benchmarkOKResponse)
 	}))
 	return app
 }
@@ -551,9 +586,9 @@ func buildGinParamHandler() http.Handler {
 
 func buildZincJSONHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/json", func(c *Context) error {
+	app.Get("/json", func(c *Context) error {
 		return c.JSON(benchmarkJSONData)
-	}))
+	})
 	return app
 }
 
@@ -584,10 +619,10 @@ func buildGinJSONHandler() http.Handler {
 
 func buildZincQueryHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/query", func(c *Context) error {
+	app.Get("/query", func(c *Context) error {
 		benchmarkSinkBool = c.Query("name") != "" && c.Query("age") != "" && c.Query("city") != ""
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -628,7 +663,7 @@ func buildZincMiddlewareHandler() http.Handler {
 		zincMiddleware("mw4"),
 		zincMiddleware("mw5"),
 	)
-	mustNoErr(app.Get("/middleware", func(c *Context) error {
+	app.Get("/middleware", func(c *Context) error {
 		_, ok1 := c.Get("mw1")
 		_, ok2 := c.Get("mw2")
 		_, ok3 := c.Get("mw3")
@@ -636,7 +671,7 @@ func buildZincMiddlewareHandler() http.Handler {
 		_, ok5 := c.Get("mw5")
 		benchmarkSinkBool = ok1 && ok2 && ok3 && ok4 && ok5
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -702,9 +737,9 @@ func buildGinMiddlewareHandler() http.Handler {
 
 func buildZincNotFoundHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/found", func(c *Context) error {
+	app.Get("/found", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -736,9 +771,9 @@ func buildZincLargeStaticHandler() http.Handler {
 	app := New()
 	for i := 0; i < largeStaticRouteCount; i++ {
 		path := largeStaticPath(i)
-		mustNoErr(app.Get(path, func(c *Context) error {
+		app.Get(path, func(c *Context) error {
 			return c.String(benchmarkOKResponse)
-		}))
+		})
 	}
 	return app
 }
@@ -779,11 +814,11 @@ func buildGinLargeStaticHandler() http.Handler {
 func buildZincLargeParamHandler() http.Handler {
 	app := New()
 	for i := 0; i < largeParamRouteCount; i++ {
-		path := largeParamPatternColon(i)
-		mustNoErr(app.Get(path, func(c *Context) error {
+		path := largeParamPatternBrace(i)
+		app.Get(path, func(c *Context) error {
 			benchmarkSinkString = c.Param("id")
 			return c.String(benchmarkOKResponse)
-		}))
+		})
 	}
 	return app
 }
@@ -861,14 +896,14 @@ func ginMiddlewareSatisfied(c *gin.Context) bool {
 
 func buildZincAPIParamQueryJSONHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Get("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkAPIBindInput
 		if err := c.Bind().All(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkAPIInput(input)
 		return c.JSON(benchmarkAPIResponseFrom(input))
-	}))
+	})
 	return app
 }
 
@@ -927,7 +962,7 @@ func buildZincAPIHappyPathHandler() http.Handler {
 		zincMiddleware("mw4"),
 		zincMiddleware("mw5"),
 	)
-	mustNoErr(app.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Get("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkAPIBindInput
 		if err := c.Bind().All(&input); err != nil {
 			return err
@@ -935,7 +970,7 @@ func buildZincAPIHappyPathHandler() http.Handler {
 		consumeBenchmarkAPIInput(input)
 		benchmarkSinkBool = benchmarkSinkBool && zincMiddlewareSatisfied(c)
 		return c.JSON(benchmarkAPIResponseFrom(input))
-	}))
+	})
 	return app
 }
 
@@ -1016,7 +1051,7 @@ func buildZincAPIBindJSONHappyPathHandler() http.Handler {
 		zincMiddleware("mw4"),
 		zincMiddleware("mw5"),
 	)
-	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Post("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkAPIBindInput
 		if err := c.Bind().All(&input); err != nil {
 			return err
@@ -1024,7 +1059,7 @@ func buildZincAPIBindJSONHappyPathHandler() http.Handler {
 		consumeBenchmarkAPIInput(input)
 		benchmarkSinkBool = benchmarkSinkBool && zincMiddlewareSatisfied(c)
 		return c.JSON(benchmarkAPIResponseFrom(input))
-	}))
+	})
 	return app
 }
 
@@ -1239,6 +1274,20 @@ func BenchmarkRouterParam(b *testing.B) {
 
 func BenchmarkRouterParamCold(b *testing.B) {
 	runServeHTTPRequestSetBenchmarks(b, paramCases(), buildRequests(http.MethodGet, coldParamTargets(coldPathRequestCount)))
+}
+
+func BenchmarkHTTPHandlerRoute(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodGet, "/native/42", []benchmarkCase{
+		{name: "HandleHTTP", build: buildZincHandleHTTPHandler},
+		{name: "GetWrap", build: buildZincWrappedHTTPHandler},
+	})
+}
+
+func BenchmarkHTTPMiddleware(b *testing.B) {
+	runServeHTTPBenchmarks(b, http.MethodGet, "/native/42", []benchmarkCase{
+		{name: "None", build: buildZincHandleHTTPHandler},
+		{name: "UseHTTP", build: buildZincHandleHTTPWithMiddlewareHandler},
+	})
 }
 
 func BenchmarkJSONResponse(b *testing.B) {

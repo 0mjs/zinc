@@ -16,7 +16,7 @@ import (
 func TestDecompressGzipRequestBody(t *testing.T) {
 	app := zinc.New()
 	app.Use(Decompress())
-	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		if got := c.GetHeader(zinc.HeaderContentEncoding); got != "" {
 			t.Fatalf("content-encoding=%q", got)
 		}
@@ -28,7 +28,7 @@ func TestDecompressGzipRequestBody(t *testing.T) {
 			return err
 		}
 		return c.String(string(body))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", gzipBody(t, "compressed"))
 	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
@@ -46,9 +46,9 @@ func TestDecompressGzipRequestBody(t *testing.T) {
 func TestDecompressRejectsUnsupportedEncoding(t *testing.T) {
 	app := zinc.New()
 	app.Use(Decompress())
-	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("body"))
 	req.Header.Set(zinc.HeaderContentEncoding, "br")
@@ -63,9 +63,9 @@ func TestDecompressRejectsUnsupportedEncoding(t *testing.T) {
 func TestDecompressRejectsInvalidGzipBody(t *testing.T) {
 	app := zinc.New()
 	app.Use(Decompress())
-	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader("not gzip"))
 	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
@@ -80,10 +80,10 @@ func TestDecompressRejectsInvalidGzipBody(t *testing.T) {
 func TestDecompressRejectsOversizedDecompressedBody(t *testing.T) {
 	app := zinc.New()
 	app.Use(DecompressWithConfig(DecompressConfig{MaxDecompressedSize: 4}))
-	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		_, err := io.ReadAll(c.Request().Body)
 		return err
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", gzipBody(t, "compressed"))
 	req.Header.Set(zinc.HeaderContentEncoding, "gzip")
@@ -100,12 +100,12 @@ func TestDecompressSkipper(t *testing.T) {
 	app.Use(DecompressWithConfig(DecompressConfig{
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrDecompress(t, app.Post("/echo", func(c *zinc.Context) error {
+	app.Post("/echo", func(c *zinc.Context) error {
 		if got := c.GetHeader(zinc.HeaderContentEncoding); got != "gzip" {
 			t.Fatalf("content-encoding=%q", got)
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/echo", gzipBody(t, "compressed"))
 	req.Header.Set(zinc.HeaderContentEncoding, "gzip")

@@ -10,7 +10,7 @@ Zinc uses normal Go error returns for handler failure flow.
 ## At a glance
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	user, err := findUser(c.Param("id"))
 	if err != nil {
 		return zinc.ErrNotFound.WithMessage("user not found")
@@ -24,7 +24,7 @@ Return errors from handlers and middleware. Let one app-level error handler deci
 ## Returning errors
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	return zinc.ErrNotFound
 })
 ```

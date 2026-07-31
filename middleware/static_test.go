@@ -47,9 +47,9 @@ func TestStaticMiddlewareConfigBranches(t *testing.T) {
 		Prefix:         "/assets/",
 		NextOnNotFound: true,
 	}))
-	mustNoErrStatic(t, app.Get("/assets/missing.txt", func(c *zinc.Context) error {
+	app.Get("/assets/missing.txt", func(c *zinc.Context) error {
 		return c.String("next")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/assets/public.txt", nil)
 	rec := httptest.NewRecorder()

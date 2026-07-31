@@ -39,21 +39,21 @@ func runZincServeHTTPRequestSetBenchmark(b *testing.B, handler http.Handler, req
 
 func buildZincDiagnosticRouterApp(cfg Config) *App {
 	app := NewWithConfig(cfg)
-	mustNoErr(app.Get("/hello", func(c *Context) error {
+	app.Get("/hello", func(c *Context) error {
 		benchmarkSinkString = c.FullPath()
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(app.Get("/teams/:teamId/users/:userId", func(c *Context) error {
+	})
+	app.Get("/teams/{teamId}/users/{userId}", func(c *Context) error {
 		benchmarkSinkString = c.Param("teamId") + "|" + c.Param("userId")
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(app.Get("/teams/:teamId/users/:userId/preferences", func(c *Context) error {
+	})
+	app.Get("/teams/{teamId}/users/{userId}/preferences", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
-	mustNoErr(app.Get("/items/:id", func(c *Context) error {
+	})
+	app.Get("/items/{id}", func(c *Context) error {
 		benchmarkSinkString = c.Param("id")
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -62,11 +62,11 @@ func buildZincRouteCacheBenchmarkApp() *App {
 	cfg.RouteCacheSize = 64
 	app := NewWithConfig(cfg)
 	for i := 0; i < 64; i++ {
-		path := "/cache/" + strconv.Itoa(i) + "/items/:id"
-		mustNoErr(app.Get(path, func(c *Context) error {
+		path := "/cache/" + strconv.Itoa(i) + "/items/{id}"
+		app.Get(path, func(c *Context) error {
 			benchmarkSinkString = c.Param("id")
 			return c.String(benchmarkOKResponse)
-		}))
+		})
 	}
 	return app
 }
@@ -75,10 +75,10 @@ func buildZincCaseInsensitiveBenchmarkApp() *App {
 	cfg := DefaultConfig
 	cfg.CaseSensitive = false
 	app := NewWithConfig(cfg)
-	mustNoErr(app.Get("/Reports/Daily", func(c *Context) error {
+	app.Get("/Reports/Daily", func(c *Context) error {
 		benchmarkSinkString = c.FullPath()
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 
@@ -87,9 +87,9 @@ func buildZincStrictRoutingBenchmarkApp() *App {
 	cfg.StrictRouting = true
 	cfg.RouteCacheSize = 0
 	app := NewWithConfig(cfg)
-	mustNoErr(app.Get("/teams/:teamId", func(c *Context) error {
+	app.Get("/teams/{teamId}", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 

@@ -15,9 +15,9 @@ import (
 func TestGzipCompressesAcceptedResponse(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrGzip(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("hello zinc")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "br, gzip")
@@ -41,9 +41,9 @@ func TestGzipCompressesAcceptedResponse(t *testing.T) {
 func TestGzipSkipsWhenNotAccepted(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrGzip(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("plain")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -60,9 +60,9 @@ func TestGzipSkipsWhenNotAccepted(t *testing.T) {
 func TestGzipSkipsNoBodyResponses(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrGzip(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.Status(http.StatusNoContent).NoContent()
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
@@ -83,10 +83,10 @@ func TestGzipSkipsNoBodyResponses(t *testing.T) {
 func TestGzipSkipsExistingContentEncoding(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrGzip(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		c.SetHeader(zinc.HeaderContentEncoding, "br")
 		return c.String("encoded elsewhere")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
@@ -104,16 +104,16 @@ func TestGzipSkipsExistingContentEncoding(t *testing.T) {
 func TestGzipMinLength(t *testing.T) {
 	app := zinc.New()
 	app.Use(GzipWithConfig(GzipConfig{MinLength: 8}))
-	mustNoErrGzip(t, app.Get("/small", func(c *zinc.Context) error {
+	app.Get("/small", func(c *zinc.Context) error {
 		return c.String("small")
-	}))
-	mustNoErrGzip(t, app.Get("/large", func(c *zinc.Context) error {
+	})
+	app.Get("/large", func(c *zinc.Context) error {
 		if _, err := c.Writer().Write([]byte("hello")); err != nil {
 			return err
 		}
 		_, err := c.Writer().Write([]byte(" zinc"))
 		return err
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/small", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
@@ -141,9 +141,9 @@ func TestGzipMinLength(t *testing.T) {
 func TestGzipHandlesErrorResponse(t *testing.T) {
 	app := zinc.New()
 	app.Use(Gzip())
-	mustNoErrGzip(t, app.Get("/", func(*zinc.Context) error {
+	app.Get("/", func(*zinc.Context) error {
 		return zinc.ErrForbidden
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")
@@ -166,9 +166,9 @@ func TestGzipSkipper(t *testing.T) {
 	app.Use(GzipWithConfig(GzipConfig{
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrGzip(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("plain")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(zinc.HeaderAcceptEncoding, "gzip")

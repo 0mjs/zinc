@@ -11,9 +11,9 @@ import (
 func TestRewriteUpdatesRequestPath(t *testing.T) {
 	app := zinc.New()
 	app.Use(Rewrite("/old", "/new"))
-	mustNoErrRoutingHelpers(t, app.Get("/new", func(c *zinc.Context) error {
+	app.Get("/new", func(c *zinc.Context) error {
 		return c.String(c.Path())
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
 	rec := httptest.NewRecorder()
@@ -30,9 +30,9 @@ func TestRewriteUpdatesRequestPath(t *testing.T) {
 func TestRewriteWildcardRule(t *testing.T) {
 	app := zinc.New()
 	app.Use(Rewrite("/v1/*", "/api/*"))
-	mustNoErrRoutingHelpers(t, app.Get("/api/users", func(c *zinc.Context) error {
+	app.Get("/api/users", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	rec := httptest.NewRecorder()
@@ -46,9 +46,9 @@ func TestRewriteWildcardRule(t *testing.T) {
 func TestRedirectPreservesQuery(t *testing.T) {
 	app := zinc.New()
 	app.Use(Redirect("/old", "/new", http.StatusPermanentRedirect))
-	mustNoErrRoutingHelpers(t, app.Get("/new", func(c *zinc.Context) error {
+	app.Get("/new", func(c *zinc.Context) error {
 		return c.String("new")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/old?x=1", nil)
 	rec := httptest.NewRecorder()
@@ -65,9 +65,9 @@ func TestRedirectPreservesQuery(t *testing.T) {
 func TestTrailingSlashRemovesSlashBeforeRouting(t *testing.T) {
 	app := zinc.New()
 	app.Use(TrailingSlash())
-	mustNoErrRoutingHelpers(t, app.Get("/users", func(c *zinc.Context) error {
+	app.Get("/users", func(c *zinc.Context) error {
 		return c.String(c.Path())
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/users/", nil)
 	rec := httptest.NewRecorder()
@@ -103,9 +103,9 @@ func TestTrailingSlashCanRedirect(t *testing.T) {
 func TestMethodOverrideFromHeader(t *testing.T) {
 	app := zinc.New()
 	app.Use(MethodOverride())
-	mustNoErrRoutingHelpers(t, app.Put("/resource", func(c *zinc.Context) error {
+	app.Put("/resource", func(c *zinc.Context) error {
 		return c.String(c.Method() + ":" + c.GetHeader(HeaderXOriginalMethod))
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/resource", nil)
 	req.Header.Set(HeaderXHTTPMethodOverride, http.MethodPut)
@@ -123,9 +123,9 @@ func TestMethodOverrideFromHeader(t *testing.T) {
 func TestMethodOverrideRejectsUnknownMethod(t *testing.T) {
 	app := zinc.New()
 	app.Use(MethodOverride())
-	mustNoErrRoutingHelpers(t, app.Post("/resource", func(c *zinc.Context) error {
+	app.Post("/resource", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/resource", nil)
 	req.Header.Set(HeaderXHTTPMethodOverride, http.MethodGet)
@@ -143,9 +143,9 @@ func TestSecureSetsDefaultHeaders(t *testing.T) {
 		HSTSMaxAge:            31536000,
 		ContentSecurityPolicy: "default-src 'self'",
 	}))
-	mustNoErrRoutingHelpers(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 	rec := httptest.NewRecorder()

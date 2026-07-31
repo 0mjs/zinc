@@ -3,6 +3,7 @@ package benchmarks
 import (
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -28,9 +29,9 @@ func buildZincCacheMatrixHandler(routes []scenarioRoute, cacheSize int) http.Han
 	cfg.RouteCacheSize = cacheSize
 	app := NewWithConfig(cfg)
 	for _, route := range routes {
-		mustNoErr(app.Add(route.method, scenarioZincPattern(route.pattern), func(*Context) error {
+		app.Add(route.method, scenarioZincPattern(route.pattern), func(*Context) error {
 			return nil
-		}))
+		})
 	}
 	return app
 }
@@ -131,12 +132,21 @@ func benchmarkZincCacheMatrixRequests(b *testing.B, handler http.Handler, reques
 func runZincCacheMatrixParallel(b *testing.B, cacheSize int, scenario benchmarkScenario, requests []*http.Request) {
 	handler := buildZincCacheMatrixHandler(scenario.routes, cacheSize)
 	proveZincCacheMatrixRequests(b, handler, requests)
+	workerRequests := make([][]*http.Request, runtime.GOMAXPROCS(0))
+	for worker := range workerRequests {
+		workerRequests[worker] = make([]*http.Request, len(requests))
+		for i, request := range requests {
+			workerRequests[worker][i] = request.Clone(request.Context())
+		}
+	}
 	var workerID atomic.Uint64
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
-		index := int(workerID.Add(1)-1) % len(requests)
+		worker := int(workerID.Add(1) - 1)
+		requests := workerRequests[worker]
+		index := worker % len(requests)
 		rw := newDiscardResponseWriter()
 		for pb.Next() {
 			rw.reset()

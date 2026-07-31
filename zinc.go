@@ -6,6 +6,14 @@ import (
 )
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if a.httpHandler != nil {
+		a.httpHandler.ServeHTTP(w, r)
+		return
+	}
+	a.serveHTTP(w, r)
+}
+
+func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(a.serverHeader) > 0 {
 		w.Header()[HeaderServer] = a.serverHeader
 	}

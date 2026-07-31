@@ -25,6 +25,9 @@ type scenarioRouteSpec struct {
 type scenarioRoute struct {
 	method      string
 	pattern     string
+	zincPattern string
+	chiPattern  string
+	ginPattern  string
 	requestPath string
 	paramNames  []string
 }
@@ -65,6 +68,9 @@ func newBenchmarkScenario(name string, specs []scenarioRouteSpec, expected int) 
 		routes[i] = scenarioRoute{
 			method:      spec.method,
 			pattern:     spec.pattern,
+			zincPattern: scenarioZincPattern(spec.pattern),
+			chiPattern:  scenarioBracePattern(spec.pattern),
+			ginPattern:  scenarioGinPattern(spec.pattern),
 			requestPath: materializeScenarioPath(spec.pattern),
 			paramNames:  scenarioParamNames(spec.pattern),
 		}
@@ -207,14 +213,14 @@ func scenarioBracePattern(pattern string) string {
 }
 
 func scenarioZincPattern(pattern string) string {
-	if !strings.Contains(pattern, "*") {
-		return pattern
-	}
-
 	segments := strings.Split(pattern, "/")
 	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") {
+			segments[i] = "{" + segment[1:] + "}"
+			continue
+		}
 		if segment == "*" {
-			segments[i] = "*tail"
+			segments[i] = "{tail...}"
 		}
 	}
 	return strings.Join(segments, "/")
@@ -333,6 +339,10 @@ func scenarioSampleValue(name string) string {
 func scenarioParamScoreZinc(names []string, c *Context) int {
 	score := 0
 	for _, name := range names {
+		if name == "*" {
+			score += len(c.Param("tail"))
+			continue
+		}
 		score += len(c.Param(name))
 	}
 	benchmarkSinkInt = score
@@ -373,11 +383,11 @@ func scenarioParamScoreGin(names []string, c *gin.Context) int {
 func buildZincScenarioHandler(routes []scenarioRoute) http.Handler {
 	app := New()
 	for _, route := range routes {
-		route := route
-		mustNoErr(app.Add(route.method, scenarioZincPattern(route.pattern), func(c *Context) error {
-			scenarioParamScoreZinc(route.paramNames, c)
+		paramNames := route.paramNames
+		app.Add(route.method, route.zincPattern, func(c *Context) error {
+			scenarioParamScoreZinc(paramNames, c)
 			return c.String(benchmarkOKResponse)
-		}))
+		})
 	}
 	return app
 }
@@ -385,9 +395,9 @@ func buildZincScenarioHandler(routes []scenarioRoute) http.Handler {
 func buildChiScenarioHandler(routes []scenarioRoute) http.Handler {
 	r := chi.NewRouter()
 	for _, route := range routes {
-		route := route
-		r.MethodFunc(route.method, scenarioBracePattern(route.pattern), func(w http.ResponseWriter, req *http.Request) {
-			scenarioParamScoreChi(route.paramNames, req)
+		paramNames := route.paramNames
+		r.MethodFunc(route.method, route.chiPattern, func(w http.ResponseWriter, req *http.Request) {
+			scenarioParamScoreChi(paramNames, req)
 			_, _ = io.WriteString(w, benchmarkOKResponse)
 		})
 	}
@@ -397,9 +407,9 @@ func buildChiScenarioHandler(routes []scenarioRoute) http.Handler {
 func buildEchoScenarioHandler(routes []scenarioRoute) http.Handler {
 	e := echo.New()
 	for _, route := range routes {
-		route := route
+		paramNames := route.paramNames
 		e.Add(route.method, route.pattern, func(c *echo.Context) error {
-			scenarioParamScoreEcho(route.paramNames, c)
+			scenarioParamScoreEcho(paramNames, c)
 			return c.String(http.StatusOK, benchmarkOKResponse)
 		})
 	}
@@ -409,9 +419,9 @@ func buildEchoScenarioHandler(routes []scenarioRoute) http.Handler {
 func buildGinScenarioHandler(routes []scenarioRoute) http.Handler {
 	r := newGinBenchmarkRouter()
 	for _, route := range routes {
-		route := route
-		r.Handle(route.method, scenarioGinPattern(route.pattern), func(c *gin.Context) {
-			scenarioParamScoreGin(route.paramNames, c)
+		paramNames := route.paramNames
+		r.Handle(route.method, route.ginPattern, func(c *gin.Context) {
+			scenarioParamScoreGin(paramNames, c)
 			c.String(http.StatusOK, benchmarkOKResponse)
 		})
 	}

@@ -14,16 +14,16 @@ import (
 
 func TestMethodWrapperCoverage(t *testing.T) {
 	app := New()
-	mustDo(t, app.Post("/post", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Put("/put", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Delete("/delete", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Patch("/patch", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Head("/head", func(c *Context) error { return c.String("head") }))
-	mustDo(t, app.Options("/options", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Connect("/connect", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Trace("/trace", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Match([]string{MethodGet, MethodPost}, "/match", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, app.Get("/string", StringHandler("string")))
+	app.Post("/post", func(c *Context) error { return c.String(c.Method()) })
+	app.Put("/put", func(c *Context) error { return c.String(c.Method()) })
+	app.Delete("/delete", func(c *Context) error { return c.String(c.Method()) })
+	app.Patch("/patch", func(c *Context) error { return c.String(c.Method()) })
+	app.Head("/head", func(c *Context) error { return c.String("head") })
+	app.Options("/options", func(c *Context) error { return c.String(c.Method()) })
+	app.Connect("/connect", func(c *Context) error { return c.String(c.Method()) })
+	app.Trace("/trace", func(c *Context) error { return c.String(c.Method()) })
+	app.Match([]string{MethodGet, MethodPost}, "/match", func(c *Context) error { return c.String(c.Method()) })
+	app.Get("/string", func(c *Context) error { return c.String("string") })
 
 	cases := []struct {
 		method string
@@ -53,58 +53,20 @@ func TestMethodWrapperCoverage(t *testing.T) {
 	}
 }
 
-func TestGetShorthandStringHandler(t *testing.T) {
-	app := New()
-	mustDo(t, app.Get("/", "Hello, world!"))
-
-	resp := performRequest(t, app, MethodGet, "/", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status=%d", resp.Code)
-	}
-	if body := resp.Body.String(); body != "Hello, world!" {
-		t.Fatalf("body=%q", body)
-	}
-}
-
-func TestGroupGetShorthandStringHandler(t *testing.T) {
-	app := New()
-	group := app.Group("/api")
-	mustDo(t, group.Get("/hello", "from group"))
-
-	resp := performRequest(t, app, MethodGet, "/api/hello", nil, nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status=%d", resp.Code)
-	}
-	if body := resp.Body.String(); body != "from group" {
-		t.Fatalf("body=%q", body)
-	}
-}
-
-func TestGetShorthandInvalidHandlerType(t *testing.T) {
-	app := New()
-	err := app.Get("/bad", 123)
-	if err == nil {
-		t.Fatal("expected error for invalid GET handler type")
-	}
-	if !strings.Contains(err.Error(), "unsupported GET handler type int") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestGroupWrapperCoverage(t *testing.T) {
 	app := New()
 	group := app.Group("/g")
-	mustDo(t, group.Post("/post", func(c *Context) error { return c.String("post") }))
-	mustDo(t, group.Put("/put", func(c *Context) error { return c.String("put") }))
-	mustDo(t, group.Delete("/delete", func(c *Context) error { return c.String("delete") }))
-	mustDo(t, group.Patch("/patch", func(c *Context) error { return c.String("patch") }))
-	mustDo(t, group.Head("/head", func(c *Context) error { return c.String("head") }))
-	mustDo(t, group.Options("/options", func(c *Context) error { return c.String("options") }))
-	mustDo(t, group.Connect("/connect", func(c *Context) error { return c.String("connect") }))
-	mustDo(t, group.Trace("/trace", func(c *Context) error { return c.String("trace") }))
-	mustDo(t, group.Match([]string{MethodGet, MethodPost}, "/match", func(c *Context) error { return c.String("match") }))
-	mustDo(t, group.All("/all", func(c *Context) error { return c.String(c.Method()) }))
-	mustDo(t, group.Any("/any", func(c *Context) error { return c.String(c.Method()) }))
+	group.Post("/post", func(c *Context) error { return c.String("post") })
+	group.Put("/put", func(c *Context) error { return c.String("put") })
+	group.Delete("/delete", func(c *Context) error { return c.String("delete") })
+	group.Patch("/patch", func(c *Context) error { return c.String("patch") })
+	group.Head("/head", func(c *Context) error { return c.String("head") })
+	group.Options("/options", func(c *Context) error { return c.String("options") })
+	group.Connect("/connect", func(c *Context) error { return c.String("connect") })
+	group.Trace("/trace", func(c *Context) error { return c.String("trace") })
+	group.Match([]string{MethodGet, MethodPost}, "/match", func(c *Context) error { return c.String("match") })
+	group.All("/all", func(c *Context) error { return c.String(c.Method()) })
+	group.Any("/any", func(c *Context) error { return c.String(c.Method()) })
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mounted", func(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +230,7 @@ func TestGroupEdgeCoverage(t *testing.T) {
 	routeCalled := false
 	sub := root.Route("/edge", func(g *Group) {
 		routeCalled = true
-		mustDo(t, g.Get("/ok", "ok"))
+		g.Get("/ok", func(c *Context) error { return c.String("ok") })
 	})
 	if !routeCalled || sub == nil {
 		t.Fatal("route callback should run and return subgroup")
@@ -278,12 +240,9 @@ func TestGroupEdgeCoverage(t *testing.T) {
 		t.Fatalf("body=%q", resp.Body.String())
 	}
 
-	if err := root.Get("/bad", 123); err == nil {
-		t.Fatal("expected invalid group GET shorthand error")
-	}
-	if err := root.Match([]string{MethodGet}, "/missing-handler"); err == nil {
-		t.Fatal("expected Match error when handlers are missing")
-	}
+	mustPanic(t, "no handler provided", func() {
+		root.Match([]string{MethodGet}, "/missing-handler")
+	})
 }
 
 func TestJoinPathsEdgeCases(t *testing.T) {

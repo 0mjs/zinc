@@ -16,7 +16,7 @@ type CreateUserInput struct {
 	Name   string `json:"name"`
 }
 
-app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
+app.Post("/teams/{teamID}/users", func(c *zinc.Context) error {
 	var input CreateUserInput
 	if err := c.Bind().All(&input); err != nil {
 		return err
@@ -40,7 +40,7 @@ type CreateUserInput struct {
 	Roles  []string `json:"roles"`
 }
 
-app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
+app.Post("/teams/{teamID}/users", func(c *zinc.Context) error {
 	var input CreateUserInput
 	if err := c.Bind().All(&input); err != nil {
 		return err

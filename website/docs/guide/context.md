@@ -18,7 +18,7 @@ It gives you access to:
 ## At a glance
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	return c.JSON(zinc.Map{
 		"id":      c.Param("id"),
 		"verbose": c.QueryOr("verbose", "false"),
@@ -27,12 +27,12 @@ app.Get("/users/:id", func(c *zinc.Context) error {
 })
 ```
 
-Treat the context as short-lived. Read what you need during the request, and use `c.Copy()` before sending request data to another goroutine.
+Treat the context as short-lived. Read what you need during the request, and never send `*zinc.Context` to another goroutine.
 
 ## Basic request data
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	method := c.Method()
 	path := c.Path()
 	id := c.Param("id")
@@ -142,7 +142,7 @@ These are useful when you want lower-level control instead of binding multipart 
 Use `Route()` when you need the matched route’s metadata inside a handler.
 
 ```go
-app.Get("/users/:id", func(c *zinc.Context) error {
+app.Get("/users/{id}", func(c *zinc.Context) error {
 	route := c.Route()
 	return c.JSON(route)
 })
@@ -167,24 +167,33 @@ Zinc exposes client IP helpers and request identity access:
 
 `IP()` respects the configured proxy header and trusted proxy settings.
 
-## Copying context safely
+## Background work
 
 Treat `*zinc.Context` as request-scoped and short-lived.
 
-If you need to hand request state to a goroutine or persist it outside the handler, copy it first:
+Extract the exact values a background task needs before the handler returns:
 
 ```go
-app.Get("/jobs/:id", func(c *zinc.Context) error {
-	cc := c.Copy()
-	go func() {
-		_ = cc.Route()
-	}()
+app.Get("/jobs/{id}", func(c *zinc.Context) error {
+	job := AuditJob{
+		ID:        c.Param("id"),
+		RequestID: c.RequestID(),
+	}
+	jobs <- job
 	return c.NoContent()
 })
 ```
 
+For work that should stop when the request is cancelled, pass the standard request context:
+
+```go
+requestContext := c.Request().Context()
+```
+
+If work must deliberately outlive the request while retaining standard context values, detach cancellation explicitly with `context.WithoutCancel(requestContext)`. Do not pass Zinc's pooled context or response writer.
+
 :::caution
-Do not keep the original request context beyond the active handler lifetime. Use `Copy()` or extract the exact data you need.
+Do not retain `*zinc.Context`, its response writer, request body, or mutable values after the handler returns.
 :::
 
 ## Advanced: manual acquire and release

@@ -17,7 +17,7 @@ func TestCSRFSafeRequestIssuesTokenCookieAndStoresState(t *testing.T) {
 	app.Use(CSRFWithConfig(CSRFConfig{
 		Generate: fixedCSRFToken("token"),
 	}))
-	mustNoErrCSRF(t, app.Get("/form", func(c *zinc.Context) error {
+	app.Get("/form", func(c *zinc.Context) error {
 		state := MustCSRFCurrent(c)
 		if state.Token != "token" {
 			t.Fatalf("token=%q", state.Token)
@@ -35,7 +35,7 @@ func TestCSRFSafeRequestIssuesTokenCookieAndStoresState(t *testing.T) {
 			t.Fatalf("must token=%q", got)
 		}
 		return c.String(state.Token)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/form", nil)
 	rec := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestCSRFUnsafeRequestValidHeaderToken(t *testing.T) {
 	app.Use(CSRFWithConfig(CSRFConfig{
 		Generate: fixedCSRFToken("token"),
 	}))
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		state := MustCSRFCurrent(c)
 		if state.Issued {
 			t.Fatal("unsafe request should not issue a new token")
@@ -78,7 +78,7 @@ func TestCSRFUnsafeRequestValidHeaderToken(t *testing.T) {
 			t.Fatalf("fetch site=%q", state.FetchSite)
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -107,10 +107,10 @@ func TestCSRFMissingRequestTokenIsBadRequest(t *testing.T) {
 	}))
 
 	called := false
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		called = true
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -142,10 +142,10 @@ func TestCSRFMissingCookieIsForbidden(t *testing.T) {
 		},
 	}))
 
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		t.Fatal("handler should not run")
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.Header.Set(zinc.HeaderXCSRFToken, "token")
@@ -172,7 +172,7 @@ func TestCSRFReadersFallBackToMultipartForm(t *testing.T) {
 			CSRFFromForm("csrf"),
 		},
 	}))
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		if got := c.FormValue("name"); got != "matt" {
 			t.Fatalf("form name=%q", got)
 		}
@@ -180,7 +180,7 @@ func TestCSRFReadersFallBackToMultipartForm(t *testing.T) {
 			t.Fatal("request should be verified")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -216,10 +216,10 @@ func TestCSRFFromFirstEnforcesPrecedence(t *testing.T) {
 			return err
 		},
 	}))
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		t.Fatal("handler should not run")
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", strings.NewReader("csrf=token"))
 	req.Header.Set(zinc.HeaderContentType, "application/x-www-form-urlencoded")
@@ -246,10 +246,10 @@ func TestCSRFFetchSiteBlocksCrossSite(t *testing.T) {
 			return err
 		},
 	}))
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		t.Fatal("handler should not run")
 		return nil
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -271,12 +271,12 @@ func TestCSRFFetchSiteTrustedOriginAllowsCrossSite(t *testing.T) {
 	app.Use(CSRFWithConfig(CSRFConfig{
 		TrustedOrigins: []string{"https://trusted.example.com"},
 	}))
-	mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		if MustCSRFCurrent(c).FetchSite != CSRFFetchSiteCrossSite {
 			t.Fatalf("fetch site=%q", MustCSRFCurrent(c).FetchSite)
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -297,9 +297,9 @@ func TestCSRFExposeHeader(t *testing.T) {
 		Generate:     fixedCSRFToken("token"),
 		ExposeHeader: zinc.HeaderXCSRFToken,
 	}))
-	mustNoErrCSRF(t, app.Get("/form", func(c *zinc.Context) error {
+	app.Get("/form", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/form", nil)
 	rec := httptest.NewRecorder()
@@ -319,13 +319,13 @@ func TestCSRFExistingSafeCookieIsReused(t *testing.T) {
 			return "new-token", nil
 		},
 	}))
-	mustNoErrCSRF(t, app.Get("/form", func(c *zinc.Context) error {
+	app.Get("/form", func(c *zinc.Context) error {
 		state := MustCSRFCurrent(c)
 		if state.Issued {
 			t.Fatal("existing cookie should not be marked issued")
 		}
 		return c.String(state.Token)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/form", nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: " existing-token "})
@@ -353,9 +353,9 @@ func TestCSRFAllowFetchSiteDecider(t *testing.T) {
 				return got.Site == CSRFFetchSiteSameSite, nil
 			},
 		}))
-		mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+		app.Post("/submit", func(c *zinc.Context) error {
 			return c.String("ok")
-		}))
+		})
 
 		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 		req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -387,10 +387,10 @@ func TestCSRFAllowFetchSiteDecider(t *testing.T) {
 				return err
 			},
 		}))
-		mustNoErrCSRF(t, app.Post("/submit", func(c *zinc.Context) error {
+		app.Post("/submit", func(c *zinc.Context) error {
 			t.Fatal("handler should not run")
 			return nil
-		}))
+		})
 
 		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 		req.AddCookie(&http.Cookie{Name: "_csrf", Value: "token"})
@@ -410,12 +410,12 @@ func TestCSRFSkipper(t *testing.T) {
 	app.Use(CSRFWithConfig(CSRFConfig{
 		Skipper: func(*zinc.Context) bool { return true },
 	}))
-	mustNoErrCSRF(t, app.Get("/skip", func(c *zinc.Context) error {
+	app.Get("/skip", func(c *zinc.Context) error {
 		if _, ok := CSRFCurrent(c); ok {
 			t.Fatal("state should not be present")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/skip", nil)
 	rec := httptest.NewRecorder()
@@ -484,9 +484,9 @@ func TestCSRFSameSiteNoneForcesSecure(t *testing.T) {
 			SameSite: http.SameSiteNoneMode,
 		},
 	}))
-	mustNoErrCSRF(t, app.Get("/form", func(c *zinc.Context) error {
+	app.Get("/form", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/form", nil)
 	rec := httptest.NewRecorder()

@@ -13,9 +13,9 @@ func TestUtilityMiddleware(t *testing.T) {
 	t.Run("no cache and set header", func(t *testing.T) {
 		app := zinc.New()
 		app.Use(NoCache(), SetHeader("X-App", "zinc"))
-		mustNoErrUtility(t, app.Get("/", func(c *zinc.Context) error {
+		app.Get("/", func(c *zinc.Context) error {
 			return c.String("ok")
-		}))
+		})
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
@@ -35,9 +35,9 @@ func TestUtilityMiddleware(t *testing.T) {
 	t.Run("heartbeat", func(t *testing.T) {
 		app := zinc.New()
 		app.Use(Heartbeat("/healthz"))
-		mustNoErrUtility(t, app.Get("/healthz", func(c *zinc.Context) error {
+		app.Get("/healthz", func(c *zinc.Context) error {
 			return c.String("handler")
-		}))
+		})
 
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 		rec := httptest.NewRecorder()
@@ -55,9 +55,9 @@ func TestUtilityMiddleware(t *testing.T) {
 			c.SetHeader("X-Guarded", "yes")
 			return c.Next()
 		}))
-		mustNoErrUtility(t, app.Get("/", func(c *zinc.Context) error {
+		app.Get("/", func(c *zinc.Context) error {
 			return c.String("ok")
-		}))
+		})
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Guard", "yes")
@@ -83,11 +83,11 @@ func TestThrottleMiddleware(t *testing.T) {
 	release := make(chan struct{})
 	var once sync.Once
 
-	mustNoErrUtility(t, app.Get("/slow", func(c *zinc.Context) error {
+	app.Get("/slow", func(c *zinc.Context) error {
 		once.Do(func() { close(started) })
 		<-release
 		return c.String("ok")
-	}))
+	})
 
 	done := make(chan struct{})
 	first := httptest.NewRecorder()
@@ -116,9 +116,9 @@ func TestRealIPMiddleware(t *testing.T) {
 		TrustedProxies: []string{"10.0.0.1"},
 	})
 	app.Use(RealIP())
-	mustNoErrUtility(t, app.Get("/", func(c *zinc.Context) error {
+	app.Get("/", func(c *zinc.Context) error {
 		return c.String(c.RemoteIP())
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -140,9 +140,9 @@ func TestHeaderGuardMiddleware(t *testing.T) {
 			return zinc.ErrForbidden
 		},
 	}))
-	mustNoErrUtility(t, app.Post("/", func(c *zinc.Context) error {
+	app.Post("/", func(c *zinc.Context) error {
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.Header.Set(zinc.HeaderContentType, "application/json; charset=utf-8")
@@ -172,9 +172,9 @@ func TestHeaderGuardMiddleware(t *testing.T) {
 func TestPprofMiddleware(t *testing.T) {
 	app := zinc.New()
 	app.Use(PprofWithPrefix("/debug/pprof"))
-	mustNoErrUtility(t, app.Get("/other", func(c *zinc.Context) error {
+	app.Get("/other", func(c *zinc.Context) error {
 		return c.String("next")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
 	rec := httptest.NewRecorder()
@@ -204,9 +204,9 @@ func TestPprofDefaultAndPrefixNormalization(t *testing.T) {
 
 	app = zinc.New()
 	app.Use(PprofWithPrefix("custom/pprof/"))
-	mustNoErrUtility(t, app.Get("/next", func(c *zinc.Context) error {
+	app.Get("/next", func(c *zinc.Context) error {
 		return c.String("next")
-	}))
+	})
 
 	req = httptest.NewRequest(http.MethodGet, "/custom/pprof/symbol", nil)
 	rec = httptest.NewRecorder()

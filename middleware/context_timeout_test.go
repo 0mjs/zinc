@@ -15,7 +15,7 @@ import (
 func TestContextTimeoutSuccessfulRequest(t *testing.T) {
 	app := zinc.New()
 	app.Use(ContextTimeout(100 * time.Millisecond))
-	mustNoErrContextTimeout(t, app.Get("/ok", func(c *zinc.Context) error {
+	app.Get("/ok", func(c *zinc.Context) error {
 		info := MustContextTimeoutCurrent(c)
 		if info.Timeout != 100*time.Millisecond {
 			t.Fatalf("timeout=%s", info.Timeout)
@@ -30,7 +30,7 @@ func TestContextTimeoutSuccessfulRequest(t *testing.T) {
 			t.Fatal("request context should be replaced")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ok?x=1", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
@@ -51,12 +51,12 @@ func TestContextTimeoutSkipper(t *testing.T) {
 		Skipper: func(*zinc.Context) bool { return true },
 		Timeout: 10 * time.Millisecond,
 	}))
-	mustNoErrContextTimeout(t, app.Get("/skip", func(c *zinc.Context) error {
+	app.Get("/skip", func(c *zinc.Context) error {
 		if _, ok := ContextTimeoutCurrent(c); ok {
 			t.Fatal("timeout info should not be present")
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/skip", nil)
 	rec := httptest.NewRecorder()
@@ -70,9 +70,9 @@ func TestContextTimeoutSkipper(t *testing.T) {
 func TestContextTimeoutDefaultErrorHandler(t *testing.T) {
 	app := zinc.New()
 	app.Use(ContextTimeout(20 * time.Millisecond))
-	mustNoErrContextTimeout(t, app.Get("/slow", func(c *zinc.Context) error {
+	app.Get("/slow", func(c *zinc.Context) error {
 		return sleepWithContext(c.Context(), 60*time.Millisecond)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/slow", nil)
 	rec := httptest.NewRecorder()
@@ -100,9 +100,9 @@ func TestContextTimeoutCustomErrorHandler(t *testing.T) {
 			return zinc.NewError(http.StatusGatewayTimeout).WithMessage("deadline hit")
 		},
 	}))
-	mustNoErrContextTimeout(t, app.Get("/slow", func(c *zinc.Context) error {
+	app.Get("/slow", func(c *zinc.Context) error {
 		return sleepWithContext(c.Context(), 60*time.Millisecond)
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/slow", nil)
 	rec := httptest.NewRecorder()
@@ -119,9 +119,9 @@ func TestContextTimeoutCustomErrorHandler(t *testing.T) {
 func TestContextTimeoutPassesThroughNonTimeoutErrors(t *testing.T) {
 	app := zinc.New()
 	app.Use(ContextTimeout(50 * time.Millisecond))
-	mustNoErrContextTimeout(t, app.Get("/boom", func(c *zinc.Context) error {
+	app.Get("/boom", func(c *zinc.Context) error {
 		return zinc.ErrForbidden
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
 	rec := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestContextTimeoutPassesThroughNonTimeoutErrors(t *testing.T) {
 func TestContextTimeoutPreservesRequestData(t *testing.T) {
 	app := zinc.New()
 	app.Use(ContextTimeout(time.Second))
-	mustNoErrContextTimeout(t, app.Post("/submit", func(c *zinc.Context) error {
+	app.Post("/submit", func(c *zinc.Context) error {
 		cookie, err := c.Cookie("session")
 		if err != nil {
 			return err
@@ -150,7 +150,7 @@ func TestContextTimeoutPreservesRequestData(t *testing.T) {
 			t.Fatalf("form=%q", got)
 		}
 		return c.String("ok")
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/submit?query=value", strings.NewReader("name=matt"))
 	req.Header.Set(zinc.HeaderContentType, "application/x-www-form-urlencoded")

@@ -23,9 +23,9 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 			calls++
 			return c.Next()
 		})
-		mustDo(t, app.Get("/users/:id", func(c *Context) error {
+		app.Get("/users/{id}", func(c *Context) error {
 			return c.String(c.Param("id"))
-		}))
+		})
 
 		for i := 0; i < 3; i++ {
 			resp := performRequest(t, app, http.MethodGet, "/users/42", nil, nil)
@@ -51,9 +51,9 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 			fullPath = c.FullPath()
 			return nil
 		})
-		mustDo(t, app.Get("/post-next", func(c *Context) error {
+		app.Get("/post-next", func(c *Context) error {
 			return c.String("ok")
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/post-next", nil, nil)
 		if resp.Code != http.StatusOK {
@@ -75,7 +75,7 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 				c.Set("group", "users")
 				return c.Next()
 			})
-			mustDo(t, api.Get("/users/:id", func(c *Context) error {
+			api.Get("/users/{id}", func(c *Context) error {
 				prefix, _ := c.Get("prefix")
 				group, _ := c.Get("group")
 				return c.JSON(Map{
@@ -86,12 +86,12 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 					"path":      c.Route().Path,
 					"id":        c.Param("id"),
 				})
-			}))
+			})
 		})
 
 		resp := performRequest(t, app, http.MethodGet, "/api/users/99", nil, nil)
 		body := resp.Body.String()
-		for _, fragment := range []string{"\"prefix\":true", "\"group\":\"users\"", "\"full_path\":\"/api/users/:id\"", "\"method\":\"GET\"", "\"id\":\"99\""} {
+		for _, fragment := range []string{"\"prefix\":true", "\"group\":\"users\"", "\"full_path\":\"/api/users/{id}\"", "\"method\":\"GET\"", "\"id\":\"99\""} {
 			if !strings.Contains(body, fragment) {
 				t.Fatalf("body missing %q: %s", fragment, body)
 			}
@@ -104,10 +104,10 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 		app.Use(func(c *Context) error {
 			return nil
 		})
-		mustDo(t, app.Get("/blocked", func(c *Context) error {
+		app.Get("/blocked", func(c *Context) error {
 			called = true
 			return c.String("nope")
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/blocked", nil, nil)
 		if called {
@@ -120,7 +120,7 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 
 	t.Run("not found and method not allowed", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/items", func(c *Context) error { return c.String("ok") }))
+		app.Get("/items", func(c *Context) error { return c.String("ok") })
 		app.NotFound(func(c *Context) error { return c.String("missing") })
 		app.MethodNotAllowed(func(c *Context) error { return c.String("wrong method") })
 
@@ -146,9 +146,9 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 
 	t.Run("auto head and auto options", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/health", func(c *Context) error {
+		app.Get("/health", func(c *Context) error {
 			return c.String("ok")
-		}))
+		})
 
 		head := performRequest(t, app, http.MethodHead, "/health", nil, nil)
 		if head.Code != http.StatusOK || head.Body.Len() != 0 {
@@ -166,8 +166,8 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 
 	t.Run("method not allowed unions overlapping route shapes", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/users/:id", func(c *Context) error { return c.String("param") }))
-		mustDo(t, app.Post("/users/me", func(c *Context) error { return c.String("static") }))
+		app.Get("/users/{id}", func(c *Context) error { return c.String("param") })
+		app.Post("/users/me", func(c *Context) error { return c.String("static") })
 
 		resp := performRequest(t, app, http.MethodPut, "/users/me", nil, nil)
 		if resp.Code != http.StatusMethodNotAllowed {
@@ -188,9 +188,9 @@ func TestAppRoutingMiddlewareAndFallbacks(t *testing.T) {
 
 	t.Run("custom methods route and advertise allow", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Add("PURGE", "/cache/:key", func(c *Context) error {
+		app.Add("PURGE", "/cache/{key}", func(c *Context) error {
 			return c.String(c.Param("key"))
-		}))
+		})
 
 		purge := performRequest(t, app, "PURGE", "/cache/home", nil, nil)
 		if purge.Code != http.StatusOK || purge.Body.String() != "home" {
@@ -259,7 +259,7 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 
 	t.Run("case sensitive and strict routing", func(t *testing.T) {
 		app := NewWithConfig(Config{CaseSensitive: true, StrictRouting: true})
-		mustDo(t, app.Get("/Hello", func(c *Context) error { return c.String("ok") }))
+		app.Get("/Hello", func(c *Context) error { return c.String("ok") })
 
 		lower := performRequest(t, app, http.MethodGet, "/hello", nil, nil)
 		if lower.Code != http.StatusNotFound {
@@ -276,9 +276,9 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 		app := NewWithConfig(Config{ErrorHandler: func(c *Context, err error) {
 			_ = c.Status(http.StatusTeapot).String("handled")
 		}})
-		mustDo(t, app.Get("/boom", func(c *Context) error {
+		app.Get("/boom", func(c *Context) error {
 			return errors.New("boom")
-		}))
+		})
 
 		resp := performRequest(t, app, http.MethodGet, "/boom", nil, nil)
 		if resp.Code != http.StatusTeapot || resp.Body.String() != "handled" {
@@ -288,7 +288,7 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 
 	t.Run("server header", func(t *testing.T) {
 		app := NewWithConfig(Config{ServerHeader: "zinc/edge"})
-		mustDo(t, app.Get("/", func(c *Context) error { return c.String("ok") }))
+		app.Get("/", func(c *Context) error { return c.String("ok") })
 		resp := performRequest(t, app, http.MethodGet, "/", nil, nil)
 		if got := resp.Header().Get(HeaderServer); got != "zinc/edge" {
 			t.Fatalf("server header=%q", got)
@@ -297,7 +297,7 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 
 	t.Run("serve and shutdown", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/ping", func(c *Context) error { return c.String("pong") }))
+		app.Get("/ping", func(c *Context) error { return c.String("pong") })
 
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		mustDo(t, err)
@@ -383,12 +383,12 @@ func TestAppConfigLifecycleAndErrors(t *testing.T) {
 
 func TestWrapAndWrapFunc(t *testing.T) {
 	app := New()
-	mustDo(t, app.Get("/h", Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Get("/h", Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "handler")
-	}))))
-	mustDo(t, app.Get("/f", WrapFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "func")
 	})))
+	app.Get("/f", WrapFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "func")
+	}))
 
 	resp1 := performRequest(t, app, http.MethodGet, "/h", nil, nil)
 	if resp1.Body.String() != "handler" {
@@ -423,10 +423,10 @@ func TestNamedRoutesAndURLGeneration(t *testing.T) {
 	app := New()
 	api := app.Group("/api")
 
-	mustDo(t, api.Handle(RouteSpec{
+	api.Handle(RouteSpec{
 		Name:   "users.show",
 		Method: MethodGet,
-		Path:   "/users/:id",
+		Path:   "/users/{id}",
 		Handler: func(c *Context) error {
 			info := c.Route()
 			return c.JSON(Map{
@@ -436,13 +436,13 @@ func TestNamedRoutesAndURLGeneration(t *testing.T) {
 				"id":    c.Param("id"),
 			})
 		},
-	}))
+	})
 
 	route, ok := app.RouteByName("users.show")
 	if !ok {
 		t.Fatal("expected named route")
 	}
-	if route.Name != "users.show" || route.Path != "/api/users/:id" || len(route.Params) != 1 || route.Params[0] != "id" {
+	if route.Name != "users.show" || route.Path != "/api/users/{id}" || len(route.Params) != 1 || route.Params[0] != "id" {
 		t.Fatalf("route=%+v", route)
 	}
 
@@ -454,7 +454,7 @@ func TestNamedRoutesAndURLGeneration(t *testing.T) {
 
 	resp := performRequest(t, app, http.MethodGet, "/api/users/42", nil, nil)
 	body := resp.Body.String()
-	for _, fragment := range []string{`"name":"users.show"`, `"path":"/api/users/:id"`, `"param":"id"`, `"id":"42"`} {
+	for _, fragment := range []string{`"name":"users.show"`, `"path":"/api/users/{id}"`, `"param":"id"`, `"id":"42"`} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("body missing %q: %s", fragment, body)
 		}
@@ -464,12 +464,12 @@ func TestNamedRoutesAndURLGeneration(t *testing.T) {
 func TestNamedRouteWildcardAndDuplicateName(t *testing.T) {
 	app := New()
 
-	mustDo(t, app.Handle(RouteSpec{
+	app.Handle(RouteSpec{
 		Name:    "files.show",
 		Method:  MethodGet,
-		Path:    "/files/*rest",
+		Path:    "/files/{rest...}",
 		Handler: func(c *Context) error { return c.String("ok") },
-	}))
+	})
 
 	url, err := app.URL("files.show", "a/b/c.txt")
 	mustDo(t, err)
@@ -481,7 +481,7 @@ func TestNamedRouteWildcardAndDuplicateName(t *testing.T) {
 		t.Fatal("expected param count error")
 	}
 
-	err = app.Handle(RouteSpec{
+	err = app.TryHandle(RouteSpec{
 		Name:    "files.show",
 		Method:  MethodPost,
 		Path:    "/files",
@@ -492,58 +492,78 @@ func TestNamedRouteWildcardAndDuplicateName(t *testing.T) {
 	}
 }
 
-func TestRegexConstrainedParams(t *testing.T) {
+func TestTryHandleDynamicRegistration(t *testing.T) {
 	app := New()
-	mustDo(t, app.Get("/users/:slug", func(c *Context) error {
-		return c.String("slug:" + c.Param("slug"))
-	}))
-	mustDo(t, app.Handle(RouteSpec{
-		Name:   "users.numeric",
-		Method: MethodGet,
-		Path:   "/users/:id<\\d+>",
-		Handler: func(c *Context) error {
-			return c.String("id:" + c.Param("id"))
-		},
-	}))
+	handler := func(c *Context) error { return c.String("ok") }
 
-	digits := performRequest(t, app, http.MethodGet, "/users/42", nil, nil)
-	if digits.Code != http.StatusOK || digits.Body.String() != "id:42" {
-		t.Fatalf("digits=%d %q", digits.Code, digits.Body.String())
+	if err := app.TryHandle(RouteSpec{
+		Name:    "dynamic.show",
+		Method:  MethodGet,
+		Path:    "/dynamic/{id}",
+		Handler: handler,
+	}); err != nil {
+		t.Fatalf("register dynamic route: %v", err)
+	}
+	if err := app.TryHandle(RouteSpec{
+		Name:    "dynamic.duplicate",
+		Method:  MethodGet,
+		Path:    "/dynamic/{id}",
+		Handler: handler,
+	}); err == nil {
+		t.Fatal("expected duplicate dynamic route error")
+	}
+	if err := app.TryHandle(RouteSpec{Method: MethodGet, Path: "/nil"}); err == nil {
+		t.Fatal("expected nil dynamic handler error")
 	}
 
-	alpha := performRequest(t, app, http.MethodGet, "/users/matt", nil, nil)
-	if alpha.Code != http.StatusOK || alpha.Body.String() != "slug:matt" {
-		t.Fatalf("alpha=%d %q", alpha.Code, alpha.Body.String())
+	group := app.Group("/api")
+	if err := group.TryHandle(RouteSpec{
+		Name:    "group.dynamic",
+		Method:  MethodPost,
+		Path:    "/dynamic",
+		Handler: handler,
+	}); err != nil {
+		t.Fatalf("register group dynamic route: %v", err)
+	}
+	if route, ok := app.RouteByName("group.dynamic"); !ok || route.Path != "/api/dynamic" {
+		t.Fatalf("group dynamic route=%+v ok=%v", route, ok)
 	}
 
-	route, ok := app.FindRoute(MethodGet, "/users/42")
-	if !ok || route.Path != "/users/:id<\\d+>" || len(route.Params) != 1 || route.Params[0] != "id" {
-		t.Fatalf("route=%+v ok=%v", route, ok)
-	}
+	mustPanic(t, "route already registered", func() {
+		app.Get("/dynamic/{id}", handler)
+	})
+}
 
-	url, err := app.URL("users.numeric", "77")
-	mustDo(t, err)
-	if url != "/users/77" {
-		t.Fatalf("url=%q", url)
+func TestAppRejectsLegacyRoutePatterns(t *testing.T) {
+	app := New()
+	handler := func(c *Context) error { return c.String("ok") }
+	for _, pattern := range []string{"/users/:id", "/users/prefix:id", "/files/*path", "/files/prefix*path", "/users/:id<\\d+>"} {
+		err := app.TryHandle(RouteSpec{Method: MethodGet, Path: pattern, Handler: handler})
+		if err == nil || !strings.Contains(err.Error(), "legacy route") {
+			t.Fatalf("pattern=%q err=%v", pattern, err)
+		}
 	}
+	mustPanic(t, "legacy route", func() {
+		app.Get("/users/:id", handler)
+	})
 }
 
 func TestRouteIntrospectionHelpers(t *testing.T) {
 	app := New()
 	api := app.Group("/api")
-	mustDo(t, api.Handle(RouteSpec{
+	api.Handle(RouteSpec{
 		Name:    "users.show",
 		Method:  MethodGet,
-		Path:    "/users/:id",
+		Path:    "/users/{id}",
 		Handler: func(c *Context) error { return c.String("ok") },
-	}))
-	mustDo(t, app.Post("/submit", func(c *Context) error { return c.String("ok") }))
+	})
+	app.Post("/submit", func(c *Context) error { return c.String("ok") })
 
 	found, ok := app.FindRoute(MethodGet, "/api/users/17")
 	if !ok {
 		t.Fatal("expected route match")
 	}
-	if found.Name != "users.show" || found.Path != "/api/users/:id" {
+	if found.Name != "users.show" || found.Path != "/api/users/{id}" {
 		t.Fatalf("found=%+v", found)
 	}
 
@@ -587,21 +607,21 @@ func TestRouteNotFoundPatterns(t *testing.T) {
 		return c.Next()
 	})
 
-	mustDo(t, app.RouteNotFound("/docs", func(c *Context) error {
+	app.RouteNotFound("/docs", func(c *Context) error {
 		return c.String("docs")
-	}))
-	mustDo(t, api.RouteNotFound("/users/:id", func(c *Context) error {
+	})
+	api.RouteNotFound("/users/{id}", func(c *Context) error {
 		if got, _ := c.Get("mw"); got != "group" {
 			t.Fatalf("mw=%v", got)
 		}
 		return c.String("user:" + c.Param("id"))
-	}))
-	mustDo(t, app.RouteNotFound("/files/*path", func(c *Context) error {
-		return c.String("file:" + c.Param("*"))
-	}))
-	mustDo(t, app.RouteNotFound("/silent", func(c *Context) error {
+	})
+	app.RouteNotFound("/files/{path...}", func(c *Context) error {
+		return c.String("file:" + c.Param("path"))
+	})
+	app.RouteNotFound("/silent", func(c *Context) error {
 		return nil
-	}))
+	})
 	app.NotFound(func(c *Context) error {
 		return c.String("global")
 	})
@@ -654,7 +674,7 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 
 	t.Run("routes without mounts returns router routes directly", func(t *testing.T) {
 		app := New()
-		mustDo(t, app.Get("/plain", func(c *Context) error { return c.String("ok") }))
+		app.Get("/plain", func(c *Context) error { return c.String("ok") })
 		routes := app.Routes()
 		if len(routes) != 1 || routes[0].Path != "/plain" {
 			t.Fatalf("routes=%v", routes)
@@ -664,7 +684,7 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 	t.Run("middleware errors hit both ServeHTTP branches", func(t *testing.T) {
 		app := New()
 		app.Use(func(*Context) error { return errors.New("mw boom") })
-		mustDo(t, app.Get("/x", func(c *Context) error { return c.String("ok") }))
+		app.Get("/x", func(c *Context) error { return c.String("ok") })
 
 		resp := performRequest(t, app, http.MethodGet, "/x", nil, nil)
 		if resp.Code != http.StatusInternalServerError {
@@ -673,7 +693,7 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 
 		app2 := New()
 		app2.UsePrefix("/api", func(*Context) error { return errors.New("prefix boom") })
-		mustDo(t, app2.Get("/api/x", func(c *Context) error { return c.String("ok") }))
+		app2.Get("/api/x", func(c *Context) error { return c.String("ok") })
 		resp2 := performRequest(t, app2, http.MethodGet, "/api/x", nil, nil)
 		if resp2.Code != http.StatusInternalServerError {
 			t.Fatalf("status=%d", resp2.Code)
@@ -682,7 +702,7 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 
 	t.Run("method not allowed and not found fallback branches", func(t *testing.T) {
 		app := NewWithConfig(Config{HandleMethodNotAllowed: true})
-		mustDo(t, app.Get("/only", func(c *Context) error { return c.String("ok") }))
+		app.Get("/only", func(c *Context) error { return c.String("ok") })
 
 		mna := performRequest(t, app, http.MethodPost, "/only", nil, nil)
 		if mna.Code != http.StatusMethodNotAllowed {
@@ -735,7 +755,7 @@ func TestAppAndDispatchEdgeCoverage(t *testing.T) {
 				_ = c.Status(http.StatusTeapot).String("handled")
 			},
 		})
-		mustDo(t, app.Get("/only", func(c *Context) error { return c.String("ok") }))
+		app.Get("/only", func(c *Context) error { return c.String("ok") })
 
 		notFound := performRequest(t, app, http.MethodGet, "/missing", nil, nil)
 		if notFound.Code != http.StatusTeapot || notFound.Body.String() != "handled" {
@@ -927,12 +947,12 @@ func TestHTTPErrorHelpersCloneGlobalsAndAbortHelpers(t *testing.T) {
 	}
 
 	app := New()
-	mustDo(t, app.Get("/abort", func(c *Context) error {
+	app.Get("/abort", func(c *Context) error {
 		return c.AbortWithStatus(http.StatusForbidden)
-	}))
-	mustDo(t, app.Get("/abort-json", func(c *Context) error {
+	})
+	app.Get("/abort-json", func(c *Context) error {
 		return c.AbortWithJSON(http.StatusCreated, Map{"ok": true})
-	}))
+	})
 
 	abortResp := performRequest(t, app, http.MethodGet, "/abort", nil, nil)
 	if abortResp.Code != http.StatusForbidden {

@@ -195,7 +195,7 @@ func extractBenchmarkMultipart(req *http.Request) (benchmarkMultipartResult, err
 
 func buildZincAPIBindHeaderQueryJSONHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/teams/:teamID/users/:userID", func(c *Context) error {
+	app.Post("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkHeaderQueryJSONInput
 		if err := c.Bind().Path(&input); err != nil {
 			return err
@@ -218,7 +218,7 @@ func buildZincAPIBindHeaderQueryJSONHandler() http.Handler {
 			RoleCount: len(input.Roles),
 			Name:      input.Name,
 		})
-	}))
+	})
 	return app
 }
 
@@ -309,14 +309,14 @@ func buildGinAPIBindHeaderQueryJSONHandler() http.Handler {
 
 func buildZincAPIBindInvalidJSONHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/payload", func(c *Context) error {
+	app.Post("/payload", func(c *Context) error {
 		var input benchmarkValidationInput
 		if err := c.Bind().JSON(&input); err != nil {
 			return c.Status(http.StatusBadRequest).NoContent()
 		}
 		benchmarkSinkBool = false
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
@@ -363,7 +363,7 @@ func buildGinAPIBindInvalidJSONHandler() http.Handler {
 
 func buildZincAPIBindValidationFailureHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/validate", func(c *Context) error {
+	app.Post("/validate", func(c *Context) error {
 		var input benchmarkValidationInput
 		if err := c.Bind().JSON(&input); err != nil {
 			return c.Status(http.StatusBadRequest).NoContent()
@@ -372,7 +372,7 @@ func buildZincAPIBindValidationFailureHandler() http.Handler {
 			return c.Status(http.StatusUnprocessableEntity).NoContent()
 		}
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
@@ -427,14 +427,14 @@ func buildGinAPIBindValidationFailureHandler() http.Handler {
 
 func buildZincAPIBindMultipartHappyPathHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/upload", func(c *Context) error {
+	app.Post("/upload", func(c *Context) error {
 		result, err := extractBenchmarkMultipart(c.Request())
 		if err != nil {
 			return err
 		}
 		consumeBenchmarkMultipart(result)
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
@@ -481,9 +481,9 @@ func buildGinAPIBindMultipartHappyPathHandler() http.Handler {
 
 func buildZincLargeJSONResponseHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/bulk", func(c *Context) error {
+	app.Get("/bulk", func(c *Context) error {
 		return c.JSON(benchmarkLargeJSONData)
-	}))
+	})
 	return app
 }
 
@@ -514,14 +514,14 @@ func buildGinLargeJSONResponseHandler() http.Handler {
 
 func buildZincLargeJSONBindHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Post("/bulk", func(c *Context) error {
+	app.Post("/bulk", func(c *Context) error {
 		var input benchmarkLargeJSONEnvelope
 		if err := c.Bind().JSON(&input); err != nil {
 			return err
 		}
 		consumeBenchmarkLargeJSONEnvelope(input)
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 
@@ -596,7 +596,7 @@ func buildZincNestedGroupMiddlewareAPIHandler() http.Handler {
 	api := app.Group("/api", zincMiddleware("mw1"), zincMiddleware("mw2"))
 	v1 := api.Group("/v1", zincMiddleware("mw3"))
 	admin := v1.Group("/admin", zincMiddleware("mw4"), zincMiddleware("mw5"))
-	mustNoErr(admin.Get("/teams/:teamID/users/:userID", func(c *Context) error {
+	admin.Get("/teams/{teamID}/users/{userID}", func(c *Context) error {
 		var input benchmarkAPIBindInput
 		if err := c.Bind().All(&input); err != nil {
 			return err
@@ -604,7 +604,7 @@ func buildZincNestedGroupMiddlewareAPIHandler() http.Handler {
 		consumeBenchmarkAPIInput(input)
 		benchmarkSinkBool = benchmarkSinkBool && zincMiddlewareSatisfied(c)
 		return c.JSON(benchmarkAPIResponseFrom(input))
-	}))
+	})
 	return app
 }
 
@@ -683,10 +683,10 @@ func buildZincUnauthorizedRejectHandler() http.Handler {
 		}
 		return c.Next()
 	})
-	mustNoErr(app.Get("/api/v1/secure/data", func(c *Context) error {
+	app.Get("/api/v1/secure/data", func(c *Context) error {
 		benchmarkSinkInt++
 		return c.NoContent()
-	}))
+	})
 	return app
 }
 

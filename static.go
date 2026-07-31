@@ -48,15 +48,17 @@ func (a *App) StaticFS(prefix string, filesystem fs.FS, opts ...StaticOption) er
 }
 
 func (a *App) File(path, file string) error {
-	return a.Get(path, func(c *Context) error {
+	a.Get(path, func(c *Context) error {
 		return c.File(file)
 	})
+	return nil
 }
 
 func (a *App) FileFS(path, file string, filesystem fs.FS) error {
-	return a.Get(path, func(c *Context) error {
+	a.Get(path, func(c *Context) error {
 		return c.FileFS(file, filesystem)
 	})
+	return nil
 }
 
 func newStaticHandler(filesystem fs.FS, cfg StaticConfig) http.Handler {

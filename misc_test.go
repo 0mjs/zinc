@@ -51,7 +51,7 @@ func TestMiscHelpersCoverage(t *testing.T) {
 	}
 
 	router := &Router{config: &DefaultConfig}
-	mustDo(t, router.Add(MethodGet, "/lookup/:id", func(c *Context) error { return c.String(c.Param("id")) }))
+	mustDo(t, router.Add(MethodGet, "/lookup/{id}", func(c *Context) error { return c.String(c.Param("id")) }))
 	handler, ctx := router.Find(MethodGet, "/lookup/44")
 	if handler == nil || ctx == nil || ctx.Param("id") != "44" {
 		t.Fatalf("find failed: handler=%v ctx=%v", handler, ctx)

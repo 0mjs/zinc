@@ -107,7 +107,7 @@ func main() {
 		})
 	})
 
-	app.Patch("/todos/:id/done", func(c *zinc.Context) error {
+	app.Patch("/todos/{id}/done", func(c *zinc.Context) error {
 		id := c.Param("id")
 		if id == "" {
 			return zinc.ErrBadRequest.WithMessage("id is required")
@@ -121,7 +121,7 @@ func main() {
 		return c.NoContent()
 	})
 
-	app.Delete("/todos/:id", func(c *zinc.Context) error {
+	app.Delete("/todos/{id}", func(c *zinc.Context) error {
 		id := c.Param("id")
 		if id == "" {
 			return zinc.ErrBadRequest.WithMessage("id is required")

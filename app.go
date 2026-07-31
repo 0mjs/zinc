@@ -16,6 +16,17 @@ type Map map[string]any
 
 type HandlerFunc func(*Context) error
 
+// HTTPMiddleware is the standard net/http middleware shape.
+type HTTPMiddleware func(http.Handler) http.Handler
+
+type httpHandlerSlot struct {
+	handler http.Handler
+}
+
+func (s *httpHandlerSlot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.handler.ServeHTTP(w, r)
+}
+
 type RouteHandler = HandlerFunc
 
 type Middleware = HandlerFunc
@@ -68,32 +79,20 @@ func (m routeMeta) url(values []string) (string, error) {
 	valueIndex := 0
 	for i := 0; i < len(m.path); i++ {
 		switch m.path[i] {
-		case ParamIdentifier:
-			start := i + 1
-			end := start
-			for end < len(m.path) && m.path[end] != '/' && m.path[end] != '<' {
-				end++
+		case '{':
+			endOffset := strings.IndexByte(m.path[i+1:], '}')
+			if endOffset < 0 {
+				return "", fmt.Errorf("invalid route pattern %q", m.path)
 			}
-			builder.WriteString(url.PathEscape(values[valueIndex]))
-			valueIndex++
-			if end < len(m.path) && m.path[end] == '<' {
-				constraintEnd, _, err := parseParamConstraint(m.path, end)
-				if err != nil {
-					return "", err
-				}
-				i = constraintEnd - 1
+			end := i + 1 + endOffset
+			wildcard := strings.HasSuffix(m.path[i+1:end], "...")
+			if wildcard {
+				builder.WriteString(values[valueIndex])
 			} else {
-				i = end - 1
+				builder.WriteString(url.PathEscape(values[valueIndex]))
 			}
-		case WildcardIdentifier:
-			start := i + 1
-			end := start
-			for end < len(m.path) && m.path[end] != '/' {
-				end++
-			}
-			builder.WriteString(values[valueIndex])
 			valueIndex++
-			i = end - 1
+			i = end
 		default:
 			builder.WriteByte(m.path[i])
 		}
@@ -130,6 +129,8 @@ type App struct {
 	notFoundRoutes   *Router
 	middleware       []HandlerFunc
 	middlewareChain  []HandlerFunc
+	httpHandler      http.Handler
+	httpHandlerTail  *httpHandlerSlot
 	prefixMiddleware []prefixMiddleware
 	mounts           []mountedHandler
 	notFound         HandlerFunc
@@ -288,6 +289,35 @@ func (a *App) Use(handlers ...HandlerFunc) {
 	a.rebuildMiddlewareChain()
 }
 
+// UseHTTP wraps the whole application in standard net/http middleware.
+// Middleware runs in registration order, with the first middleware outermost.
+func (a *App) UseHTTP(middleware ...HTTPMiddleware) {
+	if len(middleware) == 0 {
+		return
+	}
+
+	tail := &httpHandlerSlot{handler: http.HandlerFunc(a.serveHTTP)}
+	var handler http.Handler = tail
+
+	for i := len(middleware) - 1; i >= 0; i-- {
+		nextMiddleware := middleware[i]
+		if nextMiddleware == nil {
+			panic("zinc: nil HTTP middleware")
+		}
+		handler = nextMiddleware(handler)
+		if handler == nil {
+			panic("zinc: HTTP middleware returned a nil handler")
+		}
+	}
+
+	if a.httpHandler == nil {
+		a.httpHandler = handler
+	} else {
+		a.httpHandlerTail.handler = handler
+	}
+	a.httpHandlerTail = tail
+}
+
 func (a *App) UsePrefix(prefix string, handlers ...HandlerFunc) {
 	prefix = normalizeRegisteredPrefix(prefix)
 	a.prefixMiddleware = append(a.prefixMiddleware, prefixMiddleware{prefix: prefix, handlers: append([]HandlerFunc(nil), handlers...)})
@@ -347,14 +377,14 @@ func (a *App) NotFound(handler HandlerFunc) {
 	a.notFound = handler
 }
 
-func (a *App) RouteNotFound(path string, handlers ...HandlerFunc) error {
+func (a *App) RouteNotFound(path string, handlers ...HandlerFunc) {
 	if len(handlers) == 0 {
-		return errors.New("route handler is nil")
+		panic("zinc: route handler is nil")
 	}
 	if a.notFoundRoutes == nil {
 		a.notFoundRoutes = &Router{config: &a.config}
 	}
-	return a.notFoundRoutes.Add(MethodGet, path, handlers...)
+	mustRegister(a.notFoundRoutes.Add(MethodGet, path, handlers...))
 }
 
 func (a *App) MethodNotAllowed(handler HandlerFunc) {
@@ -374,11 +404,52 @@ func (a *App) Routes() []RouteInfo {
 	return out
 }
 
-func (a *App) Handle(spec RouteSpec) error {
+// Handle registers a source-defined route and panics when its declaration is invalid.
+func (a *App) Handle(spec RouteSpec) {
+	mustRegister(a.TryHandle(spec))
+}
+
+// TryHandle registers a route whose declaration came from dynamic input.
+func (a *App) TryHandle(spec RouteSpec) error {
 	if spec.Handler == nil {
 		return errors.New("route handler is nil")
 	}
 	return a.router.AddNamed(spec.Method, spec.Path, spec.Name, spec.Handler)
+}
+
+// HandleHTTP registers a standard net/http handler using a "METHOD /path"
+// pattern, such as "GET /metrics". Matched parameters are available through
+// http.Request.PathValue inside the standard handler.
+func (a *App) HandleHTTP(pattern string, handler http.Handler) {
+	if handler == nil {
+		panic("zinc: HTTP handler is nil")
+	}
+	method, path, err := parseHTTPRoutePattern(pattern)
+	if err != nil {
+		panic(err)
+	}
+	mustRegister(a.router.Add(method, path, Wrap(handler)))
+}
+
+func mustRegister(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func parseHTTPRoutePattern(pattern string) (string, string, error) {
+	parts := strings.Fields(pattern)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid HTTP route pattern %q: expected METHOD /path", pattern)
+	}
+	method, path := parts[0], parts[1]
+	if method == "" {
+		return "", "", fmt.Errorf("invalid HTTP route pattern %q: method is empty", pattern)
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "", "", fmt.Errorf("invalid HTTP route pattern %q: path must start with /", pattern)
+	}
+	return method, path, nil
 }
 
 func (a *App) RouteByName(name string) (RouteInfo, bool) {
@@ -431,8 +502,11 @@ func (a *App) RoutesByPrefix(prefix string) []RouteInfo {
 	return out
 }
 
+// Wrap adapts a standard net/http handler to HandlerFunc. Matched parameters
+// are populated into http.Request.PathValue immediately before it runs.
 func Wrap(h http.Handler) HandlerFunc {
 	return func(c *Context) error {
+		c.populateRequestPathValues()
 		h.ServeHTTP(c.Writer(), c.Request())
 		c.written = true
 		return nil

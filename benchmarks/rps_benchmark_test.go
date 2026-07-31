@@ -38,9 +38,9 @@ func rpsCases() []benchmarkCase {
 
 func buildZincRPSHandler() http.Handler {
 	app := New()
-	mustNoErr(app.Get("/rps", func(c *Context) error {
+	app.Get("/rps", func(c *Context) error {
 		return c.String(benchmarkOKResponse)
-	}))
+	})
 	return app
 }
 

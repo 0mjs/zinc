@@ -29,10 +29,11 @@ app := zinc.NewWithConfig(zinc.Config{StrictRouting: true})
 | Method | Purpose |
 |---|---|
 | `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Connect`, `Trace` | Register routes |
-| `Add`, `Match`, `All`, `Any` | Register routes more generically |
-| `Use`, `UsePrefix` | Register middleware |
+| `Add`, `Match`, `All`, `Any` | Register source-defined routes more generically |
+| `Handle`, `TryHandle` | Register named source or runtime-defined routes |
+| `Use`, `UsePrefix`, `UseHTTP` | Register Zinc or standard `net/http` middleware |
 | `Group`, `Route` | Create grouped route trees |
-| `Mount`, `Wrap`, `WrapFunc` | Integrate stdlib or external handlers |
+| `HandleHTTP`, `Mount`, `Wrap`, `WrapFunc` | Integrate stdlib or external handlers |
 | `Static`, `StaticFS`, `File`, `FileFS` | Serve files and directories |
 | `NotFound`, `RouteNotFound`, `MethodNotAllowed` | Customize error routing |
 | `Routes`, `FindRoute`, `RouteByName`, `URL` | Inspect routes and generate URLs |
@@ -44,24 +45,50 @@ Route methods accept a handler chain. Middleware goes before the final handler.
 app.Post("/posts", authUser, requireRole("editor"), createPost)
 ```
 
-`Get` also accepts a literal string for quick static text responses.
+Every route method accepts typed `HandlerFunc` values. Responses stay explicit in the handler:
 
 ```go
-app.Get("/health", "ok")
+app.Get("/health", func(c *zinc.Context) error {
+	return c.String("ok")
+})
 ```
+
+Register an ordinary `http.Handler` directly with a method and route pattern:
+
+```go
+app.HandleHTTP("GET /metrics", promhttp.Handler())
+```
+
+Wrap the complete application in standard Go middleware with `UseHTTP`:
+
+```go
+app.UseHTTP(requestTracing, authenticateRequest)
+```
+
+Standard middleware runs outside Zinc application, group, and route middleware.
 
 ## Named route registration
 
-Use `Handle(RouteSpec)` when you want route naming and reverse URL generation.
+Use `Handle(RouteSpec)` when you want route naming and reverse URL generation. Source-defined routes fail immediately if the declaration is invalid or conflicts with an existing route.
 
 ```go
-if err := app.Handle(zinc.RouteSpec{
+app.Handle(zinc.RouteSpec{
 	Name:    "users.show",
 	Method:  zinc.MethodGet,
-	Path:    "/users/:id",
+	Path:    "/users/{id}",
+	Handler: showUser,
+})
+```
+
+When a route pattern comes from configuration, a plugin, or another runtime source, use `TryHandle` and handle the error explicitly:
+
+```go
+if err := app.TryHandle(zinc.RouteSpec{
+	Method:  zinc.MethodGet,
+	Path:    patternFromConfig,
 	Handler: showUser,
 }); err != nil {
-	log.Fatal(err)
+	return err
 }
 ```
 
