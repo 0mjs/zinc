@@ -24,7 +24,7 @@ while still staying close to `net/http`.
 
 ## Is Zinc compatible with stdlib handlers?
 
-Yes. Use `Mount`, `Wrap`, and `WrapFunc` to integrate normal `http.Handler` and `http.HandlerFunc` values.
+Yes. Use `HandleHTTP` for one route, `Mount` for a subtree, or `Wrap` and `WrapFunc` inside a Zinc handler chain.
 
 ## Does Zinc support uploads and multipart forms?
 
@@ -36,4 +36,4 @@ Yes. Register routes with `RouteSpec` and then use `RouteByName` and `URL`.
 
 ## Is Zinc optimized for performance?
 
-Yes, especially on non-throughput request-path and API-path benchmarks. Zinc currently performs strongest on routing, grouping, scenario routing, and API response/binding latency. Throughput is the category where there is still the most room to improve.
+Yes. In the current in-process suite, Zinc records the lowest latency in 62 of 77 comparable rows against Gin, Echo, and Chi. See the [benchmark report](./benchmarks) for the environment, command, and complete results.

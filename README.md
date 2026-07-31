@@ -9,7 +9,7 @@ A high-performance application layer for `net/http`.
 
 Zinc adds fast routing, request binding, structured errors, response helpers, and production middleware to Go's standard HTTP stack. It does not replace that stack: a Zinc app is an `http.Handler`, and handlers always have access to the original request and response writer.
 
-[Documentation](https://zinc.carbonsoft.sh) · [Quick start](https://zinc.carbonsoft.sh/guide/quick-start) · [Middleware](https://zinc.carbonsoft.sh/middleware) · [API reference](https://pkg.go.dev/github.com/0mjs/zinc)
+[Documentation](https://zinc.carbonsoft.sh) · [Quick start](https://zinc.carbonsoft.sh/getting-started/quick-start) · [Middleware](https://zinc.carbonsoft.sh/middleware) · [API reference](https://pkg.go.dev/github.com/0mjs/zinc)
 
 ## Install
 
@@ -164,9 +164,9 @@ Binding supports path, query, header, JSON, XML, YAML, TOML, form, and multipart
 
 Zinc keeps benchmarks in the repository so performance claims can be checked against the code that produced them.
 
-In the latest Apple M1 Pro comparison, Zinc recorded the lowest latency in 64 of 77 comparable rows against Gin, Echo, and Chi. It finished first or second in every row. Primary static, parameter, and not-found dispatch paths retained zero request-time allocations.
+In the latest Apple M1 Pro comparison, Zinc recorded the lowest latency in 62 of 77 comparable rows against Gin, Echo, and Chi. It was fastest or within 2% of the fastest result in 63 rows. Primary static, parameter, and not-found dispatch paths retained zero request-time allocations.
 
-Results vary by workload and machine. See the [full benchmark report](./BENCKMARKS.md) for commands, raw results, remaining gaps, and measurement notes.
+Results vary by workload and machine. See the [full benchmark report](./BENCKMARKS.md) for the environment, command, scorecard, and complete results.
 
 ## Packages
 
