@@ -1,263 +1,166 @@
-![Version](https://img.shields.io/badge/version-0.1.2-blue)
-![Go Version](https://img.shields.io/badge/Go-1.25+-blue)
-[![Docs](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
-[![Coverage](https://img.shields.io/badge/coverage-86.4%25-brightgreen)](#quality)
-[![Go Report Card](https://goreportcard.com/badge/github.com/0mjs/zinc)](https://goreportcard.com/report/github.com/0mjs/zinc)
-![License](https://img.shields.io/badge/license-MIT-green)
-
 # Zinc
 
-An Express-inspired, idiomatic Go API framework built on `net/http`.
+[![Release](https://img.shields.io/github/v/release/0mjs/zinc?style=flat-square)](https://github.com/0mjs/zinc/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/0mjs/zinc.svg)](https://pkg.go.dev/github.com/0mjs/zinc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/0mjs/zinc?style=flat-square)](https://goreportcard.com/report/github.com/0mjs/zinc)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 
-Zinc gives you expressive routing, middleware chains, request binding, response helpers, rendering, and a practical standard-library shape — without forking away from `net/http`. Handlers are one `func(*zinc.Context) error`, stdlib handlers mount cleanly, and deployment stays ordinary Go.
+A high-performance application layer for `net/http`.
 
-- [Documentation](https://zinc.carbonsoft.sh)
-- [Quick Start](https://zinc.carbonsoft.sh/guide/quick-start)
-- [Middleware](https://zinc.carbonsoft.sh/middleware)
-- [pkg.go.dev](https://pkg.go.dev/github.com/0mjs/zinc)
+Zinc adds fast routing, request binding, structured errors, response helpers, and production middleware to Go's standard HTTP stack. It does not replace that stack: a Zinc app is an `http.Handler`, and handlers always have access to the original request and response writer.
 
-## Features
+[Documentation](https://zinc.carbonsoft.sh) · [Quick start](https://zinc.carbonsoft.sh/guide/quick-start) · [Middleware](https://zinc.carbonsoft.sh/middleware) · [API reference](https://pkg.go.dev/github.com/0mjs/zinc)
 
-- Express-style routes with `:param` and `*wildcard`
-- Route groups, prefix middleware, and route metadata
-- Binding helpers for path, query, headers, JSON, XML, and forms
-- Response helpers for JSON, XML, HTML, streams, redirects, files, and rendering
-- First-party template renderer for `html/template` and `text/template`
-- Static/file serving and stdlib interop via `Mount`, `Wrap`, and `WrapFunc`
-- Explicit startup and shutdown with `Listen`, `Serve`, and `Shutdown`
-- First-party middleware and a small in-memory jobs add-on in one module
+## Install
 
-## Installation
-
-```bash
+```sh
 go get github.com/0mjs/zinc
 ```
 
-Requires Go 1.25 or newer.
+Zinc requires Go 1.25 or newer.
 
-## Quick Start
+## Start a server
 
 ```go
 package main
 
 import (
+	"log"
+
 	"github.com/0mjs/zinc"
-	"github.com/0mjs/zinc/middleware"
 )
 
 func main() {
 	app := zinc.New()
 
-	app.Use(middleware.RequestLogger())
-
-	app.Get("/", "Hello, world!") // Shorthand
-
-	app.Get("/greet", func(c *zinc.Context) error {
-		return c.JSON(zinc.Map{
-			"greeting": "Hello, world!",
-		})
+	app.Get("/", func(c *zinc.Context) error {
+		return c.String("Hello from Zinc!")
 	})
 
-	api := app.Group("/api")
-	api.Get("/health", func(c *zinc.Context) error {
-		return c.String("ok")
-	})
-
-	app.Listen()
+	log.Fatal(app.Listen(":8080"))
 }
 ```
 
-## Routing and Middleware
+Run it, then make a request:
 
-```go
-app.Use(middleware.RequestLogger())
-app.UsePrefix("/api", authMiddleware)
-
-app.Route("/api", func(api *zinc.Group) {
-	api.Get("/users/:id", showUser)
-	api.Post("/users", createUser)
-})
+```sh
+curl http://localhost:8080
 ```
 
-See the [routing guide](https://zinc.carbonsoft.sh/guide/routing) for groups, parameters, method shortcuts, and named routes.
+```text
+Hello from Zinc!
+```
 
-## Binding and Responses
+## Why Zinc?
+
+The standard library has excellent HTTP contracts. Building an application directly on top of them still leaves a fair amount of repetitive work.
+
+Zinc fills that gap without introducing another HTTP engine:
+
+- concise handlers with central error handling
+- fast routing, route groups, and middleware chains
+- binding and validation for request data
+- helpers for JSON, files, streams, templates, and redirects
+- direct access to `http.Request`, `http.ResponseWriter`, `http.Handler`, and `http.Server`
+
+The aim is simple application code that still behaves like ordinary Go.
+
+## Still `net/http`
+
+`App` implements `http.Handler`, so you can use it with a server you own:
 
 ```go
-type CreateUserInput struct {
-	TeamID int    `path:"teamID"`
-	Page   int    `query:"page"`
-	Name   string `json:"name"`
-	Auth   string `header:"x-auth"`
+server := &http.Server{
+	Addr:              ":8080",
+	Handler:           app,
+	ReadHeaderTimeout: 5 * time.Second,
 }
 
-app.Post("/teams/:teamID/users", func(c *zinc.Context) error {
-	var input CreateUserInput
-	if err := c.Bind().All(&input); err != nil {
-		return err
-	}
+log.Fatal(server.ListenAndServe())
+```
 
-	return c.Status(zinc.StatusCreated).JSON(input)
+Standard handlers can be mounted inside the application:
+
+```go
+app.Mount("/debug", http.DefaultServeMux)
+```
+
+Inside a Zinc handler, the standard request and writer are available when you need them:
+
+```go
+app.Get("/request", func(c *zinc.Context) error {
+	r := c.Request()
+	w := c.Writer()
+
+	w.Header().Set("X-Method", r.Method)
+	return c.String("ok")
 })
 ```
 
-`c.Bind()` covers path, query, header, JSON, XML, and form inputs. `c.JSON`, `c.XML`, `c.String`, `c.Stream`, `c.File`, `c.Redirect`, and `c.Render` cover the response side.
+This keeps standard middleware, observability tools, test helpers, server configuration, cancellation, and request-scoped values usable.
 
-## Configuration
+## Routing and middleware
 
-```go
-app := zinc.NewWithConfig(zinc.Config{
-	ServerHeader:           "zinc/example",
-	CaseSensitive:          true,
-	StrictRouting:          true,
-	AutoHead:               true,
-	AutoOptions:            true,
-	HandleMethodNotAllowed: true,
-	BodyLimit:              8 << 20,
-	ProxyHeader:            zinc.HeaderXForwardedFor,
-	TrustedProxies:         []string{"10.0.0.1"},
-})
-```
-
-`Config` also takes a custom `RequestBinder`, `Validator`, `Renderer`, `JSONCodec`, and `ErrorHandler`:
+Routes can be grouped and middleware can be applied to the whole app or one part of it:
 
 ```go
-views := template.Must(template.ParseGlob("templates/*.html"))
-
-app := zinc.NewWithConfig(zinc.Config{
-	Renderer: zinc.NewHTMLTemplateRenderer(
-		views,
-		zinc.WithTemplateSuffixes(".html", ".tmpl"),
-	),
-})
-
-app.Get("/dashboard", func(c *zinc.Context) error {
-	return c.Render("dashboard", zinc.Map{"Title": "Overview"})
-})
-```
-
-## Middleware
-
-All middleware lives under one package: `github.com/0mjs/zinc/middleware`.
-
-```go
-import (
-	"log"
-	"os"
-	"time"
-
-	"github.com/0mjs/zinc"
-	"github.com/0mjs/zinc/middleware"
-	jwt "github.com/golang-jwt/jwt/v5"
-)
-
-app.Use(middleware.Recover())
 app.Use(middleware.RequestID())
-app.Use(middleware.CORS("https://app.example.com"))
-app.Use(middleware.Decompress())
-app.Use(middleware.Gzip())
-app.Use(middleware.MethodOverride())
-app.Use(middleware.Secure())
-app.Use(middleware.TrailingSlash())
-app.Use(middleware.KeyAuth(middleware.KeyAuthStatic(os.Getenv("API_KEY"))))
-app.Use(middleware.Prometheus())
+app.Use(middleware.Recover())
 
-app.Get("/metrics", middleware.PrometheusHandler())
+api := app.Group("/api", requireAuth)
 
-admin := app.Group("/admin")
-admin.Use(middleware.BodyLimit(256 * middleware.KB))
-admin.Use(middleware.ContextTimeout(250 * time.Millisecond))
-
-app.Use(middleware.BodyDump(func(c *zinc.Context, snapshot middleware.BodyDumpSnapshot) {
-	log.Printf("%s %s -> %d", snapshot.Method, snapshot.Path, snapshot.Status)
-}))
-
-app.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
-	ExposeHeader: zinc.HeaderXCSRFToken,
-}))
-
-app.Use(middleware.BasicAuthWithConfig(middleware.BasicAuthConfig{
-	Validator: middleware.BasicAuthStatic("admin", os.Getenv("ADMIN_PASSWORD")),
-}))
-
-app.Use(middleware.JWTWithConfig(middleware.JWTConfig{
-	KeyFunc: func(*zinc.Context, *jwt.Token) (any, error) {
-		return []byte("secret"), nil
-	},
-}))
+api.Get("/health", func(c *zinc.Context) error {
+	return c.JSON(zinc.Map{"status": "ok"})
+})
 ```
 
-Covered: `BasicAuth`, `BodyDump`, `BodyLimit`, `CasbinAuth`, `ContextTimeout`, `CORS`, `CSRF`, `Decompress`, `Gzip`, `Jaeger`, `JWT`, `KeyAuth`, `MethodOverride`, `Pprof`, `Prometheus`, `Proxy`, `RateLimiter`, `Recover`, `Redirect`, `RequestID`, `RequestLogger`, `Rewrite`, `Secure`, `Session`, `Static`, and `TrailingSlash`. Each has a full page under [Middleware](https://zinc.carbonsoft.sh/middleware).
+Zinc includes middleware for common concerns such as recovery, request IDs, logging, CORS, compression, authentication, rate limiting, security headers, metrics, and tracing. See the [middleware documentation](https://zinc.carbonsoft.sh/middleware) for configuration and examples.
 
-## Background Jobs
+## Binding and errors
 
-Zinc also ships a small first-party jobs add-on: `github.com/0mjs/zinc/jobs`.
+Handlers return errors. Zinc sends successful responses through the context and passes failures to one central error handler.
 
 ```go
-queue := jobs.NewWithConfig(jobs.Config{
-	DefaultMaxAttempts: 3,
-	Backoff:            jobs.ExponentialBackoff(time.Second, time.Minute),
-})
-
-if _, err := queue.Cron("log.hey", "10s", func(ctx context.Context) error {
-	log.Println("Hey!")
-	return nil
-}); err != nil {
-	log.Fatal(err)
+type CreateUser struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
-if err := queue.Handle("email.send", func(ctx context.Context, job jobs.Job) error {
-	var payload SendEmail
-	if err := job.Decode(&payload); err != nil {
-		return err
+app.Post("/users", func(c *zinc.Context) error {
+	var input CreateUser
+	if err := c.Bind().JSON(&input); err != nil {
+		return zinc.ErrBadRequest.WithMessage("invalid request").WithCause(err)
 	}
-	return mailer.Send(ctx, payload.To, payload.Subject)
-}); err != nil {
-	log.Fatal(err)
-}
 
-runner, err := queue.Start(context.Background(), 4)
-if err != nil {
-	log.Fatal(err)
-}
-defer runner.Stop(context.Background())
-
-if _, err := queue.Enqueue(context.Background(), "email.send", SendEmail{
-	To:      "sam@example.com",
-	Subject: "Welcome",
-}); err != nil {
-	log.Fatal(err)
-}
-
-if _, err := queue.Schedule("reports.daily", "0 9 * * mon-fri", DailyReport{}); err != nil {
-	log.Fatal(err)
-}
+	return c.Status(http.StatusCreated).JSON(input)
+})
 ```
 
-The initial backend is in-memory and supports workers, delayed jobs, retries, failed-job inspection, and cron-style schedules. Use `Cron` for Nest-like scheduled function declarations, and drop down to `Handle` plus `Schedule` when the job needs a payload. Durable Postgres and Redis adapters can build on the same API.
+Binding supports path, query, header, JSON, XML, YAML, TOML, form, and multipart input. The binder, validator, JSON codec, renderer, and error handler can all be replaced through `zinc.Config`.
 
-## Benchmarks
+## Performance
 
-Peer-only snapshot (`Apple M1 Pro`, `darwin/arm64`, rerun `2026-03-18`): Zinc wins `65/85` rows overall against Gin, Echo, and Chi — `65/77` excluding throughput. Full tables and remaining gaps live in [BENCKMARKS.md](./BENCKMARKS.md).
+Zinc keeps benchmarks in the repository so performance claims can be checked against the code that produced them.
 
-| Benchmark | Zinc | Gin | Echo | Chi | Winner |
-|---|---:|---:|---:|---:|---|
-| `HelloWorld` | `61.82 ns` | `88.21 ns` | `127.2 ns` | `178.8 ns` | Zinc |
-| `APIHappyPath` | `1.25 µs` | `3.02 µs` | `2.19 µs` | `1.66 µs` | Zinc |
-| `APIBindJSONHappyPath` | `2.41 µs` | `4.41 µs` | `2.52 µs` | `2.81 µs` | Zinc |
-| `StaticFileHit` | `15.64 µs` | `32.85 µs` | `26.95 µs` | `15.97 µs` | Zinc |
-| `RouteRegistrationStatic` | `57.88 µs` | `76.33 µs` | `337.4 µs` | `85.04 µs` | Zinc |
-| `ScenarioAll/ParseAPI26` | `118.2 ns` | `120.9 ns` | `155.4 ns` | `370.9 ns` | Zinc |
+In the latest Apple M1 Pro comparison, Zinc recorded the lowest latency in 64 of 77 comparable rows against Gin, Echo, and Chi. It finished first or second in every row. Primary static, parameter, and not-found dispatch paths retained zero request-time allocations.
 
-Throughput is the weakest category in the peer-only suite; see [BENCKMARKS.md](./BENCKMARKS.md) for the breakdown.
+Results vary by workload and machine. See the [full benchmark report](./BENCKMARKS.md) for commands, raw results, remaining gaps, and measurement notes.
 
-## Quality
+## Packages
 
-Latest local run of `go test -count=1 ./... -coverprofile=coverage.out`:
+| Package | Purpose |
+| --- | --- |
+| `github.com/0mjs/zinc` | Application, router, context, binding, responses, rendering, and static files |
+| `github.com/0mjs/zinc/middleware` | First-party HTTP middleware |
+| `github.com/0mjs/zinc/jobs` | Optional in-memory jobs, retries, delayed work, and schedules |
 
-- Overall: `83.4%`
-- Core (`github.com/0mjs/zinc`): `83.3%`
-- Middleware (`github.com/0mjs/zinc/middleware`): `83.9%`
+The jobs package is independent of the HTTP application. Applications that do not import it do not use it.
+
+## Project status
+
+Zinc is pre-1.0. Pin a release and read the [release notes](https://github.com/0mjs/zinc/releases) when upgrading.
+
+Bug reports and focused proposals are welcome in [GitHub Issues](https://github.com/0mjs/zinc/issues).
 
 ## License
 

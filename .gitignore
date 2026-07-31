@@ -6,8 +6,6 @@ tmp/*
 restricted/*
 vendor/*
 examples/*
-!examples/jobs-cron/
-!examples/jobs-cron/main.go
 .vscode/*
 *.txt
 benchmarks/*.test
