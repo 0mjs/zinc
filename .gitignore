@@ -22,3 +22,5 @@ website/yarn-debug.log*
 website/yarn-error.log*
 website/pnpm-debug.log*
 website/*_examples/*
+.vercel
+.env*
