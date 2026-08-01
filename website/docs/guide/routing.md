@@ -61,6 +61,60 @@ Route patterns are structural: static segments, `{name}` parameters, and a final
 `{name...}` wildcard. Validate numeric IDs, slugs, and other formats in binding or
 application code rather than embedding regular expressions in the route.
 
+### Route pattern grammar
+
+Zinc uses the path wildcard syntax introduced by Go 1.22's `net/http` router.
+It deliberately supports a small path-only subset:
+
+```text
+pattern   = "/" [ segment { "/" segment } ]
+segment   = literal | parameter | catch-all
+parameter = "{" identifier "}"
+catch-all = "{" identifier "...}"  // final segment only
+```
+
+An identifier may contain Unicode letters, digits, and underscores, but cannot
+be empty or begin with a digit. Parameters must occupy a complete path segment,
+and a name can appear only once in a pattern.
+
+| Pattern | Meaning |
+|---|---|
+| `/users` | Static path |
+| `/users/{id}` | One non-empty segment |
+| `/files/{path...}` | The remaining path, including an empty value for `/files/` |
+
+Static routes take priority over parameters, and parameters take priority over
+catch-alls. Parameter names do not distinguish otherwise identical patterns, so
+`/users/{id}` and `/users/{name}` conflict for the same method.
+
+The default configuration is case-insensitive and non-strict. Literal route
+segments are compared without case, while captured values keep their original
+case. `/users` and `/users/` are treated as the same path unless
+`StrictRouting` is enabled.
+
+Zinc matches `Request.URL.Path`. It does not use `URL.RawPath`, so an encoded
+slash decoded into `URL.Path` participates in path segmentation.
+
+The following `net/http` pattern features are not supported:
+
+- method or host prefixes inside ordinary route paths
+- the `{$}` end marker
+- regular-expression parameters
+- `ServeMux` specificity and overlap resolution
+
+Use `HandleHTTP("GET /users/{id}", handler)` when registering a native handler.
+Its method and path are separated before the same Zinc path grammar is applied.
+
+Invalid or legacy patterns fail during registration:
+
+```text
+/users/:id             use /users/{id}
+/files/*path           use /files/{path...}
+/users/prefix-{id}     parameters must occupy a complete segment
+/files/{path...}/meta  catch-alls must be final
+/users/{id}/{id}       names must be unique
+```
+
 ### Migrating from Zinc 0.1
 
 Zinc 0.2 uses one route syntax and does not keep compatibility aliases:
