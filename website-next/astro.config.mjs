@@ -50,7 +50,7 @@ export default defineConfig({
           tag: "link",
           attrs: {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fragment+Mono&display=swap",
+            href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap",
           },
         },
       ],
@@ -139,7 +139,7 @@ export default defineConfig({
         },
       ],
       expressiveCode: {
-        themes: ["gruvbox-dark-hard", "github-light"],
+        themes: ["tokyo-night", "catppuccin-latte"],
       },
     }),
   ],

@@ -1,8 +1,8 @@
-# Design attribution
+# Third-party notices
 
-This exploratory documentation mockup adapts the architecture and visual
-composition of the MIT-licensed [LabStack Echo documentation site](https://github.com/labstack/echox).
-It has been restyled and rewritten for Zinc.
+Parts of the initial Astro and Starlight documentation implementation were
+adapted from the MIT-licensed [LabStack Echo documentation site](https://github.com/labstack/echox).
+Zinc's current visual design and documentation are maintained independently.
 
 ## LabStack Echo documentation license
 

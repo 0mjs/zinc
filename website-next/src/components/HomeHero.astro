@@ -3,47 +3,91 @@ import { Code } from "astro:components";
 
 const serverExample = `package main
 
-import "github.com/0mjs/zinc"
+import (
+    "log"
+
+    "github.com/0mjs/zinc"
+)
 
 func main() {
     app := zinc.New()
+
     app.Get("/", func(c *zinc.Context) error {
         return c.String("Hello from Zinc!")
     })
-    app.Listen(":8080")
+
+    log.Fatal(app.Listen(":8080"))
 }`;
+
+const requestExample = `GET / HTTP/1.1
+Host: localhost:8080
+Accept: */*`;
+
+const responseExample = `HTTP/1.1 200 OK
+Content-Type: text/plain; charset=utf-8
+
+Hello from Zinc!`;
 ---
 
 <section class="z-hero">
-  <div class="z-hero-copy">
-    <span class="z-eyebrow"><i></i> Zinc v0.2 — built on net/http</span>
-    <h1>Fast Go APIs.<br /><span>Still net/http.</span></h1>
-    <p>
-      Expressive routing and practical helpers on the HTTP stack Go developers
-      already know. Small API, standard library compatibility, no ceremony.
-    </p>
-    <div class="z-actions">
-      <a class="z-button primary" href="/guide/quickstart/">Get started <b>→</b></a>
-      <a class="z-button secondary" href="https://github.com/0mjs/zinc">View on GitHub</a>
+  <div class="z-hero-heading">
+    <div>
+      <span class="z-eyebrow"><i></i> Zinc 0.2.0 available now!</span>
+      <h1>Fast Go APIs.<br /><span>Still net/http.</span></h1>
     </div>
-    <button class="z-install" type="button" data-copy="go get github.com/0mjs/zinc">
-      <span>$</span> go get github.com/0mjs/zinc <b aria-hidden="true">□</b>
-    </button>
+
+    <div class="z-hero-intro">
+      <p>
+        Routing, binding, errors, and middleware on top of the HTTP stack you
+        already know. Zinc stays small enough to get out of the way.
+      </p>
+      <div class="z-actions">
+        <a class="z-button primary" href="/guide/quickstart/">Start building <b>→</b></a>
+        <a class="z-button secondary" href="https://github.com/0mjs/zinc">GitHub</a>
+      </div>
+      <button class="z-install" type="button" data-copy="go get github.com/0mjs/zinc" aria-label="Copy the Zinc install command">
+        <span>$</span> go get github.com/0mjs/zinc <b aria-hidden="true">copy</b>
+      </button>
+    </div>
   </div>
 
-  <div class="z-window" aria-label="A minimal Zinc server">
-    <div class="z-window-bar">
-      <span class="z-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="z-filename">main.go</span>
-      <img src="/go.png" alt="Go" />
+  <div class="z-bench" aria-label="Zinc request flow and example application">
+    <div class="z-bench-rail">
+      <span>ZINC / REQUEST PATH</span>
+      <div><b>http.Request</b><i>→</i><b>Zinc</b><i>→</i><b>http.Handler</b></div>
     </div>
-    <div class="z-source">
-      <Code code={serverExample} lang="go" theme="gruvbox-dark-hard" />
-    </div>
-    <div class="z-terminal">
-      <div><span>~/zinc $</span> <b data-command>curl localhost:8080</b><i></i></div>
-      <pre data-output>HTTP/1.1 200 OK
-Hello from Zinc!</pre>
+
+    <div class="z-bench-body">
+      <div class="z-code-panel">
+        <div class="z-panel-label">
+          <span>01 / main.go</span>
+          <img src="/go.png" alt="Go" />
+        </div>
+        <Code code={serverExample} lang="go" theme="tokyo-night" />
+      </div>
+
+      <div class="z-trace-panel">
+        <div class="z-panel-label">
+          <span>02 / roundtrip.http</span>
+          <b>200 OK</b>
+        </div>
+
+        <div class="z-trace-block">
+          <span>REQUEST</span>
+          <Code code={requestExample} lang="http" theme="tokyo-night" />
+        </div>
+
+        <dl class="z-trace-meta">
+          <div><dt>route</dt><dd>/</dd></div>
+          <div><dt>handler</dt><dd>zinc.HandlerFunc</dd></div>
+          <div><dt>transport</dt><dd>net/http</dd></div>
+        </dl>
+
+        <div class="z-trace-block response">
+          <span>RESPONSE</span>
+          <Code code={responseExample} lang="http" theme="tokyo-night" />
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -54,9 +98,9 @@ Hello from Zinc!</pre>
       try {
         await navigator.clipboard.writeText(button.dataset.copy || "");
         const mark = button.querySelector("b");
-        if (mark) mark.textContent = "✓";
+        if (mark) mark.textContent = "copied";
         window.setTimeout(() => {
-          if (mark) mark.textContent = "□";
+          if (mark) mark.textContent = "copy";
         }, 1200);
       } catch {}
     });
