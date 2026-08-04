@@ -873,9 +873,29 @@ main > .hero,
 @media (max-width: 50rem) {
   .z-hero { padding-top: 1.75rem; }
   .z-hero h1 { font-size: clamp(3.2rem, 15vw, 5.5rem); }
+  .z-window-bar { min-height: 2.7rem; padding: 0.65rem 0.85rem; }
+  .z-window-bar > img { height: 1rem; width: 1rem; }
+  .z-window-controls { gap: 0.38rem; }
+  .z-window-controls i { height: 0.58rem; width: 0.58rem; }
   .z-bench-body { grid-template-columns: 1fr; }
   .z-code-panel { border-bottom: 1px solid #2b2f39; border-right: 0; }
-  .z-code-panel .astro-code { min-height: 0; }
+  .z-code-panel .astro-code {
+    font-size: clamp(9.5px, 2.8vw, 11px);
+    line-height: 1.55;
+    min-height: 0;
+    overscroll-behavior-x: contain;
+    padding: 1rem;
+  }
+  .z-terminal-screen {
+    flex: none;
+    font-size: 0.64rem;
+    line-height: 1.55;
+    min-height: 0;
+    padding: 1rem;
+  }
+  .z-terminal-response { margin-top: 0.85rem; }
+  .z-terminal-response p { font-size: 0.62rem; margin-bottom: 0.25rem; overflow-wrap: anywhere; }
+  .z-terminal-response pre { font-size: 0.62rem; margin-top: 0.75rem; }
   .z-native > .z-section-intro { align-items: start; grid-template-columns: 1fr; }
   .z-native-code { grid-template-columns: 1fr; }
   .z-native-code > i { justify-self: center; }
@@ -888,7 +908,9 @@ main > .hero,
 @media (max-width: 32rem) {
   .z-actions { align-items: stretch; flex-direction: column; }
   .z-install { font-size: 0.61rem; width: 100%; }
-  .z-bench { box-shadow: 7px 7px 0 color-mix(in srgb, var(--sl-color-hairline) 50%, transparent); }
+  .z-bench { border-radius: 10px; box-shadow: 7px 7px 0 color-mix(in srgb, var(--sl-color-hairline) 50%, transparent); }
+  .z-code-panel .astro-code,
+  .z-terminal-screen { padding: 0.85rem 0.75rem; }
   .z-principles article { grid-template-columns: 1fr; }
   .z-principles article > code { grid-column: 1; overflow-x: auto; }
   .z-foundation { padding: 1.4rem; }

@@ -13,7 +13,9 @@ func main() {
     app := zinc.New()
 
     app.Get("/", func(c *zinc.Context) error {
-        return c.JSON(zinc.Map{"message": "Hello from Zinc!"})
+        return c.JSON(zinc.Map{
+            "message": "Hello from Zinc!",
+        })
     })
 
     log.Fatal(app.Listen(":8080"))
