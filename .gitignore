@@ -12,27 +12,14 @@ benchmarks/*.test
 
 # Docs
 website/node_modules/
-website/.docusaurus/
-website/build/
+website/.astro/
+website/dist/
 website/.cache/
-website/.temp/
 website/.vite/
 website/npm-debug.log*
 website/yarn-debug.log*
 website/yarn-error.log*
 website/pnpm-debug.log*
-website/*_examples/*
-
-# Astro docs
-website-next/node_modules/
-website-next/.astro/
-website-next/dist/
-website-next/.cache/
-website-next/.vite/
-website-next/npm-debug.log*
-website-next/yarn-debug.log*
-website-next/yarn-error.log*
-website-next/pnpm-debug.log*
 
 .vercel
 .env*

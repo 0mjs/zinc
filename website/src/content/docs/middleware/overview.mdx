@@ -1,0 +1,94 @@
+---
+title: Middleware
+description: Choose and compose Zinc's first-party middleware.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Zinc middleware is ordinary `func(*zinc.Context) error` code. Apply it to the
+whole app, a route group, or one endpoint.
+
+```go
+import "github.com/0mjs/zinc/middleware"
+
+app.Use(
+    middleware.RequestID(),
+    middleware.RequestLogger(),
+    middleware.Recover(),
+)
+```
+
+## Start with the request path
+
+These are the pieces most services add first.
+
+<CardGrid>
+  <LinkCard title="Request ID" description="Generate or propagate an X-Request-ID value." href="/middleware/request-id/" />
+  <LinkCard title="Request Logger" description="Record status, latency, route, headers, and returned errors." href="/middleware/request-logger/" />
+  <LinkCard title="Recover" description="Return panics through Zinc's normal error path." href="/middleware/recover/" />
+  <LinkCard title="Secure Headers" description="Set practical browser security response headers." href="/middleware/secure/" />
+  <LinkCard title="CORS" description="Control browser origins and preflight requests." href="/middleware/cors/" />
+  <LinkCard title="Body Limit" description="Reject request bodies above a configured size." href="/middleware/body-limit/" />
+  <LinkCard title="Context Timeout" description="Attach a deadline to the remaining handler chain." href="/middleware/context-timeout/" />
+  <LinkCard title="Rate Limiter" description="Apply token-bucket limits by app, IP, or custom key." href="/middleware/rate-limiter/" />
+</CardGrid>
+
+## Identity and access
+
+<CardGrid>
+  <LinkCard title="Basic Auth" description="Protect a small internal or administrative surface." href="/middleware/basic-auth/" />
+  <LinkCard title="Key Auth" description="Read opaque API keys from headers, queries, or cookies." href="/middleware/key-auth/" />
+  <LinkCard title="JWT" description="Validate bearer tokens and expose typed claims." href="/middleware/jwt/" />
+  <LinkCard title="Session" description="Store small signed session values in cookies." href="/middleware/session/" />
+  <LinkCard title="CSRF" description="Protect cookie-authenticated browser requests." href="/middleware/csrf/" />
+  <LinkCard title="Casbin Auth" description="Delegate authorization to a Casbin-compatible enforcer." href="/middleware/casbin-auth/" />
+  <LinkCard title="Header Guards" description="Require content types or match custom request headers." href="/middleware/header-guards/" />
+</CardGrid>
+
+## Delivery and observability
+
+<CardGrid>
+  <LinkCard title="Gzip" description="Compress responses when the client accepts gzip." href="/middleware/gzip/" />
+  <LinkCard title="Decompress" description="Decode gzip request bodies before handlers read them." href="/middleware/decompress/" />
+  <LinkCard title="Static" description="Serve static files from middleware." href="/middleware/static/" />
+  <LinkCard title="Proxy" description="Reverse proxy requests with net/http/httputil." href="/middleware/proxy/" />
+  <LinkCard title="Prometheus" description="Expose request counters and duration metrics." href="/middleware/prometheus/" />
+  <LinkCard title="OpenTelemetry" description="Trace Zinc requests with standard OTel tooling." href="/middleware/open-telemetry/" />
+  <LinkCard title="Jaeger" description="Propagate Uber-Trace-Id and observe spans." href="/middleware/jaeger/" />
+  <LinkCard title="pprof" description="Mount standard-library profiling routes." href="/middleware/pprof/" />
+  <LinkCard title="Body Dump" description="Capture request and response bodies for deliberate debugging." href="/middleware/body-dump/" />
+</CardGrid>
+
+## Request shaping
+
+<CardGrid>
+  <LinkCard title="Rewrite" description="Change a request path before route dispatch." href="/middleware/rewrite/" />
+  <LinkCard title="Redirect" description="Redirect exact and wildcard paths." href="/middleware/redirect/" />
+  <LinkCard title="Method Override" description="Tunnel PUT, PATCH, or DELETE through POST." href="/middleware/method-override/" />
+  <LinkCard title="Trailing Slash" description="Add, remove, or redirect slash variants." href="/middleware/trailing-slash/" />
+  <LinkCard title="Utility" description="Throttle, heartbeat, no-cache, conditional, real-IP, and header helpers." href="/middleware/utility/" />
+</CardGrid>
+
+## Put middleware where it belongs
+
+Use app middleware for every request:
+
+```go
+app.Use(middleware.RequestID(), middleware.RequestLogger())
+```
+
+Use group middleware for a route family:
+
+```go
+api := app.Group("/api")
+api.Use(middleware.JWT(keyFunc))
+```
+
+Use route middleware for one endpoint:
+
+```go
+app.Post("/exports", middleware.RateLimiter(), startExport)
+```
+
+Read [Groups and Middleware](/guide/groups-and-middleware/) for execution order
+and `c.Next()`, or [Errors](/guide/errors/) for returned middleware errors.

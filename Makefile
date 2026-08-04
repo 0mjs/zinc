@@ -2,6 +2,10 @@
 dev:
 	air
 
+.PHONY: docs
+docs:
+	npm --prefix website run dev -- --port 3000
+
 .PHONY: tag
 tag:
 ifndef version

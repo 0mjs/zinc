@@ -1,26 +1,22 @@
 {
   "name": "zinc-docs",
-  "private": true,
+  "type": "module",
   "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "start": "docusaurus start",
-    "build": "docusaurus build",
-    "serve": "docusaurus serve",
-    "clear": "docusaurus clear",
-    "postinstall": "patch-package"
+    "dev": "astro dev",
+    "build": "astro build",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:examples": "node scripts/check-go-examples.mjs",
+    "check:links": "node scripts/check-built-links.mjs",
+    "check:site": "npm run check:docs && npm run build && npm run check:links",
+    "check:templ": "node scripts/check-templ-example.mjs",
+    "preview": "astro preview",
+    "astro": "astro"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.6.0",
-    "@docusaurus/preset-classic": "^3.6.0",
-    "@easyops-cn/docusaurus-search-local": "^0.55.1",
-    "patch-package": "^8.0.1",
-    "prism-react-renderer": "^2.4.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "overrides": {
-    "minimatch": "10.2.6",
-    "serialize-javascript": "7.0.5",
-    "uuid": "11.1.1"
+    "@astrojs/starlight": "^0.41.6",
+    "astro": "^7.1.6",
+    "sharp": "^0.35.2"
   }
 }
