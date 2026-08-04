@@ -1,20 +1,20 @@
-# Zinc Docs
+# Zinc documentation
 
-This folder contains the Docusaurus site for Zinc’s documentation.
+The Zinc documentation site is built with Astro and Starlight.
 
-## Local Development
-
-```bash
-cd website
+```sh
 npm install
-npm run start
+npm run dev
 ```
 
-## Build
+The local site runs at <http://localhost:4321>. Documentation lives in
+`src/content/docs`, the homepage lives in `src/components/HomeHero.astro`, and
+the sidebar is configured in `astro.config.mjs`.
 
-```bash
-cd website
-npm run build
+Before publishing:
+
+```sh
+npm run check:site
+npm run check:examples
+npm run check:templ
 ```
-
-The site is configured in docs-only mode, so the markdown pages under `website/docs/` are the primary source of truth.

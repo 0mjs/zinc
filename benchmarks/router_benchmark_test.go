@@ -58,8 +58,12 @@ func buildZincDiagnosticRouterApp(cfg Config) *App {
 }
 
 func buildZincRouteCacheBenchmarkApp() *App {
+	return buildZincRouteCacheBenchmarkAppWithSize(64)
+}
+
+func buildZincRouteCacheBenchmarkAppWithSize(cacheSize int) *App {
 	cfg := DefaultConfig
-	cfg.RouteCacheSize = 64
+	cfg.RouteCacheSize = cacheSize
 	app := NewWithConfig(cfg)
 	for i := 0; i < 64; i++ {
 		path := "/cache/" + strconv.Itoa(i) + "/items/{id}"
@@ -175,6 +179,40 @@ func BenchmarkZincRouterCacheColdParam(b *testing.B) {
 
 	proveResponseAndSinkString(b, handler, MethodGet, targets[0], http.StatusOK, benchmarkOKResponse, "1000")
 	runZincServeHTTPRequestSetBenchmark(b, handler, requests)
+}
+
+func BenchmarkZincRouterCacheWorkloads(b *testing.B) {
+	workloads := []struct {
+		name  string
+		count int
+	}{
+		{name: "Hot", count: 1},
+		{name: "WorkingSet", count: 32},
+		{name: "Unique", count: 4096},
+	}
+	cacheSizes := []struct {
+		name string
+		size int
+	}{
+		{name: "CacheEnabled", size: 64},
+		{name: "CacheDisabled", size: 0},
+	}
+
+	for _, workload := range workloads {
+		workload := workload
+		b.Run(workload.name, func(b *testing.B) {
+			targets := buildZincColdCacheTargets(workload.count)
+			requests := buildRequests(MethodGet, targets)
+			for _, cache := range cacheSizes {
+				cache := cache
+				b.Run(cache.name, func(b *testing.B) {
+					handler := buildZincRouteCacheBenchmarkAppWithSize(cache.size)
+					proveResponseAndSinkString(b, handler, MethodGet, targets[0], http.StatusOK, benchmarkOKResponse, "1000")
+					runZincServeHTTPRequestSetBenchmark(b, handler, requests)
+				})
+			}
+		})
+	}
 }
 
 func BenchmarkZincRouterCaseInsensitiveStatic(b *testing.B) {

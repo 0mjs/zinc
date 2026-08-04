@@ -1,0 +1,62 @@
+---
+title: Server-Sent Events
+description: Stream structured one-way events and flush each one to the browser.
+---
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/0mjs/zinc"
+)
+
+func main() {
+	app := zinc.New()
+
+	app.Get("/events", func(c *zinc.Context) error {
+		flusher, ok := c.Writer().(http.Flusher)
+		if !ok {
+			return zinc.ErrInternalServerError.WithMessage("streaming is not supported")
+		}
+
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case now := <-ticker.C:
+				if err := c.SSE(zinc.SSEvent{
+					Event: "clock",
+					ID:    strconv.FormatInt(now.Unix(), 10),
+					Data:  zinc.Map{"time": now.UTC()},
+				}); err != nil {
+					return err
+				}
+				flusher.Flush()
+			case <-c.Context().Done():
+				return nil
+			}
+		}
+	})
+
+	log.Fatal(app.Listen(":8080"))
+}
+```
+
+Browser client:
+
+```js
+const events = new EventSource("/events");
+events.addEventListener("clock", (event) => {
+  console.log(JSON.parse(event.data));
+});
+```
+
+`c.SSE` sets the event-stream headers and writes one event. Flush after every
+event so it reaches the client immediately. The handler exits when the client
+disconnects and the request context is cancelled.

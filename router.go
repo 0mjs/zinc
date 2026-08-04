@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"math/bits"
 	"reflect"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"unicode"
 )
 
 type RouteHandlerMap map[string]HandlerFunc
@@ -35,7 +32,6 @@ const (
 	radixRoot radixNodeKind = iota
 	radixStatic
 	radixParam
-	radixRegexp
 	radixCatchAll
 )
 
@@ -49,17 +45,14 @@ type radixRoute struct {
 }
 
 type radixNode struct {
-	kind           radixNodeKind
-	prefix         string
-	regexpRaw      string
-	regexp         *regexp.Regexp
-	route          *radixRoute
-	indices        []byte
-	indexTable     *[256]uint16
-	children       []*radixNode
-	regexpChildren []*radixNode
-	paramChild     *radixNode
-	catchAllChild  *radixNode
+	kind          radixNodeKind
+	prefix        string
+	route         *radixRoute
+	indices       []byte
+	indexTable    *[256]uint16
+	children      []*radixNode
+	paramChild    *radixNode
+	catchAllChild *radixNode
 }
 
 type Router struct {
@@ -79,17 +72,6 @@ type Router struct {
 	staticLongMethods methodMask
 }
 
-type routeCacheKey struct {
-	method string
-	path   string
-}
-
-type routeCacheEntry struct {
-	route   *radixRoute
-	values  paramRanges
-	allowed allowedMethodSet
-}
-
 type paramRange struct {
 	start uint32
 	end   uint32
@@ -105,48 +87,6 @@ type paramRanges struct {
 	extra  []paramRange
 }
 
-type RouteCache struct {
-	methodCache  [routeMethodCount]map[string]routeCacheEntry
-	extraCache   map[routeCacheKey]routeCacheEntry
-	overlay      [routeMethodCount]map[string]routeCacheEntry
-	extraOverlay map[routeCacheKey]routeCacheEntry
-	mu           sync.RWMutex
-	size         int
-	keys         []routeCacheKey
-	next         int
-	count        uint32
-	hits         uint32
-	frozenCount  uint32
-	admit        [routeCacheAdmissionShards]uint32
-	dirty        uint32
-	hot          atomic.Pointer[routeCacheHotEntry]
-	snapshot     atomic.Pointer[routeCacheReadSnapshot]
-	overlayHits  uint32
-}
-
-type routeCacheHotEntry struct {
-	key   routeCacheKey
-	entry routeCacheEntry
-}
-
-type routeCacheReadSnapshot struct {
-	methodCache [routeMethodCount]map[string]routeCacheEntry
-	extraCache  map[routeCacheKey]routeCacheEntry
-}
-
-type collectedRouteParams struct {
-	count  int
-	inline [2]string
-	extra  []string
-}
-
-type parsedDynamicSegment struct {
-	kind  radixNodeKind
-	name  string
-	expr  string
-	width int
-}
-
 func (trees dynamicMethodTrees) get(method string) *radixNode {
 	for i := range trees {
 		if trees[i].method == method {
@@ -154,12 +94,6 @@ func (trees dynamicMethodTrees) get(method string) *radixNode {
 		}
 	}
 	return nil
-}
-
-var pathBuilderPool = sync.Pool{
-	New: func() any {
-		return new(strings.Builder)
-	},
 }
 
 var handlerNameCache sync.Map
@@ -195,40 +129,11 @@ const (
 
 const allowHeaderTableSize = 1 << 9
 
-const routeCacheMinRoutes = 64
-
-// A full cache admits one miss per interval in each shard. This protects hot
-// entries from one-hit paths while still letting repeatedly missed paths enter.
-const routeCacheAdmissionInterval = 4
-
-// Keep this a power of two so routeCacheAdmissionShard can use a mask.
-const routeCacheAdmissionShards = 16
-
-// Promote a stable, partially filled cache after two complete hit cycles.
-// Keeping one quarter of the cache free prevents read-mostly promotion from
-// disabling adaptation when the concrete-path working set exceeds capacity.
-const routeCacheFreezeHitCycles = 2
-const routeCacheFreezeCapacityNumerator = 3
-const routeCacheFreezeCapacityDenominator = 4
-
-// Replace a frozen snapshot when a new working set is at least half its size
-// and remains unchanged for the same two complete hit cycles. New overlay
-// insertions reset the stability counter, preventing partial phase shifts from
-// being promoted prematurely.
-const routeCacheRebaseSizeNumerator = 1
-const routeCacheRebaseSizeDenominator = 2
-
 var allowHeaderByMask [allowHeaderTableSize]string
 
 func init() {
 	for raw := 0; raw < len(allowHeaderByMask); raw++ {
 		allowHeaderByMask[raw] = buildAllowHeader(methodMask(raw))
-	}
-}
-
-func NewRouteCache(size int) *RouteCache {
-	return &RouteCache{
-		size: size,
 	}
 }
 
@@ -267,15 +172,6 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 		}
 	}
 	isDynamic := bracePattern
-	if !bracePattern {
-		if firstDynamic := strings.IndexAny(path, ":*"); firstDynamic >= 0 {
-			isDynamic = true
-			paramNames, err = collectRouteParams(path, firstDynamic, bracePattern)
-			if err != nil {
-				return err
-			}
-		}
-	}
 
 	finalHandler := handlers[len(handlers)-1]
 	precomposed := finalHandler
@@ -350,11 +246,7 @@ func (r *Router) add(method, path, name string, handlers ...HandlerFunc) error {
 
 	route := newRadixRoute(precomposed, infoIndex, paramNames)
 	tree := r.ensureDynamicTree(method, mask)
-	if bracePattern {
-		err = tree.addBrace(path, route)
-	} else {
-		err = tree.addWithCase(path, route, r.config == nil || !r.config.CaseSensitive)
-	}
+	err = tree.addBrace(path, route, r.config != nil && !r.config.CaseSensitive)
 	if err != nil {
 		return err
 	}
@@ -454,10 +346,18 @@ func (r *Router) findInto(method, path string, ctx *Context) HandlerFunc {
 		}
 	}
 	if caseSensitive {
-		return r.findDynamicInto(method, path, ctx)
+		if handler := r.findDynamicInto(method, path, ctx); handler != nil || path == originalPath {
+			return handler
+		}
+		return r.findDynamicInto(method, originalPath, ctx)
 	}
 	if handler := r.findDynamicInto(method, path, ctx); handler != nil {
 		return handler
+	}
+	if path != originalPath {
+		if handler := r.findDynamicInto(method, originalPath, ctx); handler != nil {
+			return handler
+		}
 	}
 	if routes, ok := r.routes[method]; ok {
 		if route := lookupStaticRouteLower(routes, originalPath, path); route != nil {
@@ -466,7 +366,14 @@ func (r *Router) findInto(method, path string, ctx *Context) HandlerFunc {
 		}
 	}
 	if lower, changed := lowercasePath(path); changed {
-		return r.findDynamicInto(method, lower, ctx)
+		if handler := r.findDynamicInto(method, lower, ctx); handler != nil {
+			return handler
+		}
+	}
+	if path != originalPath {
+		if lower, changed := lowercasePath(originalPath); changed {
+			return r.findDynamicInto(method, lower, ctx)
+		}
 	}
 	return nil
 }
@@ -521,6 +428,9 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 	}
 	captured := ctx.paramRangesScratch()
 	entry := r.lookupDynamicDispatch(method, mask, path, needAllowed, captured)
+	if path != originalPath && entry.route == nil && entry.allowed.empty() {
+		entry = r.lookupDynamicDispatch(method, mask, originalPath, needAllowed, captured)
+	}
 	if !caseSensitive && entry.route == nil {
 		if routes := r.staticRoutesFor(method, mask); routes != nil {
 			if route := lookupStaticRouteLower(routes, originalPath, path); route != nil {
@@ -530,8 +440,20 @@ func (r *Router) dispatchInto(method, path string, needAllowed bool, ctx *Contex
 		}
 		if lower, changed := lowercasePath(path); changed {
 			lowerEntry := r.lookupDynamicDispatch(method, mask, lower, needAllowed, captured)
+			if path != originalPath && lowerEntry.route == nil && lowerEntry.allowed.empty() {
+				if lowerOriginal, originalChanged := lowercasePath(originalPath); originalChanged {
+					lowerEntry = r.lookupDynamicDispatch(method, mask, lowerOriginal, needAllowed, captured)
+				}
+			}
 			if lowerEntry.route != nil || !lowerEntry.allowed.empty() {
 				entry = lowerEntry
+			}
+		} else if path != originalPath {
+			if lowerOriginal, changed := lowercasePath(originalPath); changed {
+				lowerEntry := r.lookupDynamicDispatch(method, mask, lowerOriginal, needAllowed, captured)
+				if lowerEntry.route != nil || !lowerEntry.allowed.empty() {
+					entry = lowerEntry
+				}
 			}
 		}
 	}
@@ -938,234 +860,6 @@ func addAllowedMethod(allowed allowedMethodSet, method string, mask methodMask) 
 	return allowed
 }
 
-func (r *Router) normalizePath(path string) string {
-	if path == "" {
-		return "/"
-	}
-	if path[0] == '/' {
-		return path
-	}
-	builder := pathBuilderPool.Get().(*strings.Builder)
-	builder.Reset()
-	builder.WriteByte('/')
-	builder.WriteString(path)
-	result := builder.String()
-	pathBuilderPool.Put(builder)
-	return result
-}
-
-func rejectLegacyRoutePattern(path string) error {
-	if !strings.ContainsAny(path, ":*") {
-		return nil
-	}
-
-	for start := 0; start < len(path); {
-		end := start
-		firstParam := -1
-		for end < len(path) && path[end] != '/' {
-			switch path[end] {
-			case paramIdentifier:
-				if firstParam < 0 {
-					firstParam = end
-				}
-			case wildcardIdentifier:
-				for end < len(path) && path[end] != '/' {
-					end++
-				}
-				return fmt.Errorf("legacy route wildcard %q in path %q: use {name...} syntax", path[start:end], path)
-			}
-			end++
-		}
-		if firstParam >= 0 && firstParam+1 < end {
-			return fmt.Errorf("legacy route parameter %q in path %q: use {name} syntax", path[start:end], path)
-		}
-		start = end + 1
-	}
-	return nil
-}
-
-func collectBraceRouteParams(path string) (collectedRouteParams, error) {
-	var names collectedRouteParams
-
-	for i := 0; i < len(path); i++ {
-		switch path[i] {
-		case '}':
-			return names, fmt.Errorf("unmatched closing brace in route path %q", path)
-		case '{':
-			if i == 0 || path[i-1] != '/' {
-				return names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
-			}
-			endOffset := strings.IndexByte(path[i+1:], '}')
-			if endOffset < 0 {
-				return names, fmt.Errorf("unclosed route parameter in path %q", path)
-			}
-			end := i + 1 + endOffset
-			if end+1 < len(path) && path[end+1] != '/' {
-				return names, fmt.Errorf("route parameter must occupy a complete segment in path %q", path)
-			}
-
-			rawName := path[i+1 : end]
-			catchAll := strings.HasSuffix(rawName, "...")
-			name := strings.TrimSuffix(rawName, "...")
-			if !validRouteParamName(name) {
-				return names, fmt.Errorf("invalid route parameter %q in path %q", name, path)
-			}
-			if names.contains(name) {
-				return names, fmt.Errorf("duplicate route parameter %q in path %q", name, path)
-			}
-			names.add(name)
-			if catchAll && end != len(path)-1 {
-				return names, fmt.Errorf("route wildcard %q must be final in path %q", name, path)
-			}
-			i = end
-		}
-	}
-	return names, nil
-}
-
-func validRouteParamName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for index, r := range name {
-		if index == 0 && unicode.IsDigit(r) {
-			return false
-		}
-		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *collectedRouteParams) add(name string) {
-	if c.count < len(c.inline) {
-		c.inline[c.count] = name
-		c.count++
-		return
-	}
-	c.extra = append(c.extra, name)
-	c.count++
-}
-
-func (c *collectedRouteParams) contains(name string) bool {
-	inlineCount := c.count
-	if inlineCount > len(c.inline) {
-		inlineCount = len(c.inline)
-	}
-	for i := 0; i < inlineCount; i++ {
-		if c.inline[i] == name {
-			return true
-		}
-	}
-	for _, existing := range c.extra {
-		if existing == name {
-			return true
-		}
-	}
-	return false
-}
-
-func collectRouteParams(path string, startIndex int, canonicalWildcardName ...bool) (collectedRouteParams, error) {
-	var names collectedRouteParams
-	useCanonicalWildcardName := len(canonicalWildcardName) > 0 && canonicalWildcardName[0]
-	for i := startIndex; i < len(path); i++ {
-		if path[i] != paramIdentifier && path[i] != wildcardIdentifier {
-			continue
-		}
-		segment, err := parseDynamicSegment(path[i:])
-		if err != nil {
-			return names, fmt.Errorf("%w in path %q", err, path)
-		}
-		switch segment.kind {
-		case radixParam, radixRegexp:
-			names.add(segment.name)
-		case radixCatchAll:
-			if useCanonicalWildcardName {
-				names.add(segment.name)
-			} else {
-				names.add("*")
-			}
-			return names, nil
-		}
-		i += segment.width - 1
-	}
-	return names, nil
-}
-
-func parseDynamicSegment(path string) (parsedDynamicSegment, error) {
-	if path == "" {
-		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
-	}
-	switch path[0] {
-	case paramIdentifier:
-		start := 1
-		if start >= len(path) || path[start] == '/' {
-			return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
-		}
-		end := start
-		for end < len(path) && path[end] != '/' && path[end] != '<' {
-			if path[end] == paramIdentifier || path[end] == wildcardIdentifier {
-				return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
-			}
-			end++
-		}
-		if end == start {
-			return parsedDynamicSegment{}, fmt.Errorf("invalid parameter")
-		}
-		segment := parsedDynamicSegment{
-			kind:  radixParam,
-			name:  path[start:end],
-			width: end,
-		}
-		if end < len(path) && path[end] == '<' {
-			constraintEnd, expr, err := parseParamConstraint(path, end)
-			if err != nil {
-				return parsedDynamicSegment{}, err
-			}
-			segment.kind = radixRegexp
-			segment.expr = expr
-			segment.width = constraintEnd
-		}
-		return segment, nil
-	case wildcardIdentifier:
-		start := 1
-		if start >= len(path) || path[start] == '/' {
-			return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
-		}
-		end := start
-		for end < len(path) && path[end] != '/' {
-			if path[end] == paramIdentifier || path[end] == wildcardIdentifier {
-				return parsedDynamicSegment{}, fmt.Errorf("invalid wildcard")
-			}
-			end++
-		}
-		if end != len(path) {
-			return parsedDynamicSegment{}, fmt.Errorf("wildcard must be final")
-		}
-		return parsedDynamicSegment{kind: radixCatchAll, name: path[start:end], width: end}, nil
-	default:
-		return parsedDynamicSegment{}, fmt.Errorf("invalid route segment")
-	}
-}
-
-func parseParamConstraint(path string, start int) (int, string, error) {
-	if start >= len(path) || path[start] != '<' {
-		return 0, "", fmt.Errorf("invalid regex constraint")
-	}
-	end := start + 1
-	for end < len(path) && path[end] != '>' {
-		if path[end] == '/' {
-			return 0, "", fmt.Errorf("invalid regex constraint")
-		}
-		end++
-	}
-	if end >= len(path) || end == start+1 {
-		return 0, "", fmt.Errorf("invalid regex constraint")
-	}
-	return end + 1, path[start+1 : end], nil
-}
-
 func commonPrefixLen(a, b string) int {
 	limit := len(a)
 	if len(b) < limit {
@@ -1181,22 +875,6 @@ func commonPrefixLen(a, b string) int {
 
 func nextSlash(path string) int {
 	return strings.IndexByte(path, '/')
-}
-
-func (c collectedRouteParams) slice() []string {
-	if c.count == 0 {
-		return nil
-	}
-	out := make([]string, 0, c.count)
-	inlineCount := c.count
-	if inlineCount > len(c.inline) {
-		inlineCount = len(c.inline)
-	}
-	out = append(out, c.inline[:inlineCount]...)
-	if len(c.extra) > 0 {
-		out = append(out, c.extra...)
-	}
-	return out
 }
 
 func newRadixRoute(handler HandlerFunc, infoIndex uint32, names collectedRouteParams) *radixRoute {
@@ -1397,51 +1075,8 @@ func cloneParamRangesForCache(values paramRanges, count int) paramRanges {
 	return cloned
 }
 
-func (n *radixNode) add(path string, route *radixRoute) error {
-	return n.addWithCase(path, route, false)
-}
-
-func (n *radixNode) addWithCase(path string, route *radixRoute, caseInsensitive bool) error {
-	current := n
-	remaining := path
-	for len(remaining) > 0 {
-		wildIndex := strings.IndexAny(remaining, ":*")
-		if wildIndex < 0 {
-			current = current.addStaticPath(remaining)
-			remaining = ""
-			break
-		}
-		if wildIndex > 0 {
-			current = current.addStaticPath(remaining[:wildIndex])
-			remaining = remaining[wildIndex:]
-		}
-		segment, err := parseDynamicSegment(remaining)
-		if err != nil {
-			return fmt.Errorf("%w in path %q", err, path)
-		}
-		switch segment.kind {
-		case radixParam:
-			current = current.addParamChild()
-		case radixRegexp:
-			current, err = current.addRegexpChild(segment.expr, caseInsensitive)
-			if err != nil {
-				return fmt.Errorf("%w in path %q", err, path)
-			}
-		case radixCatchAll:
-			current = current.addCatchAllChild()
-		default:
-			return fmt.Errorf("invalid route segment in path %q", path)
-		}
-		remaining = remaining[segment.width:]
-	}
-	if !current.trySetRoute(route) {
-		return fmt.Errorf("route already registered for %s", path)
-	}
-	return nil
-}
-
 // addBrace builds the radix path after collectBraceRouteParams has validated it.
-func (n *radixNode) addBrace(path string, route *radixRoute) error {
+func (n *radixNode) addBrace(path string, route *radixRoute, caseInsensitive bool) error {
 	current := n
 	staticStart := 0
 	for i := 0; i < len(path); i++ {
@@ -1449,7 +1084,11 @@ func (n *radixNode) addBrace(path string, route *radixRoute) error {
 			continue
 		}
 		if i > staticStart {
-			current = current.addStaticPath(path[staticStart:i])
+			literal := path[staticStart:i]
+			if caseInsensitive {
+				literal, _ = lowercasePath(literal)
+			}
+			current = current.addStaticPath(literal)
 		}
 		end := i + 1 + strings.IndexByte(path[i+1:], '}')
 		rawName := path[i+1 : end]
@@ -1462,7 +1101,11 @@ func (n *radixNode) addBrace(path string, route *radixRoute) error {
 		i = end
 	}
 	if staticStart < len(path) {
-		current = current.addStaticPath(path[staticStart:])
+		literal := path[staticStart:]
+		if caseInsensitive {
+			literal, _ = lowercasePath(literal)
+		}
+		current = current.addStaticPath(literal)
 	}
 	if !current.trySetRoute(route) {
 		return fmt.Errorf("route already registered for %s", path)
@@ -1496,26 +1139,20 @@ func (n *radixNode) addStaticPath(path string) *radixNode {
 			continue
 		}
 		existing := &radixNode{
-			kind:           radixStatic,
-			prefix:         child.prefix[common:],
-			regexpRaw:      child.regexpRaw,
-			regexp:         child.regexp,
-			route:          child.route,
-			indices:        child.indices,
-			indexTable:     child.indexTable,
-			children:       child.children,
-			regexpChildren: child.regexpChildren,
-			paramChild:     child.paramChild,
-			catchAllChild:  child.catchAllChild,
+			kind:          radixStatic,
+			prefix:        child.prefix[common:],
+			route:         child.route,
+			indices:       child.indices,
+			indexTable:    child.indexTable,
+			children:      child.children,
+			paramChild:    child.paramChild,
+			catchAllChild: child.catchAllChild,
 		}
 		child.prefix = child.prefix[:common]
-		child.regexpRaw = ""
-		child.regexp = nil
 		child.route = nil
 		child.indices = nil
 		child.indexTable = nil
 		child.children = nil
-		child.regexpChildren = nil
 		child.paramChild = nil
 		child.catchAllChild = nil
 		child.addStaticChild(existing)
@@ -1536,29 +1173,6 @@ func (n *radixNode) addParamChild() *radixNode {
 	child := &radixNode{kind: radixParam}
 	n.paramChild = child
 	return child
-}
-
-func (n *radixNode) addRegexpChild(expr string, caseInsensitive bool) (*radixNode, error) {
-	for _, child := range n.regexpChildren {
-		if child.regexpRaw == expr {
-			return child, nil
-		}
-	}
-	pattern := "^(?:" + expr + ")$"
-	if caseInsensitive {
-		pattern = "(?i)" + pattern
-	}
-	compiled, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex constraint %q: %w", expr, err)
-	}
-	child := &radixNode{
-		kind:      radixRegexp,
-		regexpRaw: expr,
-		regexp:    compiled,
-	}
-	n.regexpChildren = append(n.regexpChildren, child)
-	return child, nil
 }
 
 func (n *radixNode) addCatchAllChild() *radixNode {
@@ -1625,24 +1239,6 @@ func (n *radixNode) lookup(path string, offset int, values *paramRanges, capture
 		captured++
 		offset += end
 		path = path[end:]
-	case radixRegexp:
-		if len(path) == 0 || path[0] == '/' {
-			return nil
-		}
-		end := nextSlash(path)
-		if end < 0 {
-			end = len(path)
-		}
-		if n.regexp == nil || !n.regexp.MatchString(path[:end]) {
-			return nil
-		}
-		values.set(captured, paramRange{
-			start: uint32(offset),
-			end:   uint32(offset + end),
-		})
-		captured++
-		offset += end
-		path = path[end:]
 	case radixCatchAll:
 		start := offset
 		if len(path) > 0 && path[0] == '/' {
@@ -1656,15 +1252,16 @@ func (n *radixNode) lookup(path string, offset int, values *paramRanges, capture
 		return n.matchRoute(captured)
 	}
 	if len(path) == 0 {
-		return n.matchRoute(captured)
+		if matched := n.matchRoute(captured); matched != nil {
+			return matched
+		}
+		if n.catchAllChild != nil {
+			return n.catchAllChild.lookup(path, offset, values, captured)
+		}
+		return nil
 	}
 	if idx := n.staticChildIndex(path[0]); idx >= 0 {
 		if matched := n.children[idx].lookup(path, offset, values, captured); matched != nil {
-			return matched
-		}
-	}
-	for _, child := range n.regexpChildren {
-		if matched := child.lookup(path, offset, values, captured); matched != nil {
 			return matched
 		}
 	}
@@ -1698,37 +1295,19 @@ func (n *radixNode) matchesPath(path string, captured int) bool {
 		}
 		captured++
 		path = path[end:]
-	case radixRegexp:
-		if len(path) == 0 || path[0] == '/' {
-			return false
-		}
-		end := nextSlash(path)
-		if end < 0 {
-			end = len(path)
-		}
-		if n.regexp == nil || !n.regexp.MatchString(path[:end]) {
-			return false
-		}
-		captured++
-		path = path[end:]
 	case radixCatchAll:
 		captured++
 		return n.hasPathRoute(captured)
 	}
 
-	if len(path) == 0 && n.hasPathRoute(captured) {
-		return true
-	}
 	if len(path) == 0 {
-		return false
+		if n.hasPathRoute(captured) {
+			return true
+		}
+		return n.catchAllChild != nil && n.catchAllChild.matchesPath(path, captured)
 	}
 	if idx := n.staticChildIndex(path[0]); idx >= 0 && n.children[idx].matchesPath(path, captured) {
 		return true
-	}
-	for _, child := range n.regexpChildren {
-		if child.matchesPath(path, captured) {
-			return true
-		}
 	}
 	if n.paramChild != nil && n.paramChild.matchesPath(path, captured) {
 		return true
@@ -1817,382 +1396,6 @@ func buildAllowHeaderWithExtra(mask methodMask, extra []string) string {
 		builder.WriteString(method)
 	}
 	return builder.String()
-}
-
-func (rc *RouteCache) get(key routeCacheKey) (routeCacheEntry, bool) {
-	return rc.getWithMask(key, methodMaskFor(key.method))
-}
-
-func (rc *RouteCache) getWithMask(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
-	if rc == nil {
-		return routeCacheEntry{}, false
-	}
-	if snapshot := rc.snapshot.Load(); snapshot != nil {
-		if entry, ok := snapshot.get(key, mask); ok {
-			return entry, true
-		}
-		if atomic.LoadUint32(&rc.count) == atomic.LoadUint32(&rc.frozenCount) {
-			return routeCacheEntry{}, false
-		}
-		rc.mu.RLock()
-		entry, ok := rc.getOverlayLocked(key, mask)
-		rc.mu.RUnlock()
-		if ok {
-			rc.recordOverlayHit(snapshot)
-		}
-		return entry, ok
-	}
-	rc.ensureFresh()
-	if hot := rc.hot.Load(); hot != nil && hot.key == key {
-		return hot.entry, true
-	}
-	if atomic.LoadUint32(&rc.count) == 0 {
-		return routeCacheEntry{}, false
-	}
-	rc.mu.RLock()
-	entry, ok := rc.getLocked(key, mask)
-	rc.mu.RUnlock()
-	if ok {
-		rc.recordHit()
-	}
-	return entry, ok
-}
-
-func (rc *RouteCache) getHot(key routeCacheKey) (routeCacheEntry, bool) {
-	if rc == nil || atomic.LoadUint32(&rc.dirty) != 0 {
-		return routeCacheEntry{}, false
-	}
-	if hot := rc.hot.Load(); hot != nil && hot.key == key {
-		return hot.entry, true
-	}
-	return routeCacheEntry{}, false
-}
-
-func (rc *RouteCache) set(key routeCacheKey, entry routeCacheEntry) {
-	rc.setWithMask(key, methodMaskFor(key.method), entry)
-}
-
-func (rc *RouteCache) setWithMask(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
-	if rc == nil || rc.size <= 0 {
-		return
-	}
-	rc.ensureFresh()
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	if snapshot := rc.snapshot.Load(); snapshot != nil {
-		if _, exists := snapshot.get(key, mask); exists {
-			return
-		}
-		rc.setOverlayLocked(key, mask, entry)
-		return
-	}
-	if rc.keys == nil {
-		rc.keys = make([]routeCacheKey, 0, rc.size)
-		rc.next = 0
-	}
-	if _, exists := rc.getLocked(key, mask); exists {
-		rc.setLocked(key, mask, entry)
-		if hot := rc.hot.Load(); hot != nil && hot.key == key {
-			rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
-		}
-		return
-	}
-	count := int(atomic.LoadUint32(&rc.count))
-	if count < rc.size {
-		rc.setLocked(key, mask, entry)
-		rc.keys = append(rc.keys, key)
-		atomic.StoreUint32(&rc.count, uint32(count+1))
-		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
-		return
-	}
-
-	victim := rc.keys[rc.next]
-	rc.deleteLocked(victim, methodMaskFor(victim.method))
-	rc.setLocked(key, mask, entry)
-	rc.keys[rc.next] = key
-	rc.next++
-	if rc.next == len(rc.keys) {
-		rc.next = 0
-	}
-	if hot := rc.hot.Load(); hot != nil && hot.key == victim {
-		rc.hot.Store(nil)
-	}
-}
-
-func (rc *RouteCache) setMiss(key routeCacheKey, entry routeCacheEntry) {
-	rc.setMissWithMask(key, methodMaskFor(key.method), entry)
-}
-
-func (rc *RouteCache) setMissWithMask(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
-	if rc == nil || rc.size <= 0 {
-		return
-	}
-	admissionShard := routeCacheAdmissionShard(key)
-	if atomic.LoadUint32(&rc.count) >= uint32(rc.size) &&
-		atomic.AddUint32(&rc.admit[admissionShard], 1)%routeCacheAdmissionInterval != 0 {
-		return
-	}
-	rc.setWithMask(key, mask, entry)
-}
-
-func (rc *RouteCache) recordHit() {
-	count := atomic.LoadUint32(&rc.count)
-	if count < routeCacheMinRoutes ||
-		uint64(count)*routeCacheFreezeCapacityDenominator >
-			uint64(rc.size)*routeCacheFreezeCapacityNumerator {
-		return
-	}
-	hits := atomic.AddUint32(&rc.hits, 1)
-	if uint64(hits) < uint64(count)*routeCacheFreezeHitCycles {
-		return
-	}
-	rc.freezeReadSnapshot(count)
-}
-
-func (rc *RouteCache) recordOverlayHit(expectedSnapshot *routeCacheReadSnapshot) {
-	if rc.snapshot.Load() != expectedSnapshot {
-		return
-	}
-	count := atomic.LoadUint32(&rc.count)
-	frozenCount := atomic.LoadUint32(&rc.frozenCount)
-	if count <= frozenCount {
-		return
-	}
-	overlayCount := count - frozenCount
-	if overlayCount < routeCacheMinRoutes ||
-		uint64(overlayCount)*routeCacheFreezeCapacityDenominator >
-			uint64(rc.size)*routeCacheFreezeCapacityNumerator ||
-		uint64(overlayCount)*routeCacheRebaseSizeDenominator <
-			uint64(frozenCount)*routeCacheRebaseSizeNumerator {
-		return
-	}
-	hits := atomic.AddUint32(&rc.overlayHits, 1)
-	if uint64(hits) < uint64(overlayCount)*routeCacheFreezeHitCycles {
-		return
-	}
-	rc.rebaseReadSnapshot(expectedSnapshot, overlayCount, frozenCount)
-}
-
-func (rc *RouteCache) freezeReadSnapshot(expectedCount uint32) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	if rc.snapshot.Load() != nil ||
-		atomic.LoadUint32(&rc.dirty) != 0 ||
-		atomic.LoadUint32(&rc.count) != expectedCount ||
-		uint64(atomic.LoadUint32(&rc.hits)) < uint64(expectedCount)*routeCacheFreezeHitCycles {
-		return
-	}
-	snapshot := &routeCacheReadSnapshot{
-		methodCache: rc.methodCache,
-		extraCache:  rc.extraCache,
-	}
-	rc.keys = nil
-	rc.next = 0
-	atomic.StoreUint32(&rc.frozenCount, expectedCount)
-	rc.snapshot.Store(snapshot)
-	rc.hot.Store(nil)
-}
-
-func (rc *RouteCache) rebaseReadSnapshot(
-	expectedSnapshot *routeCacheReadSnapshot,
-	expectedOverlayCount,
-	expectedFrozenCount uint32,
-) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	if rc.snapshot.Load() != expectedSnapshot ||
-		atomic.LoadUint32(&rc.dirty) != 0 ||
-		atomic.LoadUint32(&rc.frozenCount) != expectedFrozenCount ||
-		atomic.LoadUint32(&rc.count) != expectedFrozenCount+expectedOverlayCount ||
-		uint64(atomic.LoadUint32(&rc.overlayHits)) <
-			uint64(expectedOverlayCount)*routeCacheFreezeHitCycles {
-		return
-	}
-
-	rc.methodCache = rc.overlay
-	rc.extraCache = rc.extraOverlay
-	rc.overlay = [routeMethodCount]map[string]routeCacheEntry{}
-	rc.extraOverlay = nil
-	rc.keys = nil
-	rc.next = 0
-	atomic.StoreUint32(&rc.count, expectedOverlayCount)
-	atomic.StoreUint32(&rc.hits, 0)
-	atomic.StoreUint32(&rc.frozenCount, expectedOverlayCount)
-	atomic.StoreUint32(&rc.overlayHits, 0)
-	rc.snapshot.Store(&routeCacheReadSnapshot{
-		methodCache: rc.methodCache,
-		extraCache:  rc.extraCache,
-	})
-	rc.hot.Store(nil)
-}
-
-func (rc *RouteCache) getLocked(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		entry, ok := rc.methodCache[slot][key.path]
-		return entry, ok
-	}
-	entry, ok := rc.extraCache[key]
-	return entry, ok
-}
-
-func (snapshot *routeCacheReadSnapshot) get(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		entry, ok := snapshot.methodCache[slot][key.path]
-		return entry, ok
-	}
-	entry, ok := snapshot.extraCache[key]
-	return entry, ok
-}
-
-func (rc *RouteCache) getOverlayLocked(key routeCacheKey, mask methodMask) (routeCacheEntry, bool) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		entry, ok := rc.overlay[slot][key.path]
-		return entry, ok
-	}
-	entry, ok := rc.extraOverlay[key]
-	return entry, ok
-}
-
-func (rc *RouteCache) setLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		cache := rc.methodCache[slot]
-		if cache == nil {
-			cache = make(map[string]routeCacheEntry)
-			rc.methodCache[slot] = cache
-		}
-		cache[key.path] = entry
-		return
-	}
-	if rc.extraCache == nil {
-		rc.extraCache = make(map[routeCacheKey]routeCacheEntry)
-	}
-	rc.extraCache[key] = entry
-}
-
-func (rc *RouteCache) setOverlayLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
-	if _, exists := rc.getOverlayLocked(key, mask); exists {
-		rc.storeOverlayLocked(key, mask, entry)
-		return
-	}
-	count := int(atomic.LoadUint32(&rc.count))
-	if count < rc.size {
-		rc.storeOverlayLocked(key, mask, entry)
-		rc.keys = append(rc.keys, key)
-		atomic.StoreUint32(&rc.count, uint32(count+1))
-		atomic.StoreUint32(&rc.overlayHits, 0)
-		rc.hot.Store(&routeCacheHotEntry{key: key, entry: entry})
-		return
-	}
-	if len(rc.keys) == 0 {
-		return
-	}
-	victim := rc.keys[rc.next]
-	rc.deleteOverlayLocked(victim, methodMaskFor(victim.method))
-	rc.storeOverlayLocked(key, mask, entry)
-	rc.keys[rc.next] = key
-	atomic.StoreUint32(&rc.overlayHits, 0)
-	rc.next++
-	if rc.next == len(rc.keys) {
-		rc.next = 0
-	}
-	if hot := rc.hot.Load(); hot != nil && hot.key == victim {
-		rc.hot.Store(nil)
-	}
-}
-
-func (rc *RouteCache) storeOverlayLocked(key routeCacheKey, mask methodMask, entry routeCacheEntry) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		cache := rc.overlay[slot]
-		if cache == nil {
-			cache = make(map[string]routeCacheEntry)
-			rc.overlay[slot] = cache
-		}
-		cache[key.path] = entry
-		return
-	}
-	if rc.extraOverlay == nil {
-		rc.extraOverlay = make(map[routeCacheKey]routeCacheEntry)
-	}
-	rc.extraOverlay[key] = entry
-}
-
-func (rc *RouteCache) deleteLocked(key routeCacheKey, mask methodMask) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		delete(rc.methodCache[slot], key.path)
-		return
-	}
-	delete(rc.extraCache, key)
-}
-
-func (rc *RouteCache) deleteOverlayLocked(key routeCacheKey, mask methodMask) {
-	if slot := singleBitIndex(mask); slot >= 0 {
-		delete(rc.overlay[slot], key.path)
-		return
-	}
-	delete(rc.extraOverlay, key)
-}
-
-func routeCacheAdmissionShard(key routeCacheKey) int {
-	path := key.path
-	hash := uint32(len(path))*16777619 ^ uint32(len(key.method))
-	if len(path) != 0 {
-		hash = (hash ^ uint32(path[0])) * 16777619
-		hash = (hash ^ uint32(path[len(path)/2])) * 16777619
-		hash = (hash ^ uint32(path[len(path)-1])) * 16777619
-	}
-	if len(key.method) != 0 {
-		hash = (hash ^ uint32(key.method[0])) * 16777619
-	}
-	return int(hash & (routeCacheAdmissionShards - 1))
-}
-
-func (rc *RouteCache) invalidate() {
-	if rc == nil {
-		return
-	}
-	atomic.StoreUint32(&rc.dirty, 1)
-	rc.snapshot.Store(nil)
-	rc.hot.Store(nil)
-}
-
-func (rc *RouteCache) ensureFresh() {
-	if rc == nil || atomic.LoadUint32(&rc.dirty) == 0 {
-		return
-	}
-	rc.mu.Lock()
-	if atomic.LoadUint32(&rc.dirty) != 0 {
-		rc.methodCache = [routeMethodCount]map[string]routeCacheEntry{}
-		rc.extraCache = nil
-		rc.overlay = [routeMethodCount]map[string]routeCacheEntry{}
-		rc.extraOverlay = nil
-		rc.keys = nil
-		rc.next = 0
-		atomic.StoreUint32(&rc.count, 0)
-		atomic.StoreUint32(&rc.hits, 0)
-		atomic.StoreUint32(&rc.frozenCount, 0)
-		atomic.StoreUint32(&rc.overlayHits, 0)
-		for i := range rc.admit {
-			atomic.StoreUint32(&rc.admit[i], 0)
-		}
-		atomic.StoreUint32(&rc.dirty, 0)
-		rc.snapshot.Store(nil)
-		rc.hot.Store(nil)
-	}
-	rc.mu.Unlock()
-}
-
-func lowercasePath(path string) (string, bool) {
-	for i := 0; i < len(path); i++ {
-		c := path[i]
-		if c >= 'A' && c <= 'Z' {
-			return strings.ToLower(path), true
-		}
-		if c >= 0x80 {
-			lower := strings.ToLower(path)
-			return lower, lower != path
-		}
-	}
-	return path, false
 }
 
 func handlerPC(handler HandlerFunc) uintptr {

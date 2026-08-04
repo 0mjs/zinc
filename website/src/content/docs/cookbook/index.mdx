@@ -1,0 +1,56 @@
+---
+title: Cookbook
+description: Complete Zinc programs for APIs, existing net/http services, operations, files, and realtime work.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Every recipe is a complete program rather than an isolated API fragment. Pick
+the outcome you need, copy the example into a module, and run it.
+
+## Build an API
+
+<CardGrid>
+  <LinkCard title="CRUD API" description="Create, read, update, and delete an in-memory resource safely." href="/cookbook/crud/" />
+  <LinkCard title="SQLite CRUD API" description="Add persistence, typed binding, route params, and JSON responses." href="/cookbook/sqlite-crud-api/" />
+  <LinkCard title="Signed Webhooks" description="Limit, authenticate, decode, and acknowledge webhook deliveries." href="/cookbook/signed-webhook/" />
+  <LinkCard title="Health and Readiness" description="Separate process health from dependency readiness." href="/cookbook/health-readiness/" />
+  <LinkCard title="Structured Logs with slog" description="Send route, status, latency, and request IDs through Go's logger." href="/cookbook/structured-logging/" />
+</CardGrid>
+
+## Fit Zinc into a service
+
+<CardGrid>
+  <LinkCard title="Adopt Zinc in net/http" description="Keep a ServeMux and standard middleware while adding Zinc gradually." href="/cookbook/existing-net-http-service/" />
+  <LinkCard title="Graceful Shutdown" description="Drain active requests within a bounded shutdown window." href="/cookbook/graceful-shutdown/" />
+  <LinkCard title="Timeouts" description="Cancel slow request work through the standard request context." href="/cookbook/timeout/" />
+  <LinkCard title="Automatic TLS" description="Serve Zinc behind autocert without replacing net/http." href="/cookbook/auto-tls/" />
+  <LinkCard title="HTTP/2 Server" description="Configure an explicit TLS-enabled standard-library server." href="/cookbook/http2/" />
+  <LinkCard title="Reverse Proxy" description="Forward traffic through net/http/httputil with bounded transports." href="/cookbook/reverse-proxy/" />
+</CardGrid>
+
+## Files and web UI
+
+<CardGrid>
+  <LinkCard title="Embed Resources" description="Compile assets into the binary and serve them through Zinc." href="/cookbook/embed-resources/" />
+  <LinkCard title="File Upload" description="Accept multipart files and save them with safe server-owned paths." href="/cookbook/file-upload/" />
+  <LinkCard title="File Download" description="Return files with explicit validation and response headers." href="/cookbook/file-download/" />
+  <LinkCard title="Templ UI" description="Generate Templ components and render them from Zinc handlers." href="/cookbook/templ-ui/" />
+  <LinkCard title="Templated HTML + JS" description="Render HTML, serve assets, and progressively enhance the page." href="/cookbook/templated-html-js-page/" />
+</CardGrid>
+
+## Realtime and background work
+
+<CardGrid>
+  <LinkCard title="Server-Sent Events" description="Push one-way events and flush each delivery." href="/cookbook/sse/" />
+  <LinkCard title="Streaming Response" description="Flush long-running output without buffering the whole body." href="/cookbook/streaming-response/" />
+  <LinkCard title="WebSocket" description="Upgrade a request for bidirectional communication." href="/cookbook/websocket/" />
+  <LinkCard title="Scheduled Jobs" description="Run cron schedules and HTTP handlers in one cleanly stopped process." href="/cookbook/scheduled-jobs/" />
+</CardGrid>
+
+## Auth and extension
+
+<CardGrid>
+  <LinkCard title="JWT" description="Protect routes and read validated claims in handlers." href="/cookbook/jwt/" />
+  <LinkCard title="Custom Middleware" description="Measure status, bytes, and timing without breaking Zinc's error flow." href="/cookbook/middleware/" />
+</CardGrid>

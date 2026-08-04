@@ -38,6 +38,61 @@ func TestRouterDynamicRoutesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestRouterCaseInsensitiveDynamicRoutes(t *testing.T) {
+	app := New()
+	app.Post("/Reports/{year}/Files/{path...}", func(c *Context) error {
+		return c.String(c.Param("year") + "|" + c.Param("path"))
+	})
+
+	matched := performRequest(t, app, http.MethodPost, "/reports/2026/files/Q3/Summary.csv", nil, nil)
+	if matched.Code != http.StatusOK || matched.Body.String() != "2026|Q3/Summary.csv" {
+		t.Fatalf("matched=%d %q", matched.Code, matched.Body.String())
+	}
+
+	mismatch := performRequest(t, app, http.MethodGet, "/REPORTS/2026/FILES/Q3/Summary.csv", nil, nil)
+	if mismatch.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("mismatch status=%d", mismatch.Code)
+	}
+	if allow := mismatch.Header().Get(HeaderAllow); allow != "POST, OPTIONS" {
+		t.Fatalf("allow=%q", allow)
+	}
+
+	router := &Router{config: &DefaultConfig}
+	handler := func(*Context) error { return nil }
+	mustDo(t, router.Add(MethodGet, "/Users/{id}", handler))
+	if err := router.Add(MethodGet, "/users/{name}", handler); err == nil {
+		t.Fatal("expected case-insensitive dynamic route conflict")
+	}
+}
+
+func TestRouterCatchAllMatchesEmptyRemainder(t *testing.T) {
+	app := New()
+	app.Get("/files/{path...}", func(c *Context) error {
+		return c.String("catch:" + c.Param("path"))
+	})
+
+	empty := performRequest(t, app, http.MethodGet, "/files/", nil, nil)
+	if empty.Code != http.StatusOK || empty.Body.String() != "catch:" {
+		t.Fatalf("empty catch-all=%d %q", empty.Code, empty.Body.String())
+	}
+
+	app.Get("/exact/", func(c *Context) error { return c.String("exact") })
+	app.Get("/exact/{path...}", func(c *Context) error { return c.String("catch") })
+	exact := performRequest(t, app, http.MethodGet, "/exact/", nil, nil)
+	if exact.Code != http.StatusOK || exact.Body.String() != "exact" {
+		t.Fatalf("exact precedence=%d %q", exact.Code, exact.Body.String())
+	}
+
+	native := New()
+	native.HandleHTTP("GET /native/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "path:%s", r.PathValue("path"))
+	}))
+	nativeEmpty := performRequest(t, native, http.MethodGet, "/native/", nil, nil)
+	if nativeEmpty.Code != http.StatusOK || nativeEmpty.Body.String() != "path:" {
+		t.Fatalf("native empty catch-all=%d %q", nativeEmpty.Code, nativeEmpty.Body.String())
+	}
+}
+
 func TestRouterBraceParamsAndWrappedRequestPathValues(t *testing.T) {
 	app := New()
 	app.Get("/users/{userID}", func(c *Context) error {
@@ -129,6 +184,7 @@ func TestRouterRejectsLegacyRoutePatterns(t *testing.T) {
 	handler := func(*Context) error { return nil }
 	patterns := []string{
 		"/users/:id",
+		"/users/:",
 		"/users/prefix:id",
 		"/files/*path",
 		"/files/prefix*path",
@@ -475,14 +531,11 @@ func TestRouteCacheRingEvictionWrapsWithoutStaleHotEntry(t *testing.T) {
 
 func TestRadixNodeBranches(t *testing.T) {
 	root := &radixNode{kind: radixRoot}
-	mustDo(t, root.add("/foo", &radixRoute{}))
-	mustDo(t, root.add("/fob", &radixRoute{})) // triggers static-node split branch
+	mustDo(t, root.addBrace("/foo", &radixRoute{}, false))
+	mustDo(t, root.addBrace("/fob", &radixRoute{}, false)) // triggers static-node split branch
 
-	if err := root.add("/foo", &radixRoute{}); err == nil {
+	if err := root.addBrace("/foo", &radixRoute{}, false); err == nil {
 		t.Fatal("expected duplicate route error")
-	}
-	if err := root.add("/files/*path/more", &radixRoute{}); err == nil || !strings.Contains(err.Error(), "wildcard must be final") {
-		t.Fatalf("err=%v", err)
 	}
 
 	paramHolder := &radixNode{}

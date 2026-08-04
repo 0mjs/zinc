@@ -12,6 +12,8 @@ import (
 	"sync"
 )
 
+const DefaultListenAddr = ":8080"
+
 type Map map[string]any
 
 type HandlerFunc func(*Context) error
