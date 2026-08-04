@@ -27,7 +27,7 @@ Lower values are better. Results vary by workload and machine, and small differe
 
 ## Full report
 
-The [complete benchmark report](https://github.com/0mjs/zinc/blob/dev/BENCKMARKS.md) contains the environment, command, scorecard, and all 77 comparable rows from the current run.
+The [complete benchmark report](https://github.com/0mjs/zinc/blob/dev/BENCHMARKS.md) contains the environment, command, scorecard, and all 77 comparable rows from the current run.
 
 To run the suite locally:
 

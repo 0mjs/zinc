@@ -166,7 +166,7 @@ Zinc keeps benchmarks in the repository so performance claims can be checked aga
 
 In the latest Apple M1 Pro comparison, Zinc recorded the lowest latency in 62 of 77 comparable rows against Gin, Echo, and Chi. It was fastest or within 2% of the fastest result in 63 rows. Primary static, parameter, and not-found dispatch paths retained zero request-time allocations.
 
-Results vary by workload and machine. See the [full benchmark report](./BENCKMARKS.md) for the environment, command, scorecard, and complete results.
+Results vary by workload and machine. See the [full benchmark report](./BENCHMARKS.md) for the environment, command, scorecard, and complete results.
 
 ## Packages
 
