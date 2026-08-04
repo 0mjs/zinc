@@ -174,9 +174,6 @@ Results vary by workload and machine. See the [full benchmark report](./BENCKMAR
 | --- | --- |
 | `github.com/0mjs/zinc` | Application, router, context, binding, responses, rendering, and static files |
 | `github.com/0mjs/zinc/middleware` | First-party HTTP middleware |
-| `github.com/0mjs/zinc/jobs` | Optional in-memory jobs, retries, delayed work, and schedules |
-
-The jobs package is independent of the HTTP application. Applications that do not import it do not use it.
 
 ## Project status
 

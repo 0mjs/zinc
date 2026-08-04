@@ -168,7 +168,6 @@ export default defineConfig({
             page("Server-Sent Events", "/cookbook/sse/"),
             page("Streaming Response", "/cookbook/streaming-response/"),
             page("WebSocket", "/cookbook/websocket/"),
-            page("Scheduled Jobs", "/cookbook/scheduled-jobs/"),
             page("JWT", "/cookbook/jwt/"),
             page("Custom Middleware", "/cookbook/middleware/"),
           ],
