@@ -1,0 +1,55 @@
+---
+title: Zinc
+description: Fast, explicit Go APIs built on net/http.
+template: splash
+tableOfContents: false
+hero:
+  tagline: " "
+head:
+  - tag: title
+    content: Zinc — Fast Go APIs. Still net/http.
+---
+
+import HomeHero from "../../components/HomeHero.astro";
+
+<HomeHero />
+
+<div class="z-stats">
+  <div><b>0 allocs</b><span>router hot path</span></div>
+  <div><b>net/http</b><span>native compatibility</span></div>
+  <div><b>60+</b><span>benchmark wins</span></div>
+  <div><b>MIT</b><span>open source</span></div>
+</div>
+
+<div class="z-section-heading"><span>Why Zinc</span><h2>Framework ergonomics. Standard Go underneath.</h2></div>
+
+<div class="z-features">
+  <div class="z-card"><i>01</i><h3>Native HTTP</h3><p>Use standard handlers, middleware, requests, response writers, and Go 1.22 route patterns.</p></div>
+  <div class="z-card"><i>02</i><h3>Fast routing</h3><p>A compact radix router with zero request-time allocations on its performance paths.</p></div>
+  <div class="z-card"><i>03</i><h3>Small API</h3><p>Get, Post, Group, Bind, JSON, String. The common path stays obvious and short.</p></div>
+  <div class="z-card"><i>04</i><h3>Composable middleware</h3><p>Apply middleware to the app, a group, or one route without changing handler shape.</p></div>
+  <div class="z-card"><i>05</i><h3>Useful context</h3><p>Read params, queries, headers and bodies without losing access to the underlying HTTP types.</p></div>
+  <div class="z-card"><i>06</i><h3>Central errors</h3><p>Return errors from handlers and keep response policy in one explicit application-level place.</p></div>
+</div>
+
+<div class="z-section-heading"><span>Get started</span><h2>A running API in three steps.</h2></div>
+
+<div class="z-steps">
+  <div><b>01</b><h3>Install</h3><p>Add Zinc to your Go module.</p><pre>go get github.com/0mjs/zinc</pre></div>
+  <div><b>02</b><h3>Route</h3><p>Register a normal handler.</p><pre>app.Get("/", hello)</pre></div>
+  <div><b>03</b><h3>Run</h3><p>Listen using the standard HTTP stack.</p><pre>app.Listen(":8080")</pre></div>
+</div>
+
+<div class="z-stdlib">
+  <div><span>Standard library first</span><h2>Drop down to net/http whenever you need it.</h2><p>Zinc works with the ecosystem Go already has. Mount standard handlers, use familiar middleware, or serve the application anywhere an <code>http.Handler</code> belongs.</p><a href="/guide/routing/">Explore routing <b>→</b></a></div>
+  <pre><code>mux := http.NewServeMux()
+mux.Handle("/api/", app)
+mux.Handle("/health", healthHandler)</code></pre>
+</div>
+
+<div class="z-home-footer">
+  <div class="brand"><span class="brand-name">Zinc</span><p>Fast Go APIs. Still net/http. Maintained by Carbon Software Ltd.</p></div>
+  <div class="col"><h4>Docs</h4><a href="/guide/quickstart/">Quickstart</a><a href="/guide/routing/">Routing</a><a href="/middleware/basic-auth/">Middleware</a><a href="/cookbook/hello-world/">Cookbook</a></div>
+  <div class="col"><h4>Project</h4><a href="https://github.com/0mjs/zinc">GitHub</a><a href="https://github.com/0mjs/zinc/releases">Releases</a><a href="https://github.com/0mjs/zinc/issues">Issues</a><a href="https://github.com/0mjs/zinc/blob/dev/CONTRIBUTING.md">Contributing</a></div>
+  <div class="col"><h4>Resources</h4><a href="https://pkg.go.dev/github.com/0mjs/zinc">API Reference</a><a href="/extra/benchmarks/">Benchmarks</a><a href="https://github.com/0mjs/zinc/blob/dev/LICENSE">MIT License</a></div>
+</div>

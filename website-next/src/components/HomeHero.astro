@@ -1,0 +1,64 @@
+---
+import { Code } from "astro:components";
+
+const serverExample = `package main
+
+import "github.com/0mjs/zinc"
+
+func main() {
+    app := zinc.New()
+    app.Get("/", func(c *zinc.Context) error {
+        return c.String("Hello from Zinc!")
+    })
+    app.Listen(":8080")
+}`;
+---
+
+<section class="z-hero">
+  <div class="z-hero-copy">
+    <span class="z-eyebrow"><i></i> Zinc v0.2 — built on net/http</span>
+    <h1>Fast Go APIs.<br /><span>Still net/http.</span></h1>
+    <p>
+      Expressive routing and practical helpers on the HTTP stack Go developers
+      already know. Small API, standard library compatibility, no ceremony.
+    </p>
+    <div class="z-actions">
+      <a class="z-button primary" href="/guide/quickstart/">Get started <b>→</b></a>
+      <a class="z-button secondary" href="https://github.com/0mjs/zinc">View on GitHub</a>
+    </div>
+    <button class="z-install" type="button" data-copy="go get github.com/0mjs/zinc">
+      <span>$</span> go get github.com/0mjs/zinc <b aria-hidden="true">□</b>
+    </button>
+  </div>
+
+  <div class="z-window" aria-label="A minimal Zinc server">
+    <div class="z-window-bar">
+      <span class="z-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="z-filename">main.go</span>
+      <img src="/go.png" alt="Go" />
+    </div>
+    <div class="z-source">
+      <Code code={serverExample} lang="go" theme="gruvbox-dark-hard" />
+    </div>
+    <div class="z-terminal">
+      <div><span>~/zinc $</span> <b data-command>curl localhost:8080</b><i></i></div>
+      <pre data-output>HTTP/1.1 200 OK
+Hello from Zinc!</pre>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>(".z-install").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy || "");
+        const mark = button.querySelector("b");
+        if (mark) mark.textContent = "✓";
+        window.setTimeout(() => {
+          if (mark) mark.textContent = "□";
+        }, 1200);
+      } catch {}
+    });
+  });
+</script>
