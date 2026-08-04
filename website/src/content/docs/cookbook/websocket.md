@@ -47,4 +47,6 @@ func main() {
 }
 ```
 
+:::caution[Before production]
 Validate origins, apply authentication before upgrading, and configure read/write limits for production connections.
+:::

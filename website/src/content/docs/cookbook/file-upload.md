@@ -37,6 +37,8 @@ func main() {
 }
 ```
 
-`SaveFile` creates missing parent directories. Validate size, extension, detected
-content type, and authorization before keeping untrusted files; the client
-filename alone is not a trustworthy content check.
+`SaveFile` creates missing parent directories.
+
+:::danger[Uploads are untrusted input]
+Validate size, extension, detected content type, and authorization before keeping an uploaded file. A client-provided filename or content type is not a trustworthy content check.
+:::

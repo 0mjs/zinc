@@ -190,7 +190,7 @@ requestContext := c.Request().Context()
 
 If work must deliberately outlive the request while retaining standard context values, detach cancellation explicitly with `context.WithoutCancel(requestContext)`. Do not pass Zinc's pooled context or response writer.
 
-:::caution
+:::danger[Context lifetime]
 Do not retain `*zinc.Context`, its response writer, request body, or mutable values after the handler returns.
 :::
 

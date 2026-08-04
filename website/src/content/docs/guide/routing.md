@@ -102,7 +102,8 @@ The following `net/http` pattern features are not supported:
 Use `HandleHTTP("GET /users/{id}", handler)` when registering a native handler.
 Its method and path are separated before the same Zinc path grammar is applied.
 
-Invalid or legacy patterns fail during registration:
+:::caution[Registration failures]
+Invalid or legacy patterns fail during registration. Source-defined declarations panic at startup so a malformed route cannot remain hidden until its first request.
 
 ```text
 /users/:id             use /users/{id}
@@ -111,6 +112,7 @@ Invalid or legacy patterns fail during registration:
 /files/{path...}/meta  catch-alls must be final
 /users/{id}/{id}       names must be unique
 ```
+:::
 
 ### Migrating from Zinc 0.1
 
@@ -122,7 +124,7 @@ Zinc 0.2 uses one route syntax and does not keep compatibility aliases:
 | `/files/*path` | `/files/{path...}` |
 | `/users/:id<\\d+>` | `/users/{id}` plus validation in the handler or binder |
 
-Legacy patterns panic during source registration with a message that points to the new form.
+The panic message points to the equivalent Zinc 0.2 form.
 
 ## Named routes and reverse URLs
 

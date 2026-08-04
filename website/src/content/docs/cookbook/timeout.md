@@ -40,6 +40,8 @@ func main() {
 ```
 
 Reduce the middleware timeout below two seconds to see Zinc return the default
-`503 Service Unavailable` timeout error. Do not apply short deadlines to
-WebSockets, server-sent events, or intentionally long-lived streams; skip those
-routes or use a separate group.
+`503 Service Unavailable` timeout error.
+
+:::caution[Long-lived connections]
+Do not apply short deadlines to WebSockets, server-sent events, or intentionally long-lived streams. Skip those routes or use a separate group.
+:::

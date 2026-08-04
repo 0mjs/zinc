@@ -61,6 +61,9 @@ app.Use(middleware.CORSWithOptions(
 
 ## Notes
 
-- If you enable `AllowCredentials`, browsers will reject `Access-Control-Allow-Origin: *`, so Zinc reflects the request origin instead.
+:::caution[Credentials and wildcard origins]
+Browsers reject `Access-Control-Allow-Origin: *` when credentials are enabled. Zinc therefore reflects the validated request origin when `AllowCredentials` is true.
+:::
+
 - Zinc automatically handles real preflight requests and returns `204 No Content`.
 - Requests without an `Origin` header pass straight through.

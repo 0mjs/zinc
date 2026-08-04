@@ -48,4 +48,6 @@ Use the normal Go tooling to inspect the selected version:
 go list -m github.com/0mjs/zinc
 ```
 
-Zinc is currently pre-1.0, so read release notes before upgrading production services.
+:::caution[Before upgrading]
+Zinc is currently pre-1.0. Read the release notes before upgrading a production service because minor releases may contain deliberate API changes.
+:::

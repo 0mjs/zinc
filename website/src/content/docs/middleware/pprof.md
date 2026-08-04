@@ -15,4 +15,6 @@ Use a custom prefix when profiling should live somewhere else.
 app.Use(middleware.PprofWithPrefix("/internal/pprof"))
 ```
 
-Do not expose pprof publicly without authentication or network restrictions.
+:::danger[Keep profiling private]
+Do not expose pprof publicly. Protect it with authentication, network restrictions, or both.
+:::

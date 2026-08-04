@@ -95,6 +95,10 @@ The response includes `HTTP/1.1 200 OK` and a JSON body:
 {"message":"Hello from Zinc!"}
 ```
 
+:::tip[You are still using standard Go]
+The application also satisfies `http.Handler`, and this static route dispatches with zero request-time heap allocations.
+:::
+
 Press `Ctrl+C` in the server terminal when you are finished.
 
 ## What you just built
@@ -105,8 +109,6 @@ Press `Ctrl+C` in the server terminal when you are finished.
 - Returning an error keeps response and middleware failures in one error flow.
 - `c.JSON(...)` encoded the response and set its content type.
 - `app.Listen(":8080")` started the standard-library HTTP server.
-
-Zinc's primary static routing path dispatches this route with zero request-time heap allocations.
 
 ## Next steps
 

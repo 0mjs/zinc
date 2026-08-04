@@ -32,6 +32,8 @@ app.Get("/whoami", func(c *zinc.Context) error {
 })
 ```
 
+:::danger[Trust boundary]
 Only list proxies you operate or explicitly trust. Trusting forwarded headers from arbitrary clients allows IP spoofing and can break rate limits, auditing, and access control.
+:::
 
 When no trusted proxy matches, Zinc falls back to the direct peer address.
