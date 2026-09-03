@@ -6,7 +6,7 @@ require (
 	github.com/0mjs/zinc v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.2.5
-	github.com/labstack/echo/v5 v5.0.4
+	github.com/labstack/echo/v5 v5.2.0
 )
 
 require (
