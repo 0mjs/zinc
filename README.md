@@ -98,7 +98,7 @@ app.UseHTTP(requestTracing, authenticateRequest)
 Handlers that own a whole subtree can be mounted:
 
 ```go
-app.Mount("/debug", http.DefaultServeMux)
+app.Mount("/legacy", legacyMux) // receives paths with "/legacy" removed
 ```
 
 Inside a Zinc handler, the standard request and writer are available when you need them:

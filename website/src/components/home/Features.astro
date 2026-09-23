@@ -41,15 +41,16 @@ app.Post("/users", func(c *zinc.Context) error {
     name: "Errors",
     blurb: "Handlers return errors. One handler turns them into responses, so failure paths stay short.",
     href: "/guide/errors/",
-    code: `app := zinc.NewWithConfig(zinc.Config{
-	ErrorHandler: func(c *zinc.Context, err error) {
-		var he *zinc.HTTPError
-		if !errors.As(err, &he) {
-			he = zinc.ErrInternalServerError
-		}
-		_ = c.Status(he.Code).JSON(zinc.Map{"error": he.Error()})
-	},
-})`,
+    code: `cfg := zinc.DefaultConfig
+cfg.ErrorHandler = func(c *zinc.Context, err error) {
+	var he *zinc.HTTPError
+	if !errors.As(err, &he) {
+		he = zinc.ErrInternalServerError
+	}
+	_ = c.Status(he.Code).JSON(zinc.Map{"error": he.Error()})
+}
+
+app := zinc.NewWithConfig(cfg)`,
   },
   {
     id: "middleware",
