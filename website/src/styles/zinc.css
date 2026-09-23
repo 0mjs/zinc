@@ -51,7 +51,6 @@
   --z-code-str: #a3be8c;
   --z-code-num: #b48ead;
   --z-rivet: radial-gradient(circle at 35% 30%, #f4f6f8 0%, #b9c1ca 38%, #5d6670 100%);
-  --z-sheen: linear-gradient(90deg, transparent, rgba(220, 228, 236, 0.4) 30%, rgba(255, 255, 255, 0.65) 50%, rgba(220, 228, 236, 0.4) 70%, transparent);
   --z-note: #aebccb;
   --z-tip: #9fc3ad;
   --z-caution: #d9b25c;
@@ -139,23 +138,6 @@ body {
   width: 2.1rem;
 }
 
-.z-tile::after,
-.z-element::after {
-  animation: z-sheen 1.6s 0.3s cubic-bezier(0.3, 0.6, 0.2, 1) 1 forwards;
-  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.75) 48%, transparent 62%);
-  content: "";
-  inset: 0;
-  position: absolute;
-  transform: translateX(-120%);
-}
-
-.z-brand:hover .z-tile::after {
-  animation: z-sheen-again 1.1s cubic-bezier(0.3, 0.6, 0.2, 1) 1 forwards;
-}
-
-@keyframes z-sheen { to { transform: translateX(120%); } }
-@keyframes z-sheen-again { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
-
 .z-tile-num {
   color: #2b3035;
   font: 500 0.45rem/1 var(--sl-font-mono);
@@ -188,10 +170,10 @@ header.header {
   border-bottom: 1px solid var(--sl-color-hairline);
 }
 
-/* Reading progress: a polished edge drawn along the header's bottom hairline.
+/* Reading progress along the header's bottom hairline.
    Hidden by default so browsers without scroll timelines show nothing. */
 header.header::after {
-  background: linear-gradient(90deg, transparent, var(--z-zn) 70%, var(--z-text));
+  background: var(--z-zn);
   bottom: -1px;
   content: "";
   height: 1px;
@@ -291,18 +273,17 @@ site-search dialog {
   transition: background 120ms ease, color 120ms ease, padding 160ms ease;
 }
 
-.sidebar-content summary,
-.top-level > li > a,
-.sidebar-content > ul > li > details > summary {
-  font-family: var(--sl-font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.sidebar-content summary {
+  padding-block: 0.45rem;
 }
 
-.sidebar-content summary .group-label span {
-  color: var(--z-muted);
-  font-weight: 500;
+.sidebar-content summary .group-label .large {
+  color: var(--z-text);
+  font-family: var(--sl-font);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .sidebar-content summary .caret {
@@ -410,8 +391,7 @@ starlight-toc a[aria-current="true"] {
 
 /* Page title block: section, title, lede */
 .z-title {
-  padding-bottom: 1.4rem;
-  border-bottom: 1px solid var(--sl-color-hairline);
+  padding-bottom: 0.4rem;
 }
 
 .z-title-section {
@@ -516,7 +496,7 @@ starlight-toc a[aria-current="true"] {
   color: var(--z-soft);
 }
 
-.sl-markdown-content a:not(:where(.not-content *, .sl-anchor-link)) {
+.sl-markdown-content a:not([class]):not(:where(.not-content *)) {
   color: var(--z-text);
   font-weight: 500;
   text-decoration: underline;
@@ -526,7 +506,7 @@ starlight-toc a[aria-current="true"] {
   transition: text-decoration-color 140ms ease;
 }
 
-.sl-markdown-content a:not(:where(.not-content *, .sl-anchor-link)):hover {
+.sl-markdown-content a:not([class]):not(:where(.not-content *)):hover {
   text-decoration-color: var(--z-text);
 }
 
@@ -625,7 +605,7 @@ starlight-toc a[aria-current="true"] {
 }
 
 /* Code plates. Colours, radius and frame chrome come from styleOverrides in
-   astro.config.mjs; this only adds the lit top edge and the rivets. */
+   astro.config.mjs; this only adjusts the frame headers. */
 .sl-markdown-content .expressive-code {
   margin-block: 1.35rem;
 }
@@ -634,31 +614,29 @@ starlight-toc a[aria-current="true"] {
   position: relative;
 }
 
-.expressive-code .frame::after {
-  background: var(--z-sheen);
-  content: "";
-  height: 1px;
-  left: var(--z-radius);
-  opacity: 0.7;
-  pointer-events: none;
-  position: absolute;
-  right: var(--z-radius);
-  top: 0;
-  z-index: 2;
+/* Terminal frames: a plain label strip, no window dots. */
+.expressive-code .frame.is-terminal .header {
+  justify-content: flex-start;
+  padding-inline: var(--ec-codePadInl);
 }
 
-/* Terminal frames: three polished rivets instead of traffic lights. */
 .expressive-code .frame.is-terminal .header::before {
-  background: linear-gradient(180deg, #eef1f4 0%, #9aa4af 55%, #5b646e 100%) !important;
+  display: none;
 }
 
 .expressive-code .frame.is-terminal .header .title:empty::before {
-  content: "shell";
+  content: "Terminal";
 }
 
 .expressive-code .frame .header .title {
   font-size: 0.72rem;
   letter-spacing: 0.02em;
+}
+
+/* Keep the header's bottom rule continuous under the filename tab. */
+.expressive-code .frame.has-title:not(.is-terminal) .title {
+  box-shadow: inset 0 -1px 0 var(--ec-frm-edTabBarBrdBtmCol);
+  padding-inline: var(--ec-codePadInl);
 }
 
 /* Pagination and page footer */
@@ -919,16 +897,6 @@ main > .hero,
   position: relative;
 }
 
-.z-bench::before,
-.z-foundation::before {
-  background: var(--z-sheen);
-  content: "";
-  height: 1px;
-  left: 1rem;
-  position: absolute;
-  right: 1rem;
-  top: 0;
-}
 
 .z-window-bar,
 .z-bench-body {
@@ -961,21 +929,6 @@ main > .hero,
   letter-spacing: 0.1em;
   margin-left: auto;
   text-transform: uppercase;
-}
-
-/* Three polished rivets where the traffic lights used to be. */
-.z-rivets {
-  display: flex;
-  gap: 0.4rem;
-  margin-right: 0.35rem;
-}
-
-.z-rivets i {
-  background: var(--z-rivet);
-  border-radius: 50%;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.5), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
-  height: 0.55rem;
-  width: 0.55rem;
 }
 
 /* Server status: a steady green lamp with one slow breath. */
@@ -1382,5 +1335,5 @@ main > .hero,
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
-  .z-tile::after, .z-element::after, .z-live { animation: none !important; }
+  .z-live { animation: none !important; }
 }

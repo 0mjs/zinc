@@ -202,6 +202,8 @@ export default defineConfig({
           codePaddingBlock: "1rem",
           codePaddingInline: "1.15rem",
           uiFontFamily: "var(--sl-font-mono)",
+          scrollbarThumbColor: "#2c323a",
+          scrollbarThumbHoverColor: "#3a414b",
           frames: {
             frameBoxShadowCssValue: "none",
             editorBackground: plate.bg,
