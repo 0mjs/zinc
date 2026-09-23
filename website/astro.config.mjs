@@ -1,5 +1,11 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import { ExpressiveCodeTheme } from "@astrojs/starlight/expressive-code";
+import { readFileSync } from "node:fs";
+
+const zincPlate = ExpressiveCodeTheme.fromJSONString(
+  readFileSync(new URL("./src/themes/zinc-plate.json", import.meta.url), "utf-8"),
+);
 
 const page = (label, link) => ({ label, link });
 
@@ -21,11 +27,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Zinc",
-      logo: {
-        src: "./public/zinc.png",
-        replacesTitle: true,
-      },
-      favicon: "/zinc.png?v=20260804",
+      favicon: "/favicon.png?v=20260923",
       customCss: ["./src/styles/zinc.css"],
       editLink: {
         baseUrl: "https://github.com/0mjs/zinc/edit/dev/website/",
@@ -40,6 +42,7 @@ export default defineConfig({
       ],
       components: {
         Footer: "./src/components/Footer.astro",
+        SiteTitle: "./src/components/SiteTitle.astro",
       },
       head: [
         {
@@ -53,6 +56,10 @@ export default defineConfig({
         },
         {
           tag: "link",
+          attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+        },
+        {
+          tag: "link",
           attrs: {
             rel: "preconnect",
             href: "https://fonts.gstatic.com",
@@ -63,7 +70,7 @@ export default defineConfig({
           tag: "link",
           attrs: {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap",
+            href: "https://fonts.googleapis.com/css2?family=Michroma&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
           },
         },
       ],
@@ -174,7 +181,9 @@ export default defineConfig({
         },
       ],
       expressiveCode: {
-        themes: ["tokyo-night", "catppuccin-latte"],
+        themes: [zincPlate],
+        useStarlightDarkModeSwitch: false,
+        useStarlightUiThemeColors: false,
       },
     }),
   ],

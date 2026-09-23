@@ -12,6 +12,7 @@ head:
 
 import HomeHero from "../../components/HomeHero.astro";
 import { Code } from "astro:components";
+import zincPlate from "../../themes/zinc-plate.json";
 
 <HomeHero />
 
@@ -69,7 +70,7 @@ import { Code } from "astro:components";
       <span>ZINC HANDLER</span>
       <Code code={`app.Get("/users/{id}", func(c *zinc.Context) error {
     return c.String(c.Param("id"))
-})`} lang="go" theme="tokyo-night" />
+})`} lang="go" theme={zincPlate} />
     </div>
     <i>+</i>
     <div>
@@ -77,7 +78,7 @@ import { Code } from "astro:components";
       <Code code={`app.HandleHTTP(
     "GET /metrics",
     promhttp.Handler(),
-)`} lang="go" theme="tokyo-night" />
+)`} lang="go" theme={zincPlate} />
     </div>
     <i>=</i>
     <div class="result">
@@ -86,7 +87,7 @@ import { Code } from "astro:components";
     Addr:    ":8080",
     Handler: app,
 }
-log.Fatal(server.ListenAndServe())`} lang="go" theme="tokyo-night" />
+log.Fatal(server.ListenAndServe())`} lang="go" theme={zincPlate} />
     </div>
   </div>
 </section>

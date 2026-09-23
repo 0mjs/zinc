@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "build:brand": "node scripts/build-brand.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:examples": "node scripts/check-go-examples.mjs",
     "check:links": "node scripts/check-built-links.mjs",

@@ -1,5 +1,6 @@
 ---
 import { Code } from "astro:components";
+import zincPlate from "../themes/zinc-plate.json";
 
 const serverExample = `package main
 
@@ -26,6 +27,11 @@ func main() {
 <section class="z-hero">
   <div class="z-hero-heading">
     <div>
+      <div class="z-element" aria-hidden="true">
+        <span class="z-element-num">30</span>
+        <span class="z-element-sym">Zn</span>
+        <span class="z-element-mass">65.38</span>
+      </div>
       <span class="z-eyebrow"><i></i> Zinc 0.2.1 available now!</span>
       <h1>Fast Go APIs.<br /><span>Still net/http.</span></h1>
     </div>
@@ -47,14 +53,13 @@ func main() {
 
   <div class="z-bench" aria-label="Zinc example application and terminal response">
     <div class="z-window-bar">
-      <div class="z-window-controls" aria-hidden="true"><i></i><i></i><i></i></div>
       <span>main.go</span>
-      <img src="/go.png" alt="Go" />
+      <span>curl</span>
     </div>
 
     <div class="z-bench-body">
       <div class="z-code-panel">
-        <Code code={serverExample} lang="go" theme="tokyo-night" />
+        <Code code={serverExample} lang="go" theme={zincPlate as any} />
       </div>
 
       <div class="z-terminal-panel" data-terminal aria-label="Terminal running curl against the Zinc application and receiving a JSON response">
