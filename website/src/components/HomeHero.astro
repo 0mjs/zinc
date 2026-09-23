@@ -1,6 +1,6 @@
 ---
 import { Code } from "astro:components";
-import zincPlate from "../themes/zinc-plate.json";
+import zincFrost from "../themes/zinc-frost.json";
 
 const serverExample = `package main
 
@@ -53,22 +53,30 @@ func main() {
 
   <div class="z-bench" aria-label="Zinc example application and terminal response">
     <div class="z-window-bar">
-      <span>main.go</span>
-      <span>curl</span>
+      <div class="z-window-cell">
+        <span class="z-rivets" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>main.go</span>
+        <span class="z-window-meta">go 1.25</span>
+      </div>
+      <div class="z-window-cell">
+        <span class="z-live" aria-hidden="true"></span>
+        <span>:8080</span>
+        <span class="z-window-meta">listening</span>
+      </div>
     </div>
 
     <div class="z-bench-body">
       <div class="z-code-panel">
-        <Code code={serverExample} lang="go" theme={zincPlate as any} />
+        <Code code={serverExample} lang="go" theme={zincFrost as any} />
       </div>
 
       <div class="z-terminal-panel" data-terminal aria-label="Terminal running curl against the Zinc application and receiving a JSON response">
         <div class="z-terminal-screen">
           <div class="z-terminal-command"><span>$</span> <span data-terminal-command></span><i aria-hidden="true"></i></div>
           <div class="z-terminal-response" data-terminal-response>
-            <p><strong>HTTP/1.1 200 OK</strong></p>
+            <p>HTTP/1.1 <strong>200 OK</strong></p>
             <p><b>Content-Type:</b> application/json; charset=utf-8</p>
-            <pre><span>{`{"message":"Hello from Zinc!"}`}</span></pre>
+            <pre><span class="p">{"{"}</span><span class="k">"message"</span><span class="p">:</span><span class="s">"Hello from Zinc!"</span><span class="p">{"}"}</span></pre>
           </div>
         </div>
       </div>

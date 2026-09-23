@@ -3,9 +3,17 @@ import starlight from "@astrojs/starlight";
 import { ExpressiveCodeTheme } from "@astrojs/starlight/expressive-code";
 import { readFileSync } from "node:fs";
 
-const zincPlate = ExpressiveCodeTheme.fromJSONString(
-  readFileSync(new URL("./src/themes/zinc-plate.json", import.meta.url), "utf-8"),
+const zincFrost = ExpressiveCodeTheme.fromJSONString(
+  readFileSync(new URL("./src/themes/zinc-frost.json", import.meta.url), "utf-8"),
 );
+
+// Code frames are dark plates in both site themes.
+const plate = {
+  bg: "#14171b",
+  bar: "#181b20",
+  line: "#252a31",
+  mute: "#7d889a",
+};
 
 const page = (label, link) => ({ label, link });
 
@@ -43,6 +51,7 @@ export default defineConfig({
       components: {
         Footer: "./src/components/Footer.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
+        PageTitle: "./src/components/PageTitle.astro",
       },
       head: [
         {
@@ -70,7 +79,7 @@ export default defineConfig({
           tag: "link",
           attrs: {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=Michroma&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
+            href: "https://fonts.googleapis.com/css2?family=Michroma&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap",
           },
         },
       ],
@@ -181,9 +190,44 @@ export default defineConfig({
         },
       ],
       expressiveCode: {
-        themes: [zincPlate],
+        themes: [zincFrost],
         useStarlightDarkModeSwitch: false,
         useStarlightUiThemeColors: false,
+        styleOverrides: {
+          borderRadius: "6px",
+          borderColor: plate.line,
+          codeFontFamily: "var(--sl-font-mono)",
+          codeFontSize: "0.8rem",
+          codeLineHeight: "1.7",
+          codePaddingBlock: "1rem",
+          codePaddingInline: "1.15rem",
+          uiFontFamily: "var(--sl-font-mono)",
+          frames: {
+            frameBoxShadowCssValue: "none",
+            editorBackground: plate.bg,
+            editorTabBarBackground: plate.bar,
+            editorTabBarBorderColor: "transparent",
+            editorTabBarBorderBottomColor: plate.line,
+            editorActiveTabBackground: plate.bar,
+            editorActiveTabForeground: "#aeb8c6",
+            editorActiveTabBorderColor: "transparent",
+            editorActiveTabIndicatorTopColor: "transparent",
+            editorActiveTabIndicatorBottomColor: "transparent",
+            editorTabBorderRadius: "0",
+            terminalBackground: plate.bg,
+            terminalTitlebarBackground: plate.bar,
+            terminalTitlebarForeground: plate.mute,
+            terminalTitlebarBorderBottomColor: plate.line,
+            terminalTitlebarDotsForeground: "#aeb8c6",
+            terminalTitlebarDotsOpacity: "1",
+            inlineButtonBackground: "#d8dee9",
+            inlineButtonForeground: "#aeb8c6",
+            inlineButtonBorder: plate.line,
+            inlineButtonBorderOpacity: "1",
+            tooltipSuccessBackground: "#d8dee9",
+            tooltipSuccessForeground: plate.bg,
+          },
+        },
       },
     }),
   ],
