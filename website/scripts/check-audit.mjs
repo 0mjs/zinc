@@ -4,11 +4,11 @@
 import { execFileSync } from "node:child_process";
 
 const exceptions = {
-  // http-cache-semantics: max-stale handling in an HTTP cache can serve one
-  // user's cached response to another. Astro depends on it, and no version is
-  // patched. The docs are a static site with no server-side response cache,
-  // so the code never serves a request here.
-  "GHSA-ch52-4w7c-c8xp": { review: "2026-11-01" },
+  // postcss-selector-parser: quadratic parsing of a long flat selector can
+  // exhaust CPU. Starlight pulls it in through postcss-nested, which accepts
+  // only version 6, and the fix is 7.1.6. It runs at build time on the site's
+  // own CSS, never on a visitor's input.
+  "GHSA-rj75-hqrm-r3gf": { review: "2026-12-01" },
 };
 
 let report;
