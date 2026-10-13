@@ -37,10 +37,10 @@ Each release supports the Go version in its `go.mod` and newer. CI tests the thr
 
 ## Security problems
 
-Report a security problem privately, through the **Report a vulnerability** button on the repository's [Security tab](https://github.com/gozinc/zinc/security), not in a public issue. Fixes go into the latest minor version.
+Report a security problem privately, through the **Report a vulnerability** button on the repository's [Security tab](https://github.com/0mjs/zinc/security), not in a public issue. Fixes go into the latest minor version.
 
 ## Next steps
 
 - [Upgrading to 0.7](/extra/migration-0.7/): what changed in 0.7.
 - [Upgrading to 0.6](/extra/migration-0.6/): what changed in each 0.6 release.
-- [Release notes](https://github.com/gozinc/zinc/releases): every change in every version.
+- [Release notes](https://github.com/0mjs/zinc/releases): every change in every version.

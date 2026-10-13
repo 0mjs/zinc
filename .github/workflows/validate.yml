@@ -61,7 +61,7 @@ jobs:
             echo "$deps"
             exit 1
           fi
-      - run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+      - run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
       - run: staticcheck ./... && staticcheck -tests=false ./...
       - run: staticcheck ./... && staticcheck -tests=false ./...
         working-directory: benchmarks

@@ -54,14 +54,14 @@ export default defineConfig({
       favicon: "/favicon.png?v=20260923",
       customCss: ["./src/styles/zinc.css"],
       editLink: {
-        baseUrl: "https://github.com/gozinc/zinc/edit/dev/website/",
+        baseUrl: "https://github.com/0mjs/zinc/edit/dev/website/",
       },
       lastUpdated: true,
       social: [
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/gozinc/zinc",
+          href: "https://github.com/0mjs/zinc",
         },
       ],
       components: {

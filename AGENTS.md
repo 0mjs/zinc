@@ -6,7 +6,7 @@ Notes for AI coding assistants, and anyone else, changing this repository. To *u
 
 - The core is the root package, `github.com/0mjs/zinc`. It has no dependencies outside the standard library; keep it that way.
 - `middleware/<name>`: one dependency-free middleware per package, named with one word (`requestid`, never `request-id`).
-- Middleware that needs a third-party library lives in a separate repository, `github.com/gozinc/contrib`.
+- Middleware that needs a third-party library lives in a separate repository, `github.com/0mjs/contrib`.
 - `openapitest/`: a test-only module that checks the generated spec against the official OpenAPI 3.1 schema and a generated client.
 - `benchmarks/`: a separate module with the benchmark suite against Gin, Echo, Chi and BunRouter, and `ROUTER_SPEC.md`, the router's matching rules.
 - `website/`: the docs site (Astro and Starlight). Pages are in `website/src/content/docs`.
@@ -23,8 +23,8 @@ go vet ./...
 go test -race ./...
 (cd openapitest && go test ./...)
 (cd benchmarks && go test ./...)
-go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
-go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tests=false ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tests=false ./...
 GOTOOLCHAIN=go1.25.14 go test ./...   # the oldest supported Go
 ```
 
