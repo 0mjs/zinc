@@ -8,7 +8,7 @@ require (
 	github.com/gin-contrib/requestid v1.0.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.3.2
-	github.com/labstack/echo/v5 v5.3.1
+	github.com/labstack/echo/v5 v5.4.1
 	github.com/uptrace/bunrouter v1.0.23
 )
 
